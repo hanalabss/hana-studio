@@ -21,6 +21,15 @@ from rembg import remove, new_session
 # 프로젝트 모듈들
 from config import config, AppConstants
 
+# 프린터 모듈 (선택적 import)
+try:
+    from printer_integration import PrinterThread, find_printer_dll, test_printer_connection
+    PRINTER_AVAILABLE = True
+    print("✅ 프린터 모듈 로드 성공")
+except ImportError as e:
+    PRINTER_AVAILABLE = False
+    print(f"⚠️ 프린터 모듈 로드 실패: {e}")
+
 
 class ModernButton(QPushButton):
     def __init__(self, text, icon_path=None, primary=False):
@@ -184,9 +193,15 @@ class HanaStudio(QMainWindow):
         self.original_image = None
         self.mask_image = None
         self.composite_image = None
+        self.saved_mask_path = None  # 프린터용 마스크 파일 경로
+        
+        # 프린터 관련 변수
+        self.printer_available = PRINTER_AVAILABLE
+        self.printer_dll_path = None
         
         self.init_ui()
         self.init_ai_model()
+        self.check_printer_availability()
         
     def init_ui(self):
         self.setWindowTitle(f"{AppConstants.APP_NAME} - {AppConstants.APP_DESCRIPTION}")
@@ -303,7 +318,7 @@ class HanaStudio(QMainWindow):
         title_label.setFont(QFont("Segoe UI", 24, QFont.Weight.Bold))
         title_label.setStyleSheet("color: #2C3E50;")
         
-        subtitle_label = QLabel("AI 기반 이미지 배경 제거 도구")
+        subtitle_label = QLabel("AI 기반 이미지 배경 제거 및 카드 인쇄 도구")
         subtitle_label.setFont(QFont("Segoe UI", 11))
         subtitle_label.setStyleSheet("color: #7F8C8D; margin-top: 5px;")
         
@@ -354,6 +369,9 @@ class HanaStudio(QMainWindow):
         
         left_layout.addWidget(options_group)
         
+        # 프린터 그룹 (프린터 사용 가능한 경우에만)
+        self.create_printer_group(left_layout)
+        
         # 진행상황 그룹
         progress_group = QGroupBox("📊 진행 상황")
         progress_layout = QVBoxLayout(progress_group)
@@ -381,6 +399,35 @@ class HanaStudio(QMainWindow):
         
         left_layout.addStretch()
         parent_splitter.addWidget(left_panel)
+    
+    def create_printer_group(self, parent_layout):
+        """프린터 제어 그룹 생성"""
+        self.printer_group = QGroupBox("🖨️ 프린터 연동")
+        printer_layout = QVBoxLayout(self.printer_group)
+        
+        # 프린터 상태 라벨
+        self.printer_status_label = QLabel("프린터 상태 확인 중...")
+        self.printer_status_label.setStyleSheet("color: #6C757D; font-size: 11px; padding: 5px;")
+        self.printer_status_label.setWordWrap(True)
+        printer_layout.addWidget(self.printer_status_label)
+        
+        # 프린터 테스트 버튼
+        self.test_printer_btn = ModernButton("프린터 연결 테스트")
+        self.test_printer_btn.clicked.connect(self.test_printer_connection)
+        printer_layout.addWidget(self.test_printer_btn)
+        
+        # 카드 인쇄 버튼
+        self.print_card_btn = ModernButton("카드 인쇄", primary=True)
+        self.print_card_btn.clicked.connect(self.print_card)
+        self.print_card_btn.setEnabled(False)
+        printer_layout.addWidget(self.print_card_btn)
+        
+        parent_layout.addWidget(self.printer_group)
+        
+        # 프린터가 사용 불가능한 경우 그룹 비활성화
+        if not self.printer_available:
+            self.printer_group.setEnabled(False)
+            self.printer_status_label.setText("⚠️ 프린터 모듈을 사용할 수 없습니다")
         
     def create_right_panel(self, parent_splitter):
         right_panel = QWidget()
@@ -438,6 +485,30 @@ class HanaStudio(QMainWindow):
         status_layout.addWidget(version_label)
         
         parent_layout.addWidget(status_frame)
+    
+    def check_printer_availability(self):
+        """프린터 사용 가능 여부 확인"""
+        if not self.printer_available:
+            self.log("⚠️ 프린터 모듈이 로드되지 않았습니다")
+            return
+        
+        def check_printer():
+            try:
+                self.printer_dll_path = find_printer_dll()
+                if self.printer_dll_path:
+                    self.log(f"✅ 프린터 DLL 발견: {os.path.basename(self.printer_dll_path)}")
+                    self.printer_status_label.setText(f"✅ DLL 발견: {os.path.basename(self.printer_dll_path)}")
+                    self.test_printer_btn.setEnabled(True)
+                else:
+                    self.log("❌ 프린터 DLL을 찾을 수 없습니다")
+                    self.printer_status_label.setText("❌ DLL 파일이 필요합니다")
+                    self.test_printer_btn.setEnabled(False)
+            except Exception as e:
+                self.log(f"프린터 확인 오류: {e}")
+                self.printer_status_label.setText("⚠️ 프린터 확인 중 오류 발생")
+        
+        # 백그라운드에서 프린터 확인
+        threading.Thread(target=check_printer, daemon=True).start()
         
     def init_ai_model(self):
         def load_model():
@@ -457,6 +528,135 @@ class HanaStudio(QMainWindow):
         
         # 백그라운드에서 모델 로드
         threading.Thread(target=load_model, daemon=True).start()
+    
+    def test_printer_connection(self):
+        """프린터 연결 테스트"""
+        if not self.printer_available or not self.printer_dll_path:
+            QMessageBox.warning(self, "경고", "프린터 DLL을 찾을 수 없습니다.")
+            return
+        
+        self.test_printer_btn.setEnabled(False)
+        self.test_printer_btn.setText("테스트 중...")
+        
+        def test_connection():
+            try:
+                if test_printer_connection():
+                    self.log("✅ 프린터 연결 테스트 성공!")
+                    self.printer_status_label.setText("✅ 프린터 연결 가능")
+                    self.print_card_btn.setEnabled(True)
+                    QMessageBox.information(self, "성공", "프린터 연결 테스트가 성공했습니다!")
+                else:
+                    self.log("❌ 프린터 연결 테스트 실패")
+                    self.printer_status_label.setText("❌ 프린터 연결 실패")
+                    QMessageBox.warning(self, "실패", "프린터를 찾을 수 없습니다.\n프린터가 켜져 있고 네트워크에 연결되어 있는지 확인해주세요.")
+            except Exception as e:
+                self.log(f"❌ 프린터 테스트 오류: {e}")
+                QMessageBox.critical(self, "오류", f"프린터 테스트 중 오류가 발생했습니다:\n{e}")
+            finally:
+                self.test_printer_btn.setEnabled(True)
+                self.test_printer_btn.setText("프린터 연결 테스트")
+        
+        # 백그라운드에서 테스트 실행
+        threading.Thread(target=test_connection, daemon=True).start()
+    
+    def print_card(self):
+        """카드 인쇄 실행"""
+        if not self.printer_available or not self.printer_dll_path:
+            QMessageBox.warning(self, "경고", "프린터를 사용할 수 없습니다.")
+            return
+        
+        if not self.current_image_path:
+            QMessageBox.warning(self, "경고", "원본 이미지를 먼저 선택해주세요.")
+            return
+        
+        if self.mask_image is None:
+            QMessageBox.warning(self, "경고", "배경 제거를 먼저 실행해주세요.")
+            return
+        
+        # 마스크 이미지가 저장되지 않은 경우 임시 저장
+        if not self.saved_mask_path or not os.path.exists(self.saved_mask_path):
+            if not self.save_mask_for_printing():
+                return
+        
+        # 인쇄 확인 다이얼로그
+        reply = QMessageBox.question(
+            self, 
+            "카드 인쇄", 
+            "카드 인쇄를 시작하시겠습니까?\n\n"
+            f"원본 이미지: {os.path.basename(self.current_image_path)}\n"
+            f"마스크 이미지: {os.path.basename(self.saved_mask_path)}\n\n"
+            "프린터에 카드가 준비되어 있는지 확인해주세요.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        
+        # 인쇄 시작
+        self.print_card_btn.setEnabled(False)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 0)  # 무한 진행바
+        
+        # 프린터 스레드 시작
+        self.printer_thread = PrinterThread(
+            self.printer_dll_path,
+            self.current_image_path,
+            self.saved_mask_path
+        )
+        self.printer_thread.progress.connect(self.on_printer_progress)
+        self.printer_thread.finished.connect(self.on_printer_finished)
+        self.printer_thread.error.connect(self.on_printer_error)
+        self.printer_thread.start()
+    
+    def save_mask_for_printing(self) -> bool:
+        """프린터용 마스크 이미지 저장"""
+        try:
+            # temp 폴더에 마스크 이미지 저장
+            temp_dir = config.get('directories.temp', 'temp')
+            os.makedirs(temp_dir, exist_ok=True)
+            
+            base_name = os.path.splitext(os.path.basename(self.current_image_path))[0]
+            mask_filename = f"{base_name}_mask_print.jpg"
+            self.saved_mask_path = os.path.join(temp_dir, mask_filename)
+            
+            # 마스크 이미지 저장
+            quality = config.get('output_quality', 95)
+            cv2.imwrite(self.saved_mask_path, self.mask_image, [cv2.IMWRITE_JPEG_QUALITY, quality])
+            
+            self.log(f"프린터용 마스크 저장: {self.saved_mask_path}")
+            return True
+            
+        except Exception as e:
+            self.log(f"❌ 마스크 저장 실패: {e}")
+            QMessageBox.critical(self, "오류", f"마스크 이미지 저장 실패:\n{e}")
+            return False
+    
+    def on_printer_progress(self, message):
+        """프린터 진행상황 업데이트"""
+        self.status_label.setText(message)
+        self.log(message)
+    
+    def on_printer_finished(self, success):
+        """프린터 작업 완료"""
+        self.progress_bar.setVisible(False)
+        self.print_card_btn.setEnabled(True)
+        
+        if success:
+            self.log("✅ 카드 인쇄 완료!")
+            self.status_text.setText("인쇄 완료")
+            QMessageBox.information(self, "성공", "카드 인쇄가 완료되었습니다!")
+        else:
+            self.log("❌ 카드 인쇄 실패")
+            self.status_text.setText("인쇄 실패")
+    
+    def on_printer_error(self, error_message):
+        """프린터 오류 처리"""
+        self.progress_bar.setVisible(False)
+        self.print_card_btn.setEnabled(True)
+        self.log(f"❌ 프린터 오류: {error_message}")
+        self.status_text.setText("인쇄 오류 발생")
+        QMessageBox.critical(self, "인쇄 오류", f"카드 인쇄 중 오류가 발생했습니다:\n\n{error_message}")
         
     def log(self, message):
         self.log_text.append(f"[{self.get_timestamp()}] {message}")
@@ -499,6 +699,13 @@ class HanaStudio(QMainWindow):
             self.process_btn.setEnabled(True)
             self.status_text.setText("이미지 로드 완료 | 처리 대기 중")
             
+            # 이전 결과 초기화
+            self.mask_image = None
+            self.composite_image = None
+            self.saved_mask_path = None
+            self.export_btn.setEnabled(False)
+            self.print_card_btn.setEnabled(False)
+            
     def process_image(self):
         if not self.current_image_path or not self.session:
             return
@@ -531,8 +738,12 @@ class HanaStudio(QMainWindow):
         self.process_btn.setEnabled(True)
         self.export_btn.setEnabled(True)
         
+        # 프린터가 사용 가능하면 인쇄 버튼 활성화
+        if self.printer_available and self.printer_dll_path:
+            self.print_card_btn.setEnabled(True)
+        
         self.log("✅ 배경 제거 처리 완료!")
-        self.status_text.setText("처리 완료 | 결과 저장 가능")
+        self.status_text.setText("처리 완료 | 결과 저장 및 인쇄 가능")
         
     def on_processing_error(self, error_message):
         self.progress_bar.setVisible(False)
