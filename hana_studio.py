@@ -7,11 +7,11 @@ from datetime import datetime
 
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                               QHBoxLayout, QGridLayout, QPushButton, QLabel, 
-                              QFileDialog, QScrollArea, QFrame, QSplitter,
-                              QProgressBar, QTextEdit, QGroupBox, QSpacerItem,
-                              QSizePolicy, QMessageBox, QComboBox)
-from PySide6.QtCore import Qt, QThread, Signal, QSize, QTimer
-from PySide6.QtGui import QPixmap, QFont, QIcon, QPainter, QBrush, QColor, QPalette, QImage
+                              QFileDialog, QFrame, QSplitter,
+                              QProgressBar, QTextEdit, QGroupBox,
+                              QMessageBox,QRadioButton,QButtonGroup)
+from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtGui import QPixmap, QFont, QColor, QPalette, QImage
 
 import cv2
 import numpy as np
@@ -198,6 +198,7 @@ class HanaStudio(QMainWindow):
         # 프린터 관련 변수
         self.printer_available = PRINTER_AVAILABLE
         self.printer_dll_path = None
+        self.print_mode = "normal"  # "normal" 또는 "layered" - 새로 추가
         
         self.init_ui()
         self.init_ai_model()
@@ -206,10 +207,20 @@ class HanaStudio(QMainWindow):
     def init_ui(self):
         self.setWindowTitle(f"{AppConstants.APP_NAME} - {AppConstants.APP_DESCRIPTION}")
         
-        # 설정에서 윈도우 크기 가져오기
+        # 설정에서 윈도우 크기 가져오기 (크기 증가)
         geometry = config.get('window_geometry')
-        self.setGeometry(geometry['x'], geometry['y'], geometry['width'], geometry['height'])
-        self.setMinimumSize(AppConstants.Sizes.WINDOW_MIN_WIDTH, AppConstants.Sizes.WINDOW_MIN_HEIGHT)
+        # 기본 크기를 더 크게 설정
+        default_width = max(geometry.get('width', 1600), 1800)  # 최소 1800px
+        default_height = max(geometry.get('height', 900), 1000)  # 최소 1000px
+        
+        self.setGeometry(
+            geometry.get('x', 100), 
+            geometry.get('y', 100), 
+            default_width, 
+            default_height
+        )
+        # 최소 크기 더 크게 설정
+        self.setMinimumSize(1600, 900)  # 1200x800 -> 1600x900으로 증가
         
         # 라이트 테마 스타일 설정 (검은 배경 문제 해결)
         self.setStyleSheet("""
@@ -295,8 +306,8 @@ class HanaStudio(QMainWindow):
         # 하단 상태바
         self.create_status_bar(main_layout)
         
-        # 분할 비율 설정
-        content_splitter.setSizes([350, 1250])
+        # 분할 비율 설정 (왼쪽 패널에 더 많은 공간 할당)
+        content_splitter.setSizes([500, 1300])  # 450 -> 500으로 더 증가
         
     def create_header(self, parent_layout):
         header_frame = QFrame()
@@ -332,92 +343,194 @@ class HanaStudio(QMainWindow):
         
         parent_layout.addWidget(header_frame)
         
-    def create_left_panel(self, parent_splitter):
-        left_panel = QWidget()
-        left_panel.setStyleSheet("background-color: #F8F9FA;")
-        left_layout = QVBoxLayout(left_panel)
-        left_layout.setSpacing(15)
-        
-        # 파일 선택 그룹
+    def create_left_panel(self, splitter):
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+
+        # 📁 파일 선택 그룹
         file_group = QGroupBox("📁 파일 선택")
         file_layout = QVBoxLayout(file_group)
-        
         self.select_btn = ModernButton("이미지 선택", primary=True)
         self.select_btn.clicked.connect(self.select_image)
-        file_layout.addWidget(self.select_btn)
-        
         self.file_label = QLabel("선택된 파일이 없습니다")
-        self.file_label.setStyleSheet("color: #6C757D; font-size: 11px; padding: 10px;")
-        self.file_label.setWordWrap(True)
+        file_layout.addWidget(self.select_btn)
         file_layout.addWidget(self.file_label)
-        
-        left_layout.addWidget(file_group)
-        
-        # 처리 옵션 그룹
-        options_group = QGroupBox("⚙️ 처리 옵션")
-        options_layout = QVBoxLayout(options_group)
-        
+        layout.addWidget(file_group)
+
+        # ⚙️ 처리 옵션 그룹
+        option_group = QGroupBox("⚙️ 처리 옵션")
+        option_layout = QVBoxLayout(option_group)
         self.process_btn = ModernButton("배경 제거 시작", primary=True)
         self.process_btn.clicked.connect(self.process_image)
         self.process_btn.setEnabled(False)
-        options_layout.addWidget(self.process_btn)
-        
         self.export_btn = ModernButton("결과 저장")
         self.export_btn.clicked.connect(self.export_results)
         self.export_btn.setEnabled(False)
-        options_layout.addWidget(self.export_btn)
+        option_layout.addWidget(self.process_btn)
+        option_layout.addWidget(self.export_btn)
+        layout.addWidget(option_group)
+
+        # 📋 인쇄 모드 그룹
+        mode_group = QGroupBox("📋 인쇄 모드")
+        mode_layout = QVBoxLayout(mode_group)
+        self.normal_radio = QRadioButton("일반 인쇄")
+        self.layered_radio = QRadioButton("레이어 인쇄")
+        self.normal_radio.setChecked(True)
+        self.normal_radio.toggled.connect(self.on_print_mode_changed)
+        mode_layout.addWidget(self.normal_radio)
+        mode_layout.addWidget(self.layered_radio)
         
-        left_layout.addWidget(options_group)
-        
-        # 프린터 그룹 (프린터 사용 가능한 경우에만)
-        self.create_printer_group(left_layout)
-        
-        # 진행상황 그룹
-        progress_group = QGroupBox("📊 진행 상황")
-        progress_layout = QVBoxLayout(progress_group)
-        
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setVisible(False)
-        progress_layout.addWidget(self.progress_bar)
-        
-        self.status_label = QLabel("대기 중...")
-        self.status_label.setStyleSheet("color: #495057; font-size: 11px; padding: 5px;")
-        progress_layout.addWidget(self.status_label)
-        
-        left_layout.addWidget(progress_group)
-        
-        # 로그 그룹
-        log_group = QGroupBox("📝 처리 로그")
-        log_layout = QVBoxLayout(log_group)
-        
-        self.log_text = QTextEdit()
-        self.log_text.setMaximumHeight(150)
-        self.log_text.setReadOnly(True)
-        log_layout.addWidget(self.log_text)
-        
-        left_layout.addWidget(log_group)
-        
-        left_layout.addStretch()
-        parent_splitter.addWidget(left_panel)
-    
-    def create_printer_group(self, parent_layout):
-        """프린터 제어 그룹 생성"""
-        self.printer_group = QGroupBox("🖨️ 프린터 연동")
-        printer_layout = QVBoxLayout(self.printer_group)
-        
-        # 프린터 상태 라벨
+        # ⬇️ 여기서 mode_description_label 추가됨
+        self.mode_description_label = QLabel("📖 원본 이미지만 인쇄합니다")
+        self.mode_description_label.setStyleSheet("""
+            color: #6C757D; font-size: 10px;
+            padding: 4px 8px;
+            background-color: #F8F9FA;
+            border-left: 3px solid #4A90E2;
+        """)
+        self.mode_description_label.setWordWrap(True)
+        mode_layout.addWidget(self.mode_description_label)
+        layout.addWidget(mode_group)
+
+        # 🖨️ 프린터 그룹
+        printer_group = QGroupBox("🖨 프린터 연동")
+        printer_layout = QVBoxLayout(printer_group)
         self.printer_status_label = QLabel("프린터 상태 확인 중...")
-        self.printer_status_label.setStyleSheet("color: #6C757D; font-size: 11px; padding: 5px;")
+        self.printer_status_label.setStyleSheet("font-size: 10px; color: #6C757D;")
         self.printer_status_label.setWordWrap(True)
         printer_layout.addWidget(self.printer_status_label)
-        
-        # 프린터 테스트 버튼
+
         self.test_printer_btn = ModernButton("프린터 연결 테스트")
         self.test_printer_btn.clicked.connect(self.test_printer_connection)
         printer_layout.addWidget(self.test_printer_btn)
-        
-        # 카드 인쇄 버튼
+
         self.print_card_btn = ModernButton("카드 인쇄", primary=True)
+        self.print_card_btn.clicked.connect(self.print_card)
+        self.print_card_btn.setEnabled(False)
+        printer_layout.addWidget(self.print_card_btn)
+        layout.addWidget(printer_group)
+
+        # 📊 진행 상황
+        progress_group = QGroupBox("📊 진행 상황")
+        progress_layout = QVBoxLayout(progress_group)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        progress_layout.addWidget(self.progress_bar)
+        self.status_label = QLabel("대기 중...")
+        progress_layout.addWidget(self.status_label)
+        layout.addWidget(progress_group)
+
+        # 📝 로그
+        log_group = QGroupBox("📝 처리 로그")
+        log_layout = QVBoxLayout(log_group)
+        self.log_text = QTextEdit()
+        self.log_text.setReadOnly(True)
+        log_layout.addWidget(self.log_text)
+        layout.addWidget(log_group)
+
+        layout.addStretch()
+        splitter.addWidget(panel)
+
+
+    def create_print_mode_group(self, parent_layout):
+        """인쇄 모드 선택 그룹 생성 (프린터와 분리)"""
+        mode_group = QGroupBox("📋 인쇄 모드 선택")
+        mode_group.setMaximumHeight(110)  # 120 -> 110으로 축소
+        mode_layout = QVBoxLayout(mode_group)
+        mode_layout.setSpacing(5)  # 8 -> 5로 축소
+        
+        # 라디오 버튼 그룹
+        self.print_mode_group = QButtonGroup()
+        
+        # 일반 인쇄 모드
+        self.normal_print_radio = QRadioButton("🖼️ 일반 인쇄")
+        self.normal_print_radio.setToolTip("원본 이미지만 인쇄 (기본 모드)")
+        self.normal_print_radio.setChecked(True)  # 기본 선택
+        self.normal_print_radio.toggled.connect(self.on_print_mode_changed)
+        
+        # 레이어 인쇄 모드
+        self.layered_print_radio = QRadioButton("🎭 레이어 인쇄 (YMCW)")
+        self.layered_print_radio.setToolTip("원본 이미지 + 마스크 워터마크 레이어 인쇄")
+        self.layered_print_radio.toggled.connect(self.on_print_mode_changed)
+        
+        # 버튼 그룹에 추가
+        self.print_mode_group.addButton(self.normal_print_radio, 0)
+        self.print_mode_group.addButton(self.layered_print_radio, 1)
+        
+        # 라디오 버튼 스타일링 (크기 축소)
+        radio_style = """
+            QRadioButton {
+                font-size: 11px;
+                font-weight: 500;
+                color: #495057;
+                padding: 5px;
+                spacing: 8px;
+            }
+            QRadioButton::indicator {
+                width: 14px;
+                height: 14px;
+            }
+            QRadioButton::indicator:unchecked {
+                border: 2px solid #6C757D;
+                border-radius: 7px;
+                background-color: white;
+            }
+            QRadioButton::indicator:checked {
+                border: 2px solid #4A90E2;
+                border-radius: 7px;
+                background-color: #4A90E2;
+            }
+            QRadioButton::indicator:checked:hover {
+                background-color: #357ABD;
+                border-color: #357ABD;
+            }
+            QRadioButton:hover {
+                color: #4A90E2;
+            }
+        """
+        self.normal_print_radio.setStyleSheet(radio_style)
+        self.layered_print_radio.setStyleSheet(radio_style)
+        
+        mode_layout.addWidget(self.normal_print_radio)
+        mode_layout.addWidget(self.layered_print_radio)
+        
+        # 모드 설명 라벨 (폰트 크기 축소)
+        self.mode_description_label = QLabel("📖 원본 이미지만 인쇄합니다")
+        self.mode_description_label.setStyleSheet("""
+            color: #6C757D; 
+            font-size: 9px; 
+            padding: 3px 8px;
+            background-color: #F8F9FA;
+            border-radius: 4px;
+            border-left: 3px solid #4A90E2;
+        """)
+        self.mode_description_label.setWordWrap(True)
+        mode_layout.addWidget(self.mode_description_label)
+        
+        parent_layout.addWidget(mode_group)
+    
+    def create_printer_group(self, parent_layout):
+        """프린터 연동 그룹 생성 (프린터 제어만)"""
+        self.printer_group = QGroupBox("🖨️ 프린터 연동")
+        self.printer_group.setMaximumHeight(120)  # 140 -> 120으로 축소
+        printer_layout = QVBoxLayout(self.printer_group)
+        printer_layout.setSpacing(5)  # 8 -> 5로 축소
+        
+        # 프린터 상태 라벨 (폰트 크기 축소)
+        self.printer_status_label = QLabel("프린터 상태 확인 중...")
+        self.printer_status_label.setStyleSheet("color: #6C757D; font-size: 9px; padding: 3px;")  # 폰트 크기 축소
+        self.printer_status_label.setWordWrap(True)
+        printer_layout.addWidget(self.printer_status_label)
+        
+        # 프린터 테스트 버튼 (크기 축소)
+        self.test_printer_btn = ModernButton("프린터 연결 테스트")
+        self.test_printer_btn.setFixedHeight(30)  # 버튼 높이 축소
+        self.test_printer_btn.clicked.connect(self.test_printer_connection)
+        printer_layout.addWidget(self.test_printer_btn)
+        
+        # 카드 인쇄 버튼 (크기 축소)
+        self.print_card_btn = ModernButton("카드 인쇄 시작", primary=True)
+        self.print_card_btn.setFixedHeight(35)  # 버튼 높이 축소
         self.print_card_btn.clicked.connect(self.print_card)
         self.print_card_btn.setEnabled(False)
         printer_layout.addWidget(self.print_card_btn)
@@ -428,7 +541,7 @@ class HanaStudio(QMainWindow):
         if not self.printer_available:
             self.printer_group.setEnabled(False)
             self.printer_status_label.setText("⚠️ 프린터 모듈을 사용할 수 없습니다")
-        
+    
     def create_right_panel(self, parent_splitter):
         right_panel = QWidget()
         right_panel.setStyleSheet("background-color: #F8F9FA;")
@@ -487,28 +600,23 @@ class HanaStudio(QMainWindow):
         parent_layout.addWidget(status_frame)
     
     def check_printer_availability(self):
-        """프린터 사용 가능 여부 확인"""
         if not self.printer_available:
-            self.log("⚠️ 프린터 모듈이 로드되지 않았습니다")
+            self.printer_status_label.setText("⚠️ 프린터 사용 불가")
             return
-        
-        def check_printer():
+        def check():
             try:
                 self.printer_dll_path = find_printer_dll()
                 if self.printer_dll_path:
-                    self.log(f"✅ 프린터 DLL 발견: {os.path.basename(self.printer_dll_path)}")
-                    self.printer_status_label.setText(f"✅ DLL 발견: {os.path.basename(self.printer_dll_path)}")
+                    self.printer_status_label.setText("✅ 프린터 사용 가능")
                     self.test_printer_btn.setEnabled(True)
                 else:
-                    self.log("❌ 프린터 DLL을 찾을 수 없습니다")
-                    self.printer_status_label.setText("❌ DLL 파일이 필요합니다")
+                    self.printer_status_label.setText("❌ DLL 파일 없음")
                     self.test_printer_btn.setEnabled(False)
             except Exception as e:
-                self.log(f"프린터 확인 오류: {e}")
-                self.printer_status_label.setText("⚠️ 프린터 확인 중 오류 발생")
-        
-        # 백그라운드에서 프린터 확인
-        threading.Thread(target=check_printer, daemon=True).start()
+                self.printer_status_label.setText("오류 발생")
+                self.log(f"❌ 프린터 확인 오류: {e}")
+        threading.Thread(target=check, daemon=True).start()
+
         
     def init_ai_model(self):
         def load_model():
@@ -528,6 +636,36 @@ class HanaStudio(QMainWindow):
         
         # 백그라운드에서 모델 로드
         threading.Thread(target=load_model, daemon=True).start()
+    
+    def on_print_mode_changed(self):
+        if self.normal_radio.isChecked():
+            self.print_mode = "normal"
+            self.mode_description_label.setText("📖 원본 이미지만 인쇄합니다")
+            self.print_card_btn.setText("일반 카드 인쇄")
+        else:
+            self.print_mode = "layered"
+            self.mode_description_label.setText("📖 원본 이미지 위에 마스크 워터마크를 포함하여 인쇄합니다")
+            self.print_card_btn.setText("레이어 카드 인쇄")
+        self.update_print_button_state()
+
+        
+        self.log(f"인쇄 모드 변경: {'일반 인쇄' if self.print_mode == 'normal' else '레이어 인쇄(YMCW)'}")
+
+    def update_print_button_state(self):
+        """인쇄 버튼 활성화 상태 업데이트"""
+        if not self.printer_available or not self.printer_dll_path:
+            self.print_card_btn.setEnabled(False)
+            return
+        
+        if self.print_mode == "normal":
+            # 일반 인쇄: 원본 이미지만 필요
+            can_print = self.current_image_path is not None
+        else:
+            # 레이어 인쇄: 원본 이미지 + 마스크 필요
+            can_print = (self.current_image_path is not None and 
+                        self.mask_image is not None)
+        
+        self.print_card_btn.setEnabled(can_print)
     
     def test_printer_connection(self):
         """프린터 연결 테스트"""
@@ -560,7 +698,7 @@ class HanaStudio(QMainWindow):
         threading.Thread(target=test_connection, daemon=True).start()
     
     def print_card(self):
-        """카드 인쇄 실행"""
+        """개선된 카드 인쇄 실행"""
         if not self.printer_available or not self.printer_dll_path:
             QMessageBox.warning(self, "경고", "프린터를 사용할 수 없습니다.")
             return
@@ -569,22 +707,30 @@ class HanaStudio(QMainWindow):
             QMessageBox.warning(self, "경고", "원본 이미지를 먼저 선택해주세요.")
             return
         
-        if self.mask_image is None:
-            QMessageBox.warning(self, "경고", "배경 제거를 먼저 실행해주세요.")
-            return
-        
-        # 마스크 이미지가 저장되지 않은 경우 임시 저장
-        if not self.saved_mask_path or not os.path.exists(self.saved_mask_path):
-            if not self.save_mask_for_printing():
+        # 인쇄 모드별 확인
+        if self.print_mode == "layered":
+            if self.mask_image is None:
+                QMessageBox.warning(self, "경고", "레이어 인쇄를 위해서는 배경 제거를 먼저 실행해주세요.")
                 return
+            
+            # 마스크 이미지가 저장되지 않은 경우 임시 저장
+            if not self.saved_mask_path or not os.path.exists(self.saved_mask_path):
+                if not self.save_mask_for_printing():
+                    return
         
         # 인쇄 확인 다이얼로그
+        mode_text = "일반 인쇄" if self.print_mode == "normal" else "레이어 인쇄 (YMCW)"
+        detail_text = f"원본 이미지: {os.path.basename(self.current_image_path)}\n"
+        
+        if self.print_mode == "layered":
+            detail_text += f"마스크 이미지: {os.path.basename(self.saved_mask_path)}\n"
+        
+        detail_text += f"인쇄 모드: {mode_text}"
+        
         reply = QMessageBox.question(
             self, 
             "카드 인쇄", 
-            "카드 인쇄를 시작하시겠습니까?\n\n"
-            f"원본 이미지: {os.path.basename(self.current_image_path)}\n"
-            f"마스크 이미지: {os.path.basename(self.saved_mask_path)}\n\n"
+            f"카드 인쇄를 시작하시겠습니까?\n\n{detail_text}\n\n"
             "프린터에 카드가 준비되어 있는지 확인해주세요.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
@@ -598,12 +744,24 @@ class HanaStudio(QMainWindow):
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, 0)  # 무한 진행바
         
-        # 프린터 스레드 시작
-        self.printer_thread = PrinterThread(
-            self.printer_dll_path,
-            self.current_image_path,
-            self.saved_mask_path
-        )
+        # 프린터 스레드 시작 (인쇄 모드에 따라 다른 매개변수)
+        if self.print_mode == "normal":
+            # 일반 인쇄: 마스크 없이
+            self.printer_thread = PrinterThread(
+                self.printer_dll_path,
+                self.current_image_path,
+                None,  # 마스크 없음
+                self.print_mode
+            )
+        else:
+            # 레이어 인쇄: 마스크 포함
+            self.printer_thread = PrinterThread(
+                self.printer_dll_path,
+                self.current_image_path,
+                self.saved_mask_path,
+                self.print_mode
+            )
+        
         self.printer_thread.progress.connect(self.on_printer_progress)
         self.printer_thread.finished.connect(self.on_printer_finished)
         self.printer_thread.error.connect(self.on_printer_error)
@@ -638,16 +796,18 @@ class HanaStudio(QMainWindow):
         self.log(message)
     
     def on_printer_finished(self, success):
-        """프린터 작업 완료"""
+        """프린터 작업 완료 (개선된 메시지)"""
         self.progress_bar.setVisible(False)
         self.print_card_btn.setEnabled(True)
         
+        mode_text = "일반 인쇄" if self.print_mode == "normal" else "레이어 인쇄"
+        
         if success:
-            self.log("✅ 카드 인쇄 완료!")
+            self.log(f"✅ {mode_text} 완료!")
             self.status_text.setText("인쇄 완료")
-            QMessageBox.information(self, "성공", "카드 인쇄가 완료되었습니다!")
+            QMessageBox.information(self, "성공", f"{mode_text}가 완료되었습니다!")
         else:
-            self.log("❌ 카드 인쇄 실패")
+            self.log(f"❌ {mode_text} 실패")
             self.status_text.setText("인쇄 실패")
     
     def on_printer_error(self, error_message):
@@ -704,7 +864,9 @@ class HanaStudio(QMainWindow):
             self.composite_image = None
             self.saved_mask_path = None
             self.export_btn.setEnabled(False)
-            self.print_card_btn.setEnabled(False)
+            
+            # 인쇄 버튼 상태 업데이트
+            self.update_print_button_state()
             
     def process_image(self):
         if not self.current_image_path or not self.session:
@@ -738,9 +900,8 @@ class HanaStudio(QMainWindow):
         self.process_btn.setEnabled(True)
         self.export_btn.setEnabled(True)
         
-        # 프린터가 사용 가능하면 인쇄 버튼 활성화
-        if self.printer_available and self.printer_dll_path:
-            self.print_card_btn.setEnabled(True)
+        # 인쇄 버튼 상태 업데이트
+        self.update_print_button_state()
         
         self.log("✅ 배경 제거 처리 완료!")
         self.status_text.setText("처리 완료 | 결과 저장 및 인쇄 가능")
@@ -809,8 +970,7 @@ class HanaStudio(QMainWindow):
         except Exception as e:
             self.log(f"❌ 저장 오류: {e}")
             QMessageBox.critical(self, "오류", f"저장 중 오류가 발생했습니다:\n{e}")
-
-
+                              
 def main():
     # DPI 스케일링 문제 해결
     import os
