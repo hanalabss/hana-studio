@@ -19,16 +19,96 @@ from PIL import Image
 from rembg import remove, new_session
 
 # 프로젝트 모듈들
-from config import config, AppConstants
+try:
+    from config import config, AppConstants
+except ImportError:
+    try:
+        # config 인스턴스가 없는 경우 Config 클래스에서 직접 생성
+        from config import Config, AppConstants
+        config = Config()
+        print("✅ Config 클래스에서 인스턴스 생성 완료")
+    except ImportError:
+        # config.py에서 인스턴스를 찾을 수 없는 경우 기본 설정 사용
+        print("⚠️ config.py에서 설정을 로드할 수 없습니다. 기본 설정을 사용합니다.")
+        
+        class DefaultConfig:
+            def get(self, key, default=None):
+                defaults = {
+                    'alpha_threshold': 45,
+                    'output_quality': 95,
+                    'ai_model': 'isnet-general-use',
+                    'directories.temp': 'temp',
+                    'directories.output': 'output',
+                    'printer.card_width': 53.98,
+                    'printer.card_height': 85.6,
+                    'printer.dll_path': './libDSRetransfer600App.dll',
+                    'window_geometry': {'x': 100, 'y': 100, 'width': 1800, 'height': 1000},
+                    'improve_mask_quality': True,
+                    'mask_kernel_size': 3,
+                    'mask_iterations': 1
+                }
+                keys = key.split('.')
+                value = defaults
+                try:
+                    for k in keys:
+                        value = value[k]
+                    return value
+                except (KeyError, TypeError):
+                    return default
+            
+            def set(self, key, value):
+                print(f"설정 변경: {key} = {value}")
+            
+            def save_settings(self):
+                pass
+            
+            def get_image_filter(self):
+                return "이미지 파일 (*.jpg *.jpeg *.png *.bmp *.tiff);;JPEG (*.jpg *.jpeg);;PNG (*.png);;모든 파일 (*.*)"
+            
+            def is_supported_image(self, file_path):
+                from pathlib import Path
+                ext = Path(file_path).suffix.lower()
+                return ext in ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif']
+            
+            def get_ai_model_info(self, model_name):
+                models = {
+                    'isnet-general-use': {'name': '범용 모델 (권장)'},
+                    'u2net': {'name': 'U²-Net'},
+                    'u2netp': {'name': 'U²-Net (Light)'},
+                    'silueta': {'name': 'Silueta'}
+                }
+                return models.get(model_name)
+        
+        class DefaultAppConstants:
+            APP_NAME = "Hana Studio"
+            APP_VERSION = "1.0.0"
+            APP_AUTHOR = "Hana Tech"
+            APP_DESCRIPTION = "AI 기반 이미지 배경 제거 도구"
+        
+        config = DefaultConfig()
+        AppConstants = DefaultAppConstants()
 
-# 프린터 모듈 (선택적 import) - 화이트 레이어 지원 버전으로 업데이트
+# 프린터 모듈 (선택적 import) - 워터마크 지원 버전으로 업데이트
 try:
     from printer_integration import PrinterThread, find_printer_dll, test_printer_connection
     PRINTER_AVAILABLE = True
-    print("✅ 화이트 레이어 프린터 모듈 로드 성공")
+    print("✅ 워터마크 프린터 모듈 로드 성공")
 except ImportError as e:
     PRINTER_AVAILABLE = False
     print(f"⚠️ 프린터 모듈 로드 실패: {e}")
+    
+    # 프린터 모듈이 없는 경우 더미 클래스 정의
+    class DummyPrinterThread:
+        def __init__(self, *args, **kwargs):
+            pass
+    
+    def find_printer_dll():
+        return None
+    
+    def test_printer_connection():
+        return False
+    
+    PrinterThread = DummyPrinterThread
 
 
 # ===== 새로 추가된 마스크 품질 개선 함수 =====
@@ -57,7 +137,7 @@ def improve_mask_quality(mask, kernel_size=3, iterations=1):
 
 
 class ModernButton(QPushButton):
-    """기존 코드 유지 - 변경사항 없음"""
+    """현대적인 스타일의 버튼"""
     def __init__(self, text, icon_path=None, primary=False):
         super().__init__(text)
         self.primary = primary
@@ -116,7 +196,7 @@ class ModernButton(QPushButton):
 
 
 class ImageViewer(QLabel):
-    """기존 코드 유지 - 변경사항 없음"""
+    """이미지 뷰어 위젯"""
     def __init__(self, title=""):
         super().__init__()
         self.title = title
@@ -176,7 +256,7 @@ class ImageViewer(QLabel):
             self.update_display()
 
 
-# ===== ProcessingThread 클래스 - 핵심 수정 부분 =====
+# ===== ProcessingThread 클래스 - 워터마크 마스크 생성 =====
 class ProcessingThread(QThread):
     finished = Signal(np.ndarray)
     error = Signal(str)
@@ -197,18 +277,17 @@ class ProcessingThread(QThread):
             self.progress.emit("배경 제거 처리 중...")
             result = remove(input_data, session=self.session)
             
-            self.progress.emit("화이트 레이어 마스크 생성 중...")
+            self.progress.emit("워터마크 마스크 생성 중...")
             img_rgba = Image.open(io.BytesIO(result)).convert("RGBA")
             alpha = np.array(img_rgba.split()[-1])
             
-            # ===== 핵심 수정: 화이트 레이어용 마스크 생성 =====
+            # ===== 핵심 수정: 워터마크용 마스크 생성 =====
             alpha_threshold = config.get('alpha_threshold', 45)
             
-            # 올바른 마스크 생성: 객체 부분은 검은색(0) = 화이트 인쇄됨, 배경은 흰색(255) = 인쇄 안됨
-            # 기존 (배경 전체 화이트): mask = np.where(alpha > alpha_threshold, 255, 0).astype(np.uint8)
-            mask = np.where(alpha > alpha_threshold, 0, 255).astype(np.uint8)
+            # 워터마크 마스크 생성: 객체 부분은 흰색(255), 배경은 검은색(0)
+            mask = np.where(alpha > alpha_threshold, 255, 0).astype(np.uint8)
             
-            # ===== 새로 추가: 마스크 품질 개선 =====
+            # ===== 마스크 품질 개선 =====
             if config.get('improve_mask_quality', True):
                 self.progress.emit("마스크 품질 개선 중...")
                 kernel_size = config.get('mask_kernel_size', 3)
@@ -218,15 +297,15 @@ class ProcessingThread(QThread):
             # RGB 채널로 변환
             mask_rgb = cv2.merge([mask, mask, mask])
             
-            # ===== 새로 추가: 마스크 통계 계산 및 로깅 =====
+            # ===== 마스크 통계 계산 및 로깅 =====
             object_pixels = np.sum(mask > 0)
             total_pixels = mask.size
             object_ratio = (object_pixels / total_pixels) * 100
             
-            self.progress.emit(f"화이트 레이어 처리 완료! (객체 영역: {object_ratio:.1f}%)")
+            self.progress.emit(f"워터마크 처리 완료! (객체 영역: {object_ratio:.1f}%)")
             
             # 디버깅 정보 로그
-            print(f"[DEBUG] 마스크 생성 완료:")
+            print(f"[DEBUG] 워터마크 마스크 생성 완료:")
             print(f"  - 이미지 크기: {mask.shape}")
             print(f"  - 객체 픽셀: {object_pixels:,}")
             print(f"  - 전체 픽셀: {total_pixels:,}")
@@ -240,7 +319,7 @@ class ProcessingThread(QThread):
 
 
 class HanaStudio(QMainWindow):
-    """메인 애플리케이션 클래스 - 일부 메서드 수정"""
+    """메인 애플리케이션 클래스 - 워터마크 지원"""
     def __init__(self):
         super().__init__()
         self.session = None
@@ -248,7 +327,7 @@ class HanaStudio(QMainWindow):
         self.original_image = None
         self.mask_image = None
         self.composite_image = None
-        self.saved_mask_path = None  # 프린터용 마스크 파일 경로
+        self.saved_mask_path = None  # 프린터용 워터마크 파일 경로
         self.saved_color_path = None  # 프린터용 투명 배경 처리된 컬러 이미지 경로
         self.ai_result_path = None   # AI 배경 제거 결과 파일 경로 (미리보기용)
         self.ai_result_image = None  # AI 배경 제거 결과 이미지 (opencv 형태)
@@ -256,9 +335,9 @@ class HanaStudio(QMainWindow):
         # 프린터 관련 변수
         self.printer_available = PRINTER_AVAILABLE
         self.printer_dll_path = None
-        self.print_mode = "normal"  # "normal" 또는 "layered"
+        self.print_mode = "normal"  # "normal" 또는 "watermark"
         
-        # ===== 새로 추가: 임계값 슬라이더 참조 =====
+        # 임계값 슬라이더 참조
         self.threshold_slider = None
         self.threshold_label = None
         
@@ -267,8 +346,8 @@ class HanaStudio(QMainWindow):
         self.check_printer_availability()
         
     def init_ui(self):
-        """기존 코드 유지 - 변경사항 없음"""
-        self.setWindowTitle(f"{AppConstants.APP_NAME} - 화이트 레이어 지원 {AppConstants.APP_DESCRIPTION}")
+        """UI 초기화"""
+        self.setWindowTitle(f"{AppConstants.APP_NAME} - 워터마크 지원 {AppConstants.APP_DESCRIPTION}")
         
         # 설정에서 윈도우 크기 가져오기
         geometry = config.get('window_geometry')
@@ -391,7 +470,7 @@ class HanaStudio(QMainWindow):
         content_splitter.setSizes([500, 1300])
         
     def create_header(self, parent_layout):
-        """기존 코드 유지 - 변경사항 없음"""
+        """헤더 생성"""
         header_frame = QFrame()
         header_frame.setFixedHeight(80)
         header_frame.setStyleSheet("""
@@ -411,7 +490,7 @@ class HanaStudio(QMainWindow):
         title_label.setFont(QFont("Segoe UI", 24, QFont.Weight.Bold))
         title_label.setStyleSheet("color: #2C3E50;")
         
-        subtitle_label = QLabel("AI 기반 이미지 배경 제거 및 화이트 레이어 카드 인쇄 도구")
+        subtitle_label = QLabel("AI 기반 이미지 배경 제거 및 워터마크 카드 인쇄 도구")
         subtitle_label.setFont(QFont("Segoe UI", 11))
         subtitle_label.setStyleSheet("color: #7F8C8D; margin-top: 5px;")
         
@@ -425,12 +504,12 @@ class HanaStudio(QMainWindow):
         
         parent_layout.addWidget(header_frame)
         
-    # ===== create_left_panel 메서드 - 임계값 슬라이더 추가 =====
     def create_left_panel(self, splitter):
+        """좌측 패널 생성 - 워터마크 관련 UI로 수정"""
         panel = QWidget()
         layout = QVBoxLayout(panel)
 
-        # 📁 파일 선택 그룹 (기존 코드 유지)
+        # 📁 파일 선택 그룹
         file_group = QGroupBox("📁 파일 선택")
         file_layout = QVBoxLayout(file_group)
         self.select_btn = ModernButton("이미지 선택", primary=True)
@@ -444,7 +523,7 @@ class HanaStudio(QMainWindow):
         option_group = QGroupBox("⚙️ 처리 옵션")
         option_layout = QVBoxLayout(option_group)
         
-        # ===== 새로 추가: 임계값 조정 슬라이더 =====
+        # 임계값 조정 슬라이더
         threshold_layout = QHBoxLayout()
         current_threshold = config.get('alpha_threshold', 45)
         self.threshold_label = QLabel(f"알파 임계값: {current_threshold}")
@@ -465,7 +544,7 @@ class HanaStudio(QMainWindow):
         threshold_help.setWordWrap(True)
         option_layout.addWidget(threshold_help)
         
-        self.process_btn = ModernButton("화이트 레이어 생성", primary=True)
+        self.process_btn = ModernButton("워터마크 생성", primary=True)
         self.process_btn.clicked.connect(self.process_image)
         self.process_btn.setEnabled(False)
         self.export_btn = ModernButton("결과 저장")
@@ -475,15 +554,15 @@ class HanaStudio(QMainWindow):
         option_layout.addWidget(self.export_btn)
         layout.addWidget(option_group)
 
-        # 📋 인쇄 모드 그룹 (기존 코드 유지)
+        # 📋 인쇄 모드 그룹 - 워터마크 모드로 수정
         mode_group = QGroupBox("📋 인쇄 모드")
         mode_layout = QVBoxLayout(mode_group)
         self.normal_radio = QRadioButton("🖼️ 일반 인쇄")
-        self.layered_radio = QRadioButton("⚪ 화이트 레이어 인쇄")
+        self.watermark_radio = QRadioButton("💧 워터마크 인쇄")
         self.normal_radio.setChecked(True)
         self.normal_radio.toggled.connect(self.on_print_mode_changed)
         mode_layout.addWidget(self.normal_radio)
-        mode_layout.addWidget(self.layered_radio)
+        mode_layout.addWidget(self.watermark_radio)
         
         # 모드 설명 라벨
         self.mode_description_label = QLabel("📖 원본 이미지만 인쇄합니다")
@@ -497,8 +576,8 @@ class HanaStudio(QMainWindow):
         mode_layout.addWidget(self.mode_description_label)
         layout.addWidget(mode_group)
 
-        # 🖨️ 프린터 그룹 (기존 코드 유지)
-        printer_group = QGroupBox("🖨 화이트 레이어 프린터 연동")
+        # 🖨️ 프린터 그룹 - 워터마크 프린터로 수정
+        printer_group = QGroupBox("🖨 워터마크 프린터 연동")
         printer_layout = QVBoxLayout(printer_group)
         self.printer_status_label = QLabel("프린터 상태 확인 중...")
         self.printer_status_label.setStyleSheet("font-size: 10px; color: #6C757D;")
@@ -515,7 +594,7 @@ class HanaStudio(QMainWindow):
         printer_layout.addWidget(self.print_card_btn)
         layout.addWidget(printer_group)
 
-        # 📊 진행 상황 (기존 코드 유지)
+        # 📊 진행 상황
         progress_group = QGroupBox("📊 진행 상황")
         progress_layout = QVBoxLayout(progress_group)
         self.progress_bar = QProgressBar()
@@ -525,7 +604,7 @@ class HanaStudio(QMainWindow):
         progress_layout.addWidget(self.status_label)
         layout.addWidget(progress_group)
 
-        # 📝 로그 (기존 코드 유지)
+        # 📝 로그
         log_group = QGroupBox("📝 처리 로그")
         log_layout = QVBoxLayout(log_group)
         self.log_text = QTextEdit()
@@ -536,79 +615,8 @@ class HanaStudio(QMainWindow):
         layout.addStretch()
         splitter.addWidget(panel)
     
-    # ===== 새로 추가: PNG 투명 배경 처리 메서드들 =====
-    def load_image_with_transparency(self, file_path):
-        """PNG 투명 배경을 올바르게 처리하여 이미지 로드"""
-        try:
-            # 투명 정보까지 포함하여 이미지 로드
-            image = cv2.imread(file_path, cv2.IMREAD_UNCHANGED)
-            
-            if image is None:
-                raise ValueError(f"이미지를 로드할 수 없습니다: {file_path}")
-            
-            # 채널 수에 따른 처리
-            if len(image.shape) == 2:
-                # 그레이스케일 → BGR로 변환
-                image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
-                self.log("그레이스케일 이미지를 BGR로 변환")
-                
-            elif image.shape[2] == 3:
-                # BGR (투명 배경 없음)
-                self.log("일반 BGR 이미지")
-                
-            elif image.shape[2] == 4:
-                # BGRA (투명 배경 있음)
-                self.log("BGRA 이미지 (투명 배경 포함)")
-                # 투명 배경 처리는 create_transparent_background_image에서
-                
-            return image
-            
-        except Exception as e:
-            self.log(f"❌ 이미지 로드 오류: {e}")
-            # 실패 시 기본 방식으로 로드
-            return cv2.imread(file_path)
-    
-    def create_transparent_background_image(self, original_bgra):
-        """투명 배경 PNG를 인쇄용으로 변환"""
-        try:
-            if original_bgra.shape[2] != 4:
-                # 투명 배경이 없으면 그대로 반환
-                return original_bgra
-            
-            # BGRA를 BGR + Alpha로 분리
-            bgr = original_bgra[:, :, :3]
-            alpha = original_bgra[:, :, 3]
-            
-            # 완전히 투명한 부분 찾기 (알파값이 0인 부분)
-            transparent_mask = alpha == 0
-            
-            # 투명한 부분을 제거하여 객체만 남김
-            # 방법 1: 투명 부분을 검은색으로 만들어서 인쇄하지 않게 함
-            result = bgr.copy()
-            result[transparent_mask] = [0, 0, 0]  # 투명 부분을 검은색으로
-            
-            self.log("✅ 투명 배경을 검은색으로 변환 (인쇄되지 않음)")
-            return result
-            
-        except Exception as e:
-            self.log(f"❌ 투명 배경 처리 오류: {e}")
-            return original_bgra[:, :, :3] if original_bgra.shape[2] == 4 else original_bgra
-    def on_threshold_changed(self, value):
-        """임계값 변경 시 호출"""
-        config.set('alpha_threshold', value)
-        
-        # 라벨 업데이트
-        if self.threshold_label:
-            self.threshold_label.setText(f"알파 임계값: {value}")
-        
-        self.log(f"임계값 변경: {value}")
-        
-        # 이미지가 로드되어 있으면 자동 재처리 (선택사항)
-        if self.current_image_path and config.get('auto_reprocess', False):
-            self.process_image()
-    
     def create_right_panel(self, parent_splitter):
-        """기존 코드 유지 - 변경사항 없음"""
+        """우측 패널 생성 - 워터마크 뷰어로 수정"""
         right_panel = QWidget()
         right_panel.setStyleSheet("background-color: #F8F9FA;")
         right_layout = QVBoxLayout(right_panel)
@@ -622,12 +630,12 @@ class HanaStudio(QMainWindow):
         self.original_viewer = ImageViewer("📷 원본 이미지")
         viewer_layout.addWidget(self.original_viewer, 0, 0)
         
-        # 화이트 레이어 마스크 이미지  
-        self.mask_viewer = ImageViewer("⚪ 화이트 레이어 마스크")
+        # 워터마크 마스크 이미지  
+        self.mask_viewer = ImageViewer("💧 워터마크 마스크")
         viewer_layout.addWidget(self.mask_viewer, 0, 1)
         
         # 합성 이미지
-        self.composite_viewer = ImageViewer("✨ 합성 미리보기 (화이트+컬러)")
+        self.composite_viewer = ImageViewer("✨ 합성 미리보기 (워터마크+컬러)")
         viewer_layout.addWidget(self.composite_viewer, 1, 0, 1, 2)
         
         # 그리드 비율 설정
@@ -640,7 +648,7 @@ class HanaStudio(QMainWindow):
         parent_splitter.addWidget(right_panel)
         
     def create_status_bar(self, parent_layout):
-        """기존 코드 유지 - 변경사항 없음"""
+        """하단 상태바 생성"""
         status_frame = QFrame()
         status_frame.setFixedHeight(40)
         status_frame.setStyleSheet("""
@@ -660,22 +668,22 @@ class HanaStudio(QMainWindow):
         status_layout.addWidget(self.status_text)
         status_layout.addStretch()
         
-        version_label = QLabel("Hana Studio v1.0 - 화이트 레이어 지원")
+        version_label = QLabel("Hana Studio v1.0 - 워터마크 지원")
         version_label.setStyleSheet("color: #ADB5BD; font-size: 10px;")
         status_layout.addWidget(version_label)
         
         parent_layout.addWidget(status_frame)
     
     def check_printer_availability(self):
-        """기존 코드 유지 - 변경사항 없음"""
+        """프린터 사용 가능 여부 확인"""
         if not self.printer_available:
-            self.printer_status_label.setText("⚠️ 화이트 레이어 프린터 사용 불가")
+            self.printer_status_label.setText("⚠️ 워터마크 프린터 사용 불가")
             return
         def check():
             try:
                 self.printer_dll_path = find_printer_dll()
                 if self.printer_dll_path:
-                    self.printer_status_label.setText("✅ 화이트 레이어 프린터 사용 가능")
+                    self.printer_status_label.setText("✅ 워터마크 프린터 사용 가능")
                     self.test_printer_btn.setEnabled(True)
                 else:
                     self.printer_status_label.setText("❌ DLL 파일 없음")
@@ -687,7 +695,7 @@ class HanaStudio(QMainWindow):
 
         
     def init_ai_model(self):
-        """기존 코드 유지 - 변경사항 없음"""
+        """AI 모델 초기화"""
         def load_model():
             try:
                 model_name = config.get('ai_model', 'isnet-general-use')
@@ -707,43 +715,42 @@ class HanaStudio(QMainWindow):
         threading.Thread(target=load_model, daemon=True).start()
     
     def on_print_mode_changed(self):
-        """인쇄 모드 변경 - 화이트 레이어 인쇄 방식 명확화"""
+        """인쇄 모드 변경 - 워터마크 인쇄 방식으로 변경"""
         if self.normal_radio.isChecked():
             self.print_mode = "normal"
-            self.mode_description_label.setText("📖 컬러(YMCK)만 인쇄 - 화이트 레이어 없음")
+            self.mode_description_label.setText("📖 컬러(YMCK)만 인쇄 - 워터마크 없음")
             self.print_card_btn.setText("컬러 카드 인쇄")
         else:
-            self.print_mode = "layered"
-            self.mode_description_label.setText("📖 1단계: 마스킹 부분만 화이트 → 2단계: 전체에 컬러")
-            self.print_card_btn.setText("화이트 레이어 카드 인쇄")
+            self.print_mode = "watermark"
+            self.mode_description_label.setText("📖 워터마크 배경 위에 컬러 이미지 인쇄")
+            self.print_card_btn.setText("워터마크 카드 인쇄")
         self.update_print_button_state()
         
-        mode_text = "컬러만 인쇄" if self.print_mode == "normal" else "부분 화이트 + 전체 컬러"
+        mode_text = "컬러만 인쇄" if self.print_mode == "normal" else "워터마크 + 컬러"
         self.log(f"인쇄 모드 변경: {mode_text}")
 
     def update_print_button_state(self):
-        """인쇄 버튼 활성화 상태 업데이트 - 일반 인쇄 모드 간소화"""
+        """인쇄 버튼 활성화 상태 업데이트"""
         if not self.printer_available or not self.printer_dll_path:
             self.print_card_btn.setEnabled(False)
             return
         
         if self.print_mode == "normal":
-            # 일반 인쇄(컬러만): 원본 이미지만 필요
+            # 일반 인쇄: 원본 이미지만 필요
             can_print = self.current_image_path is not None
             
-            # ===== 새로 추가: 투명 배경 이미지 감지 시 권장 메시지 =====
             if can_print and hasattr(self, 'ai_result_image') and self.ai_result_image is not None:
                 self.log("✅ 투명 배경 이미지 + 일반 인쇄 모드: 완벽한 조합!")
                 
         else:
-            # 화이트 레이어 인쇄: 원본 이미지 + 화이트 레이어 마스크 필요
+            # 워터마크 인쇄: 원본 이미지 + 워터마크 마스크 필요
             can_print = (self.current_image_path is not None and 
                         self.mask_image is not None)
         
         self.print_card_btn.setEnabled(can_print)
     
     def test_printer_connection(self):
-        """기존 코드 유지 - 변경사항 없음"""
+        """프린터 연결 테스트"""
         if not self.printer_available or not self.printer_dll_path:
             QMessageBox.warning(self, "경고", "프린터 DLL을 찾을 수 없습니다.")
             return
@@ -754,12 +761,12 @@ class HanaStudio(QMainWindow):
         def test_connection():
             try:
                 if test_printer_connection():
-                    self.log("✅ 화이트 레이어 프린터 연결 테스트 성공!")
-                    self.printer_status_label.setText("✅ 화이트 레이어 프린터 연결 가능")
+                    self.log("✅ 워터마크 프린터 연결 테스트 성공!")
+                    self.printer_status_label.setText("✅ 워터마크 프린터 연결 가능")
                     self.print_card_btn.setEnabled(True)
-                    QMessageBox.information(self, "성공", "화이트 레이어 프린터 연결 테스트가 성공했습니다!")
+                    QMessageBox.information(self, "성공", "워터마크 프린터 연결 테스트가 성공했습니다!")
                 else:
-                    self.log("❌ 화이트 레이어 프린터 연결 테스트 실패")
+                    self.log("❌ 워터마크 프린터 연결 테스트 실패")
                     self.printer_status_label.setText("❌ 프린터 연결 실패")
                     QMessageBox.warning(self, "실패", "프린터를 찾을 수 없습니다.\n프린터가 켜져 있고 네트워크에 연결되어 있는지 확인해주세요.")
             except Exception as e:
@@ -773,7 +780,7 @@ class HanaStudio(QMainWindow):
         threading.Thread(target=test_connection, daemon=True).start()
     
     def print_card(self):
-        """기존 코드 유지 - 변경사항 없음"""
+        """카드 인쇄 - 워터마크 모드 지원"""
         if not self.printer_available or not self.printer_dll_path:
             QMessageBox.warning(self, "경고", "프린터를 사용할 수 없습니다.")
             return
@@ -783,26 +790,25 @@ class HanaStudio(QMainWindow):
             return
         
         # 인쇄 모드별 확인
-        if self.print_mode == "layered":
+        if self.print_mode == "watermark":
             if self.mask_image is None:
-                QMessageBox.warning(self, "경고", "화이트 레이어 인쇄를 위해서는 화이트 레이어 생성을 먼저 실행해주세요.")
+                QMessageBox.warning(self, "경고", "워터마크 인쇄를 위해서는 워터마크 생성을 먼저 실행해주세요.")
                 return
             
-            # 화이트 레이어 마스크가 저장되지 않은 경우 임시 저장
+            # 워터마크 마스크가 저장되지 않은 경우 임시 저장
             if not self.saved_mask_path or not os.path.exists(self.saved_mask_path):
                 if not self.save_mask_for_printing():
                     return
         
-        # ===== 인쇄 확인 다이얼로그 - 정확한 설명 =====
-        mode_text = "컬러만 인쇄 (YMCK)" if self.print_mode == "normal" else "화이트 레이어 + 컬러 인쇄"
+        # 인쇄 확인 다이얼로그
+        mode_text = "컬러만 인쇄 (YMCK)" if self.print_mode == "normal" else "워터마크 + 컬러 인쇄"
         detail_text = f"원본 이미지: {os.path.basename(self.current_image_path)}\n"
         
-        if self.print_mode == "layered":
-            detail_text += f"1단계 (W): 마스킹된 부분만 화이트 인쇄\n"
-            detail_text += f"2단계 (YMCK): 원본 이미지 전체를 컬러 인쇄\n"
-            detail_text += f"결과: 마스킹 부분=선명한 컬러, 나머지=홀로+컬러\n"
+        if self.print_mode == "watermark":
+            detail_text += f"워터마크: 배경에 마스킹된 패턴 인쇄\n"
+            detail_text += f"컬러: 워터마크 위에 컬러 이미지 인쇄\n"
         else:
-            detail_text += f"컬러 인쇄: 원본 이미지 전체 (화이트 없음)\n"
+            detail_text += f"컬러 인쇄: 원본 이미지 전체 (워터마크 없음)\n"
         
         detail_text += f"인쇄 모드: {mode_text}"
         
@@ -823,23 +829,23 @@ class HanaStudio(QMainWindow):
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, 0)  # 무한 진행바
         
-        # 프린터 스레드 시작 (화이트 레이어 지원 + 투명 배경 처리)
+        # 프린터 스레드 시작
         if self.print_mode == "normal":
-            # 일반 인쇄: 마스크 없이, 하지만 투명 배경 처리된 이미지 사용
+            # 일반 인쇄: 마스크 없이
             print_image_path = getattr(self, 'saved_color_path', self.current_image_path)
             self.printer_thread = PrinterThread(
                 self.printer_dll_path,
                 print_image_path,
-                None,  # 마스크 없음
+                None,  # 워터마크 없음
                 self.print_mode
             )
         else:
-            # 화이트 레이어 인쇄: 화이트 레이어 마스크 + 투명 배경 처리된 컬러 이미지
+            # 워터마크 인쇄
             print_image_path = getattr(self, 'saved_color_path', self.current_image_path)
             self.printer_thread = PrinterThread(
                 self.printer_dll_path,
-                print_image_path,  # 투명 배경 처리된 이미지
-                self.saved_mask_path,  # 화이트 레이어 마스크
+                print_image_path,
+                self.saved_mask_path,  # 워터마크 마스크
                 self.print_mode
             )
         
@@ -849,29 +855,25 @@ class HanaStudio(QMainWindow):
         self.printer_thread.start()
     
     def save_mask_for_printing(self) -> bool:
-        """화이트 레이어 인쇄용 파일 생성 - 부분 화이트 + 전체 컬러"""
+        """워터마크 인쇄용 파일 생성"""
         try:
-            # temp 폴더에 화이트 레이어 마스크 저장
+            # temp 폴더에 워터마크 마스크 저장
             temp_dir = config.get('directories.temp', 'temp')
             os.makedirs(temp_dir, exist_ok=True)
             
             base_name = os.path.splitext(os.path.basename(self.current_image_path))[0]
-            mask_filename = f"{base_name}_white_layer.jpg"
+            mask_filename = f"{base_name}_watermark.jpg"
             self.saved_mask_path = os.path.join(temp_dir, mask_filename)
             
-            # 화이트 레이어 마스크 저장 (검은색 부분만 화이트 인쇄됨)
+            # 워터마크 마스크 저장
             quality = config.get('output_quality', 95)
             cv2.imwrite(self.saved_mask_path, self.mask_image, [cv2.IMWRITE_JPEG_QUALITY, quality])
             
-            # ===== 컬러 레이어: 원본 이미지 전체 사용 =====
-            # 전체 영역에 YMCK 컬러 인쇄 (화이트 위에도 덮어쓰기)
+            # 컬러 레이어: 원본 이미지 사용
             self.saved_color_path = self.current_image_path
             
-            self.log(f"✅ 화이트 레이어 마스크 저장: {self.saved_mask_path}")
-            self.log("   → 검은색 부분만 화이트 인쇄")
-            self.log(f"✅ 컬러 레이어: 원본 이미지 전체")
-            self.log("   → 전체 영역에 YMCK 인쇄 (화이트 위에 덮어쓰기)")
-            self.log("🎯 최종 결과: 마스킹 부분=선명한 컬러, 나머지=홀로+컬러")
+            self.log(f"✅ 워터마크 마스크 저장: {self.saved_mask_path}")
+            self.log(f"✅ 컬러 레이어: 원본 이미지")
             return True
             
         except Exception as e:
@@ -880,30 +882,30 @@ class HanaStudio(QMainWindow):
             return False
     
     def on_printer_progress(self, message):
-        """기존 코드 유지 - 변경사항 없음"""
+        """프린터 진행상황 업데이트"""
         self.status_label.setText(message)
         self.log(message)
     
     def on_printer_finished(self, success):
-        """기존 코드 유지 - 변경사항 없음"""
+        """프린터 작업 완료"""
         self.progress_bar.setVisible(False)
         self.print_card_btn.setEnabled(True)
         
-        mode_text = "일반 인쇄" if self.print_mode == "normal" else "화이트 레이어 인쇄"
+        mode_text = "일반 인쇄" if self.print_mode == "normal" else "워터마크 인쇄"
         
         if success:
             self.log(f"✅ {mode_text} 완료!")
             self.status_text.setText("인쇄 완료")
             success_msg = f"{mode_text}가 완료되었습니다!"
-            if self.print_mode == "layered":
-                success_msg += "\n화이트 레이어가 먼저 인쇄되고, 컬러가 위에 인쇄되었습니다."
+            if self.print_mode == "watermark":
+                success_msg += "\n워터마크 배경 위에 컬러 이미지가 인쇄되었습니다."
             QMessageBox.information(self, "성공", success_msg)
         else:
             self.log(f"❌ {mode_text} 실패")
             self.status_text.setText("인쇄 실패")
     
     def on_printer_error(self, error_message):
-        """기존 코드 유지 - 변경사항 없음"""
+        """프린터 오류 처리"""
         self.progress_bar.setVisible(False)
         self.print_card_btn.setEnabled(True)
         self.log(f"❌ 프린터 오류: {error_message}")
@@ -911,18 +913,18 @@ class HanaStudio(QMainWindow):
         QMessageBox.critical(self, "인쇄 오류", f"카드 인쇄 중 오류가 발생했습니다:\n\n{error_message}")
         
     def log(self, message):
-        """기존 코드 유지 - 변경사항 없음"""
+        """로그 메시지 추가"""
         self.log_text.append(f"[{self.get_timestamp()}] {message}")
         self.log_text.verticalScrollBar().setValue(
             self.log_text.verticalScrollBar().maximum()
         )
         
     def get_timestamp(self):
-        """기존 코드 유지 - 변경사항 없음"""
+        """현재 시간 문자열 반환"""
         return datetime.now().strftime("%H:%M:%S")
         
     def select_image(self):
-        """이미지 선택 - PNG 투명 배경 지원 추가"""
+        """이미지 선택"""
         file_path, _ = QFileDialog.getOpenFileName(
             self, 
             "이미지 선택", 
@@ -950,32 +952,32 @@ class HanaStudio(QMainWindow):
             # 원본 이미지 표시
             self.original_viewer.set_image(file_path)
             
-            # ===== PNG 투명 배경 지원으로 수정 =====
-            self.original_image = self.load_image_with_transparency(file_path)
+            # 이미지 로드
+            self.original_image = cv2.imread(file_path, cv2.IMREAD_UNCHANGED)
             
             # 투명 배경 정보 로깅
-            if self.original_image.shape[2] == 4:
+            if len(self.original_image.shape) == 3 and self.original_image.shape[2] == 4:
                 self.log("✅ PNG 투명 배경이 감지되었습니다")
             else:
                 self.log("📷 일반 이미지 (투명 배경 없음)")
             
             self.process_btn.setEnabled(True)
-            self.status_text.setText("이미지 로드 완료 | 화이트 레이어 생성 대기 중")
+            self.status_text.setText("이미지 로드 완료 | 워터마크 생성 대기 중")
             
             # 이전 결과 초기화
             self.mask_image = None
             self.composite_image = None
             self.saved_mask_path = None
-            self.saved_color_path = None  # 투명 배경 처리된 이미지 경로도 초기화
-            self.ai_result_path = None    # AI 결과 경로 초기화
-            self.ai_result_image = None   # AI 결과 이미지 초기화
+            self.saved_color_path = None
+            self.ai_result_path = None
+            self.ai_result_image = None
             self.export_btn.setEnabled(False)
             
             # 인쇄 버튼 상태 업데이트
             self.update_print_button_state()
             
     def process_image(self):
-        """기존 코드 유지 - 변경사항 없음"""
+        """이미지 처리 시작"""
         if not self.current_image_path or not self.session:
             return
             
@@ -991,22 +993,21 @@ class HanaStudio(QMainWindow):
         self.processing_thread.start()
         
     def on_processing_progress(self, message):
-        """기존 코드 유지 - 변경사항 없음"""
+        """처리 진행상황 업데이트"""
         self.status_label.setText(message)
         self.log(message)
         
-    # ===== on_processing_finished 메서드 - AI 결과 이미지도 저장 =====
     def on_processing_finished(self, mask_array):
-        """처리 완료 시 호출되는 메서드 - AI 배경 제거 결과도 함께 저장"""
+        """처리 완료"""
         self.mask_image = mask_array
         
-        # 화이트 레이어 마스크 표시
+        # 워터마크 마스크 표시
         self.mask_viewer.set_image(mask_array)
         
-        # ===== 새로 추가: AI 배경 제거 결과 이미지 저장 =====
+        # AI 배경 제거 결과 저장
         self.save_ai_result_for_preview()
         
-        # ===== 새로 추가: 마스크 통계 정보 표시 =====
+        # 마스크 통계 정보 표시
         self.display_mask_statistics(mask_array)
         
         # 합성 이미지 생성 및 표시
@@ -1019,10 +1020,9 @@ class HanaStudio(QMainWindow):
         # 인쇄 버튼 상태 업데이트
         self.update_print_button_state()
         
-        self.log("✅ 화이트 레이어 생성 완료!")
-        self.status_text.setText("화이트 레이어 생성 완료 | 결과 저장 및 인쇄 가능")
+        self.log("✅ 워터마크 생성 완료!")
+        self.status_text.setText("워터마크 생성 완료 | 결과 저장 및 인쇄 가능")
 
-    # ===== 새로 추가: AI 배경 제거 결과를 미리보기용으로 저장 =====
     def save_ai_result_for_preview(self):
         """AI 배경 제거 결과를 미리보기용으로 저장"""
         try:
@@ -1053,7 +1053,6 @@ class HanaStudio(QMainWindow):
             self.log(f"⚠️ AI 결과 저장 실패: {e}")
             self.ai_result_image = None
 
-    # ===== 새로 추가: 마스크 통계 표시 메서드 =====
     def display_mask_statistics(self, mask_array):
         """마스크 통계 정보를 UI에 표시"""
         try:
@@ -1065,22 +1064,22 @@ class HanaStudio(QMainWindow):
             
             # 통계 계산
             total_pixels = mask_gray.size
-            black_pixels = np.sum(mask_gray < 128)  # 검은색 픽셀 (화이트 인쇄될 객체 부분)
-            white_pixels = total_pixels - black_pixels  # 흰색 픽셀 (투명 배경 부분)
+            white_pixels = np.sum(mask_gray > 128)  # 흰색 픽셀 (워터마크 인쇄될 객체 부분)
+            black_pixels = total_pixels - white_pixels  # 검은색 픽셀 (배경 부분)
             
-            black_ratio = (black_pixels / total_pixels) * 100
             white_ratio = (white_pixels / total_pixels) * 100
+            black_ratio = (black_pixels / total_pixels) * 100
             
             # 로그에 상세 정보 출력
-            self.log(f"📊 마스크 통계:")
+            self.log(f"📊 워터마크 마스크 통계:")
             self.log(f"   전체 픽셀: {total_pixels:,}")
-            self.log(f"   객체 영역 (화이트 인쇄): {black_pixels:,} ({black_ratio:.1f}%)")
-            self.log(f"   배경 영역 (투명): {white_pixels:,} ({white_ratio:.1f}%)")
+            self.log(f"   객체 영역 (워터마크): {white_pixels:,} ({white_ratio:.1f}%)")
+            self.log(f"   배경 영역 (투명): {black_pixels:,} ({black_ratio:.1f}%)")
             
             # 마스크 품질 평가
-            if black_ratio < 5:
+            if white_ratio < 5:
                 self.log("⚠️ 객체 영역이 매우 작습니다. 임계값을 낮춰보세요.")
-            elif black_ratio > 80:
+            elif white_ratio > 80:
                 self.log("⚠️ 객체 영역이 매우 큽니다. 임계값을 높이거나 다른 이미지를 사용해보세요.")
             else:
                 self.log("✅ 적절한 객체 영역 비율입니다.")
@@ -1089,18 +1088,17 @@ class HanaStudio(QMainWindow):
             self.log(f"마스크 통계 계산 오류: {e}")
         
     def on_processing_error(self, error_message):
-        """기존 코드 유지 - 변경사항 없음"""
+        """처리 오류 처리"""
         self.progress_bar.setVisible(False)
         self.process_btn.setEnabled(True)
-        self.log(f"❌ 화이트 레이어 생성 오류: {error_message}")
+        self.log(f"❌ 워터마크 생성 오류: {error_message}")
         self.status_text.setText("오류 발생 | 다시 시도해주세요")
         
-    # ===== create_composite_preview 메서드 - AI 결과 이미지 사용 =====
     def create_composite_preview(self):
-        """개선된 합성 미리보기 생성 - AI 배경 제거 결과 사용"""
+        """합성 미리보기 생성 - 워터마크 시각화"""
         if self.mask_image is not None:
             try:
-                # ===== AI 배경 제거 결과 이미지 사용 =====
+                # AI 배경 제거 결과 이미지 사용
                 if hasattr(self, 'ai_result_image') and self.ai_result_image is not None:
                     # AI 결과 이미지가 있으면 사용
                     if self.ai_result_image.shape[2] == 4:
@@ -1108,44 +1106,55 @@ class HanaStudio(QMainWindow):
                         bgr = self.ai_result_image[:, :, :3]
                         alpha = self.ai_result_image[:, :, 3]
                         
-                        # 투명 부분을 검은색으로 변환 (홀로카드 효과 시뮬레이션)
+                        # 투명 부분을 검은색으로 변환
                         transparent_mask = alpha < 128
                         display_image = bgr.copy()
-                        display_image[transparent_mask] = [0, 0, 0]  # 검은색 = 홀로 효과
+                        display_image[transparent_mask] = [0, 0, 0]  # 검은색
                         
-                        self.log("🎨 AI 배경 제거 결과로 미리보기 생성 (검은색 = 홀로 효과)")
+                        self.log("🎨 AI 배경 제거 결과로 미리보기 생성")
                     else:
                         display_image = self.ai_result_image.copy()
                 else:
-                    # AI 결과가 없으면 원본 사용 (fallback)
-                    if self.original_image.shape[2] == 4:
-                        display_image = self.create_transparent_background_image(self.original_image)
-                    else:
-                        display_image = self.original_image.copy()
+                    # AI 결과가 없으면 원본 사용
+                    display_image = self.original_image.copy()
                 
-                # 화이트 레이어 시각화를 위한 합성 미리보기
+                # 워터마크 시각화를 위한 합성 미리보기
                 composite = display_image.copy()
                 
-                # 마스크를 빨간색으로 오버레이하여 화이트 레이어 영역 표시
+                # 마스크를 파란색으로 오버레이하여 워터마크 영역 표시
                 mask_gray = cv2.cvtColor(self.mask_image, cv2.COLOR_RGB2GRAY)
                 
-                # 화이트 인쇄될 영역(검은색 부분)을 빨간색으로 표시
-                red_overlay = np.zeros_like(composite)
-                red_overlay[:, :, 2] = 255 - mask_gray  # 검은색 부분을 빨간색으로 (반전)
+                # 워터마크 인쇄될 영역(흰색 부분)을 파란색으로 표시
+                blue_overlay = np.zeros_like(composite)
+                blue_overlay[:, :, 0] = mask_gray  # 파란색 채널에 마스크 적용
                 
                 # 반투명 오버레이
-                composite = cv2.addWeighted(composite, 0.7, red_overlay, 0.3, 0)
+                composite = cv2.addWeighted(composite, 0.7, blue_overlay, 0.3, 0)
                 
                 self.composite_image = composite
                 self.composite_viewer.set_image(composite)
                 
-                self.log("🎨 합성 미리보기: 빨간색=화이트인쇄, 검은색=홀로효과")
+                self.log("🎨 합성 미리보기: 파란색=워터마크영역")
                 
             except Exception as e:
                 self.log(f"합성 미리보기 생성 오류: {e}")
+
+    def on_threshold_changed(self, value):
+        """임계값 변경 시 호출"""
+        config.set('alpha_threshold', value)
+        
+        # 라벨 업데이트
+        if self.threshold_label:
+            self.threshold_label.setText(f"알파 임계값: {value}")
+        
+        self.log(f"임계값 변경: {value}")
+        
+        # 이미지가 로드되어 있으면 자동 재처리 (선택사항)
+        if self.current_image_path and config.get('auto_reprocess', False):
+            self.process_image()
             
     def export_results(self):
-        """기존 코드 유지 - 변경사항 없음"""
+        """결과 내보내기"""
         if self.mask_image is None:
             return
             
@@ -1163,8 +1172,8 @@ class HanaStudio(QMainWindow):
             base_name = os.path.splitext(os.path.basename(self.current_image_path))[0]
             quality = config.get('output_quality', 95)
             
-            # 화이트 레이어 마스크 저장
-            mask_path = os.path.join(folder_path, f"{base_name}_white_layer.jpg")
+            # 워터마크 마스크 저장
+            mask_path = os.path.join(folder_path, f"{base_name}_watermark.jpg")
             cv2.imwrite(mask_path, self.mask_image, [cv2.IMWRITE_JPEG_QUALITY, quality])
             
             # 합성 이미지 저장 (있는 경우)
@@ -1178,14 +1187,14 @@ class HanaStudio(QMainWindow):
                 original_path = os.path.join(folder_path, f"{base_name}_original{Path(self.current_image_path).suffix}")
                 shutil.copy2(self.current_image_path, original_path)
             
-            self.log(f"✅ 화이트 레이어 결과 저장 완료: {folder_path}")
+            self.log(f"✅ 워터마크 결과 저장 완료: {folder_path}")
             self.status_text.setText("저장 완료")
             
             # 성공 메시지 표시
             QMessageBox.information(
                 self, 
                 "저장 완료", 
-                f"화이트 레이어 처리 결과가 저장되었습니다.\n위치: {folder_path}"
+                f"워터마크 처리 결과가 저장되었습니다.\n위치: {folder_path}"
             )
             
         except Exception as e:
@@ -1193,9 +1202,13 @@ class HanaStudio(QMainWindow):
             QMessageBox.critical(self, "오류", f"저장 중 오류가 발생했습니다:\n{e}")
                               
 def main():
-    """기존 코드 유지 - 변경사항 없음"""
-    # DPI 스케일링 문제 해결
+    """메인 함수"""
+    # 필요한 디렉토리 생성
     import os
+    for dir_name in ['temp', 'output', 'models', 'logs']:
+        os.makedirs(dir_name, exist_ok=True)
+    
+    # DPI 스케일링 문제 해결
     os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
     os.environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "Floor"
     os.environ["QT_FONT_DPI"] = "96"

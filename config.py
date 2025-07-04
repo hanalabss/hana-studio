@@ -40,6 +40,22 @@ class Config:
             'card_height': 85.6,
             'timeout_ms': 10000,
             'auto_detect': True
+        },
+        'watermark': {
+            'threshold': 128,
+            'thickness': 128,
+            'rotation': 0,
+            'need_mirror': False,
+            'improve_mask_quality': True,
+            'mask_kernel_size': 3,
+            'mask_iterations': 1
+        },
+        'processing': {
+            'auto_reprocess': False,
+            'auto_save_original': False,
+            'improve_mask_quality': True,
+            'mask_kernel_size': 3,
+            'mask_iterations': 1
         }
     }
     
