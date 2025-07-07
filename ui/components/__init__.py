@@ -8,6 +8,7 @@ from .control_panels import (
     FileSelectionPanel,
     ProcessingOptionsPanel,
     PrintModePanel,
+    PrintQuantityPanel,  # 새로 추가
     PrinterPanel,
     ProgressPanel,
     LogPanel
@@ -19,6 +20,7 @@ __all__ = [
     'FileSelectionPanel',
     'ProcessingOptionsPanel',
     'PrintModePanel',
+    'PrintQuantityPanel',  # 새로 추가
     'PrinterPanel',
     'ProgressPanel',
     'LogPanel'

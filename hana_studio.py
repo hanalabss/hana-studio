@@ -1,5 +1,5 @@
 """
-Hana Studio 메인 애플리케이션 클래스 - 양면 인쇄 지원
+Hana Studio 메인 애플리케이션 클래스 - 양면 인쇄 및 여러장 인쇄 지원
 """
 
 import os
@@ -15,11 +15,12 @@ from PySide6.QtCore import Qt
 from ui import HanaStudioMainWindow, get_app_style
 from core import ImageProcessor, ProcessingThread, FileManager
 from printer import PrinterThread, find_printer_dll, test_printer_connection
+from printer.printer_thread import print_manager
 from config import config, AppConstants
 
 
 class HanaStudio(QMainWindow):
-    """Hana Studio 메인 애플리케이션 클래스 - 양면 인쇄 지원"""
+    """Hana Studio 메인 애플리케이션 클래스 - 양면 인쇄 및 여러장 인쇄 지원"""
     
     def __init__(self):
         super().__init__()
@@ -35,6 +36,7 @@ class HanaStudio(QMainWindow):
         self.back_saved_mask_path = None
         self.print_mode = "normal"
         self.is_dual_side = False
+        self.print_quantity = 1  # 인쇄 매수 추가
         
         # 코어 모듈들
         self.image_processor = ImageProcessor()
@@ -43,6 +45,7 @@ class HanaStudio(QMainWindow):
         # 프린터 관련
         self.printer_available = False
         self.printer_dll_path = None
+        self.current_printer_thread = None
         
         # UI 초기화
         self.ui = HanaStudioMainWindow(self)
@@ -52,7 +55,7 @@ class HanaStudio(QMainWindow):
         
     def _setup_window(self):
         """윈도우 기본 설정"""
-        self.setWindowTitle(f"{AppConstants.APP_NAME} - 양면 카드 인쇄 지원")
+        self.setWindowTitle(f"{AppConstants.APP_NAME} - 양면 및 여러장 카드 인쇄 지원")
         
         # 윈도우 크기 설정
         geometry = config.get('window_geometry')
@@ -85,6 +88,9 @@ class HanaStudio(QMainWindow):
         
         # 인쇄 모드
         components['print_mode_panel'].mode_changed.connect(self.on_print_mode_changed)
+        
+        # 인쇄 매수 - 새로 추가
+        components['print_quantity_panel'].quantity_changed.connect(self.on_print_quantity_changed)
         
         # 프린터
         components['printer_panel'].test_requested.connect(self.test_printer_connection)
@@ -184,12 +190,42 @@ class HanaStudio(QMainWindow):
             self.ui.components['back_result_viewer'].clear_image()
         
         # 인쇄 버튼 텍스트 업데이트
-        self.ui.components['printer_panel'].update_print_button_text(self.print_mode, checked)
+        self.ui.components['printer_panel'].update_print_button_text(
+            self.print_mode, checked, self.print_quantity
+        )
         
         mode_text = "양면 인쇄" if checked else "단면 인쇄"
         self.log(f"인쇄 방식 변경: {mode_text}")
         
         self._update_ui_state()
+    
+    def on_print_mode_changed(self, mode):
+        """인쇄 모드 변경"""
+        self.print_mode = mode
+        self.ui.components['printer_panel'].update_print_button_text(
+            mode, self.is_dual_side, self.print_quantity
+        )
+        self._update_print_button_state()
+        
+        mode_text = '일반 인쇄' if mode == 'normal' else '레이어 인쇄(YMCW)'
+        self.log(f"인쇄 모드 변경: {mode_text}")
+    
+    def on_print_quantity_changed(self, quantity):
+        """인쇄 매수 변경 - 새로 추가"""
+        self.print_quantity = quantity
+        self.ui.components['printer_panel'].update_print_button_text(
+            self.print_mode, self.is_dual_side, quantity
+        )
+        
+        self.log(f"인쇄 매수 변경: {quantity}장")
+        
+        # 상태 메시지 업데이트
+        if self.front_image_path:
+            if quantity > 1:
+                status = f"{'양면' if self.is_dual_side else '단면'} {quantity}장 인쇄 준비 완료"
+            else:
+                status = f"{'양면' if self.is_dual_side else '단면'} 인쇄 준비 완료"
+            self.ui.components['status_text'].setText(status)
     
     def _update_ui_state(self):
         """UI 상태 업데이트"""
@@ -204,7 +240,9 @@ class HanaStudio(QMainWindow):
         
         # 상태 메시지 업데이트
         if can_process:
-            if self.is_dual_side:
+            if self.print_quantity > 1:
+                status = f"{'양면' if self.is_dual_side else '단면'} {self.print_quantity}장 인쇄 준비 완료"
+            elif self.is_dual_side:
                 status = "양면 인쇄 준비 완료" if self.back_image_path else "양면 인쇄 준비 (뒷면 이미지 선택사항)"
             else:
                 status = "단면 인쇄 준비 완료"
@@ -390,18 +428,14 @@ class HanaStudio(QMainWindow):
             self.log(f"❌ {error_msg}")
             QMessageBox.critical(self, "저장 오류", error_msg)
     
-    def on_print_mode_changed(self, mode):
-        """인쇄 모드 변경"""
-        self.print_mode = mode
-        self.ui.components['printer_panel'].update_print_button_text(mode, self.is_dual_side)
-        self._update_print_button_state()
-        
-        mode_text = '일반 인쇄' if mode == 'normal' else '레이어 인쇄(YMCW)'
-        self.log(f"인쇄 모드 변경: {mode_text}")
-    
     def _update_print_button_state(self):
         """인쇄 버튼 상태 업데이트"""
         if not self.printer_available or not self.printer_dll_path:
+            self.ui.components['printer_panel'].set_print_enabled(False)
+            return
+        
+        # 인쇄 중인 경우 비활성화
+        if print_manager.get_print_status()['is_printing']:
             self.ui.components['printer_panel'].set_print_enabled(False)
             return
         
@@ -441,13 +475,18 @@ class HanaStudio(QMainWindow):
         threading.Thread(target=test_connection, daemon=True).start()
     
     def print_card(self):
-        """카드 인쇄"""
+        """카드 인쇄 - 여러장 지원"""
         if not self.printer_available or not self.printer_dll_path:
             QMessageBox.warning(self, "경고", "프린터를 사용할 수 없습니다.")
             return
         
         if not self.front_image_path:
             QMessageBox.warning(self, "경고", "앞면 이미지를 먼저 선택해주세요.")
+            return
+        
+        # 현재 인쇄 중인지 확인
+        if print_manager.get_print_status()['is_printing']:
+            QMessageBox.warning(self, "경고", "이미 인쇄가 진행 중입니다.")
             return
         
         # 인쇄 모드별 확인
@@ -485,13 +524,22 @@ class HanaStudio(QMainWindow):
         elif self.is_dual_side:
             detail_text += "뒷면 이미지: 없음 (빈 뒷면으로 인쇄)\n"
         
-        detail_text += f"인쇄 방식: {side_text} {mode_text}"
+        detail_text += f"인쇄 방식: {side_text} {mode_text}\n"
+        detail_text += f"인쇄 매수: {self.print_quantity}장"
+        
+        # 예상 시간 계산
+        estimated_minutes = (self.print_quantity * 30) // 60
+        estimated_seconds = (self.print_quantity * 30) % 60
+        if estimated_minutes > 0:
+            time_text = f"예상 시간: 약 {estimated_minutes}분 {estimated_seconds}초"
+        else:
+            time_text = f"예상 시간: 약 {self.print_quantity * 30}초"
         
         reply = QMessageBox.question(
             self,
             "카드 인쇄",
-            f"카드 인쇄를 시작하시겠습니까?\n\n{detail_text}\n\n"
-            "프린터에 카드가 준비되어 있는지 확인해주세요.",
+            f"카드 인쇄를 시작하시겠습니까?\n\n{detail_text}\n{time_text}\n\n"
+            "프린터에 충분한 카드가 준비되어 있는지 확인해주세요.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
@@ -500,29 +548,61 @@ class HanaStudio(QMainWindow):
             return
         
         # 인쇄 시작
-        self.ui.components['printer_panel'].set_print_enabled(False)
-        self.ui.components['progress_panel'].show_progress()
-        
-        # 프린터 스레드 시작
-        self.printer_thread = PrinterThread(
-            dll_path=self.printer_dll_path,
-            front_image_path=self.front_image_path,
-            back_image_path=self.back_image_path,
-            front_mask_path=self.front_saved_mask_path if self.print_mode == "layered" else None,
-            back_mask_path=self.back_saved_mask_path if self.print_mode == "layered" else None,
-            print_mode=self.print_mode,
-            is_dual_side=self.is_dual_side
-        )
-        
-        self.printer_thread.progress.connect(self.on_printer_progress)
-        self.printer_thread.finished.connect(self.on_printer_finished)
-        self.printer_thread.error.connect(self.on_printer_error)
-        self.printer_thread.start()
+        self._start_multi_print()
+    
+    def _start_multi_print(self):
+        """여러장 인쇄 시작"""
+        try:
+            # UI 상태 변경
+            self.ui.components['printer_panel'].set_print_enabled(False)
+            self.ui.components['progress_panel'].show_progress()
+            
+            # 프린터 스레드 시작
+            self.current_printer_thread = print_manager.start_multi_print(
+                dll_path=self.printer_dll_path,
+                front_image_path=self.front_image_path,
+                back_image_path=self.back_image_path,
+                front_mask_path=self.front_saved_mask_path if self.print_mode == "layered" else None,
+                back_mask_path=self.back_saved_mask_path if self.print_mode == "layered" else None,
+                print_mode=self.print_mode,
+                is_dual_side=self.is_dual_side,
+                quantity=self.print_quantity
+            )
+            
+            # 시그널 연결
+            self.current_printer_thread.progress.connect(self.on_printer_progress)
+            self.current_printer_thread.finished.connect(self.on_printer_finished)
+            self.current_printer_thread.error.connect(self.on_printer_error)
+            self.current_printer_thread.print_progress.connect(self.on_print_progress)
+            self.current_printer_thread.card_completed.connect(self.on_card_completed)
+            
+            self.current_printer_thread.start()
+            
+            self.log(f"📄 {self.print_quantity}장 인쇄 시작!")
+            
+        except Exception as e:
+            self.ui.components['progress_panel'].hide_progress()
+            self.ui.components['printer_panel'].set_print_enabled(True)
+            error_msg = f"인쇄 시작 실패: {e}"
+            self.log(f"❌ {error_msg}")
+            QMessageBox.critical(self, "인쇄 오류", error_msg)
     
     def on_printer_progress(self, message):
         """프린터 진행상황 업데이트"""
         self.ui.components['progress_panel'].update_status(message)
         self.log(message)
+    
+    def on_print_progress(self, current, total):
+        """인쇄 진행률 업데이트"""
+        self.ui.components['progress_panel'].update_print_status(current, total, f"📄 {current}/{total} 장 인쇄 중...")
+    
+    def on_card_completed(self, card_num):
+        """개별 카드 완료"""
+        self.log(f"✅ {card_num}번째 카드 인쇄 완료!")
+        
+        # 상태바 업데이트
+        if card_num < self.print_quantity:
+            self.ui.components['status_text'].setText(f"인쇄 진행 중: {card_num}/{self.print_quantity} 완료")
     
     def on_printer_finished(self, success):
         """프린터 작업 완료"""
@@ -533,12 +613,15 @@ class HanaStudio(QMainWindow):
         side_text = "양면" if self.is_dual_side else "단면"
         
         if success:
-            self.log(f"✅ {side_text} {mode_text} 완료!")
+            self.log(f"✅ {side_text} {mode_text} {self.print_quantity}장 완료!")
             self.ui.components['status_text'].setText("인쇄 완료")
-            QMessageBox.information(self, "성공", f"{side_text} {mode_text}가 완료되었습니다!")
+            QMessageBox.information(self, "성공", f"{side_text} {mode_text} {self.print_quantity}장이 완료되었습니다!")
         else:
             self.log(f"❌ {side_text} {mode_text} 실패")
             self.ui.components['status_text'].setText("인쇄 실패")
+        
+        # 인쇄 완료 후 상태 재설정
+        self._update_print_button_state()
     
     def on_printer_error(self, error_message):
         """프린터 오류 처리"""
@@ -548,6 +631,9 @@ class HanaStudio(QMainWindow):
         self.log(f"❌ 프린터 오류: {error_message}")
         self.ui.components['status_text'].setText("인쇄 오류 발생")
         QMessageBox.critical(self, "인쇄 오류", f"카드 인쇄 중 오류가 발생했습니다:\n\n{error_message}")
+        
+        # 오류 후 상태 재설정
+        self._update_print_button_state()
     
     def log(self, message):
         """로그 메시지 추가"""
@@ -555,6 +641,22 @@ class HanaStudio(QMainWindow):
     
     def closeEvent(self, event):
         """애플리케이션 종료 시"""
+        # 진행 중인 인쇄 중단
+        if print_manager.get_print_status()['is_printing']:
+            reply = QMessageBox.question(
+                self,
+                "인쇄 진행 중",
+                "인쇄가 진행 중입니다. 프로그램을 종료하시겠습니까?\n인쇄가 중단될 수 있습니다.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                print_manager.stop_current_print()
+            else:
+                event.ignore()
+                return
+        
         # 임시 파일 정리
         self.file_manager.cleanup_temp_files()
         

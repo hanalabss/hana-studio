@@ -1,5 +1,5 @@
 """
-메인 윈도우 UI 구성 - 양면 인쇄 지원
+메인 윈도우 UI 구성 - 양면 인쇄 및 여러장 인쇄 지원
 """
 
 from PySide6.QtWidgets import (
@@ -12,13 +12,13 @@ from PySide6.QtGui import QFont
 from .components.image_viewer import ImageViewer
 from .components.control_panels import (
     FileSelectionPanel, ProcessingOptionsPanel, PrintModePanel,
-    PrinterPanel, ProgressPanel, LogPanel
+    PrinterPanel, ProgressPanel, LogPanel, PrintQuantityPanel
 )
 from .styles import get_header_style, get_status_bar_style
 
 
 class HanaStudioMainWindow:
-    """메인 윈도우 UI 구성을 담당하는 클래스 - 양면 인쇄 지원"""
+    """메인 윈도우 UI 구성을 담당하는 클래스 - 양면 인쇄 및 여러장 인쇄 지원"""
     
     def __init__(self, parent_widget):
         self.parent = parent_widget
@@ -53,8 +53,9 @@ class HanaStudioMainWindow:
         self.create_status_bar(main_layout)
         
         # 분할 비율 설정
-        content_splitter.setSizes([500, 1300])
-    
+        # content_splitter.setSizes([380, 1420])  # 좌측 패널 크기 고정
+        content_splitter.setStretchFactor(0, 0)  # 좌측 패널
+        content_splitter.setStretchFactor(1, 1)  # 우측 뷰어
     def create_header(self, parent_layout):
         """헤더 생성"""
         header_frame = QFrame()
@@ -69,7 +70,7 @@ class HanaStudioMainWindow:
         title_label.setFont(QFont("Segoe UI", 24, QFont.Weight.Bold))
         title_label.setStyleSheet("color: #2C3E50;")
         
-        subtitle_label = QLabel("AI 기반 이미지 배경 제거 및 양면 카드 인쇄 도구")
+        subtitle_label = QLabel("AI 기반 이미지 배경 제거 및 양면 카드 인쇄 도구 - 여러장 인쇄 지원")
         subtitle_label.setFont(QFont("Segoe UI", 11))
         subtitle_label.setStyleSheet("color: #7F8C8D; margin-top: 5px;")
         
@@ -84,29 +85,66 @@ class HanaStudioMainWindow:
         parent_layout.addWidget(header_frame)
     
     def create_left_panel(self, splitter):
-        """좌측 컨트롤 패널 생성"""
+        """좌측 컨트롤 패널 생성 - 적절한 간격과 크기 조정"""
         panel = QWidget()
-        layout = QVBoxLayout(panel)
+        panel.setFixedWidth(400)  # 패널 너비 약간 증가
         
-        # 각 패널들 생성
+        # 스크롤 영역 추가 (내용이 많을 경우 대비)
+        from PySide6.QtWidgets import QScrollArea
+        scroll_area = QScrollArea()
+        scroll_area.setWidget(panel)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setFixedWidth(420)  # 스크롤바 공간 포함
+        scroll_area.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background-color: #F8F9FA;
+            }
+            QScrollBar:vertical {
+                background-color: #F8F9FA;
+                width: 12px;
+                border-radius: 6px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #CED4DA;
+                border-radius: 6px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background-color: #ADB5BD;
+            }
+        """)
+        
+        layout = QVBoxLayout(panel)
+        layout.setSpacing(15)  # 패널 간 충분한 간격
+        layout.setContentsMargins(10, 15, 10, 15)  # 적절한 여백
+        
+        # 각 패널들 생성 (모두 고정 크기)
         self.file_panel = FileSelectionPanel()
         self.processing_panel = ProcessingOptionsPanel()
         self.print_mode_panel = PrintModePanel()
+        self.print_quantity_panel = PrintQuantityPanel()
         self.printer_panel = PrinterPanel()
         self.progress_panel = ProgressPanel()
         self.log_panel = LogPanel()
         
         # 패널들을 레이아웃에 추가
+        # 컴팩트한 패널들은 고정 크기로 추가
         layout.addWidget(self.file_panel)
         layout.addWidget(self.processing_panel)
         layout.addWidget(self.print_mode_panel)
+        layout.addWidget(self.print_quantity_panel)
         layout.addWidget(self.printer_panel)
         layout.addWidget(self.progress_panel)
-        layout.addWidget(self.log_panel)
-        layout.addStretch()
         
-        splitter.addWidget(panel)
-    
+        # 로그 패널은 남은 공간을 모두 차지 (확장 가능)
+        layout.addWidget(self.log_panel, 1)
+        
+        # 스크롤 영역을 스플리터에 추가
+        splitter.addWidget(scroll_area)
+        
     def create_right_panel(self, parent_splitter):
         """우측 이미지 뷰어 패널 생성 - 양면 미리보기"""
         right_panel = QWidget()
@@ -167,7 +205,7 @@ class HanaStudioMainWindow:
         status_layout.addWidget(self.status_text)
         status_layout.addStretch()
         
-        version_label = QLabel("Hana Studio v1.0 - 양면 인쇄 지원")
+        version_label = QLabel("Hana Studio v1.0 - 양면 및 여러장 인쇄 지원")
         version_label.setStyleSheet("color: #ADB5BD; font-size: 10px;")
         status_layout.addWidget(version_label)
         
@@ -181,6 +219,7 @@ class HanaStudioMainWindow:
             'file_panel': self.file_panel,
             'processing_panel': self.processing_panel,
             'print_mode_panel': self.print_mode_panel,
+            'print_quantity_panel': self.print_quantity_panel,  # 새로 추가
             'printer_panel': self.printer_panel,
             'progress_panel': self.progress_panel,
             'log_panel': self.log_panel,
