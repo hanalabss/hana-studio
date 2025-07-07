@@ -1,22 +1,23 @@
 """
-R600 프린터 제어 클래스
+R600 프린터 제어 클래스 - 양면 인쇄 지원
 """
 
 import ctypes
 import os
 import time
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from .exceptions import R600PrinterError, PrinterInitializationError, DLLNotFoundError
 
 
 class R600Printer:
-    """R600 프린터 제어 클래스 - 리소스 관리 강화"""
+    """R600 프린터 제어 클래스 - 양면 인쇄 지원"""
     
     def __init__(self, dll_path: str = './libDSRetransfer600App.dll'):
         """R600 프린터 초기화"""
         self.lib = None
         self.selected_printer = None
-        self.committed_img_info = None
+        self.front_img_info = None
+        self.back_img_info = None
         self.is_initialized = False
 
         try:
@@ -37,7 +38,7 @@ class R600Printer:
 
     def _setup_function_signatures(self):
         """함수 시그니처 정의"""
-        # 프린터 열거
+        # 기본 함수들
         self.lib.R600EnumTcpPrt.argtypes = [
             ctypes.POINTER(ctypes.c_char), 
             ctypes.POINTER(ctypes.c_uint), 
@@ -45,11 +46,9 @@ class R600Printer:
         ]
         self.lib.R600EnumTcpPrt.restype = ctypes.c_uint
         
-        # 타임아웃 설정
         self.lib.R600TcpSetTimeout.argtypes = [ctypes.c_int, ctypes.c_int]
         self.lib.R600TcpSetTimeout.restype = ctypes.c_uint
         
-        # 프린터 선택
         self.lib.R600SelectPrt.argtypes = [ctypes.POINTER(ctypes.c_char)]
         self.lib.R600SelectPrt.restype = ctypes.c_uint
         
@@ -59,6 +58,10 @@ class R600Printer:
         
         self.lib.R600CardEject.argtypes = [ctypes.c_int]
         self.lib.R600CardEject.restype = ctypes.c_uint
+        
+        # 카드 뒤집기 - 양면 인쇄의 핵심
+        self.lib.R600CardTurnover.argtypes = []
+        self.lib.R600CardTurnover.restype = ctypes.c_uint
         
         # 리본 옵션
         self.lib.R600SetRibbonOpt.argtypes = [
@@ -72,6 +75,9 @@ class R600Printer:
         
         self.lib.R600PrepareCanvas.argtypes = [ctypes.c_int, ctypes.c_int]
         self.lib.R600PrepareCanvas.restype = ctypes.c_uint
+        
+        self.lib.R600ClearCanvas.argtypes = []
+        self.lib.R600ClearCanvas.restype = ctypes.c_uint
         
         self.lib.R600CommitCanvas.argtypes = [
             ctypes.POINTER(ctypes.c_char), 
@@ -95,13 +101,7 @@ class R600Printer:
         ]
         self.lib.R600DrawImage.restype = ctypes.c_uint
         
-        self.lib.R600DrawLayerWhite.argtypes = [
-            ctypes.c_double, ctypes.c_double, ctypes.c_double, 
-            ctypes.c_double, ctypes.c_char_p
-        ]
-        self.lib.R600DrawLayerWhite.restype = ctypes.c_uint
-        
-        # 인쇄
+        # 양면 인쇄 - 앞면과 뒷면을 모두 받는 함수
         self.lib.R600PrintDraw.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
         self.lib.R600PrintDraw.restype = ctypes.c_uint
     
@@ -173,6 +173,11 @@ class R600Printer:
         ret = self.lib.R600CardEject(0)
         self._check_result(ret, "카드 배출")
     
+    def turnover_card(self):
+        """카드 뒤집기 - 양면 인쇄의 핵심 기능"""
+        ret = self.lib.R600CardTurnover()
+        self._check_result(ret, "카드 뒤집기")
+    
     def set_ribbon_option(self, ribbon_type: int = 1, key: int = 0, value: str = "2"):
         """리본 옵션 설정"""
         value_bytes = value.encode('cp949')
@@ -193,22 +198,63 @@ class R600Printer:
         ret = self.lib.R600SetImagePara(1, 0, 0.0)
         self._check_result(ret, "이미지 파라미터 설정")
     
+    def clear_canvas(self):
+        """캔버스 클리어"""
+        ret = self.lib.R600ClearCanvas()
+        self._check_result(ret, "캔버스 클리어")
+    
     def draw_watermark(self, x: float, y: float, width: float, height: float, image_path: str):
-        """워터마크 그리기"""
+        """워터마크 그리기 - 한글 경로 지원"""
         if image_path and not os.path.exists(image_path):
             raise R600PrinterError(f"이미지 파일 {image_path}이 존재하지 않습니다.")
         
-        path_encoded = image_path.encode('cp949') if image_path else b""
+        # 한글 경로 문제 해결을 위해 절대 경로로 변환
+        if image_path:
+            try:
+                image_path = os.path.abspath(image_path)
+                path_encoded = image_path.encode('cp949')
+            except UnicodeEncodeError:
+                # cp949로 인코딩할 수 없는 경우 (한글 문제)
+                print(f"⚠️ 한글 경로 문제로 임시 복사: {image_path}")
+                # 임시 디렉토리에 영문 이름으로 복사
+                import tempfile
+                import shutil
+                temp_dir = tempfile.gettempdir()
+                temp_name = f"temp_watermark_{int(time.time())}.jpg"
+                temp_path = os.path.join(temp_dir, temp_name)
+                shutil.copy2(image_path, temp_path)
+                path_encoded = temp_path.encode('cp949')
+                print(f"임시 파일 생성: {temp_path}")
+        else:
+            path_encoded = b""
+            
         ret = self.lib.R600DrawWaterMark(x, y, width, height, path_encoded)
         self._check_result(ret, f"워터마크 그리기 ({image_path})")
     
     def draw_image(self, x: float, y: float, width: float, height: float, 
                    image_path: str, mode: int = 1):
-        """이미지 그리기"""
+        """이미지 그리기 - 한글 경로 지원"""
         if not os.path.exists(image_path):
             raise R600PrinterError(f"이미지 파일 {image_path}이 존재하지 않습니다.")
         
-        ret = self.lib.R600DrawImage(x, y, width, height, image_path.encode('cp949'), mode)
+        # 한글 경로 문제 해결을 위해 절대 경로로 변환
+        try:
+            image_path = os.path.abspath(image_path)
+            path_encoded = image_path.encode('cp949')
+        except UnicodeEncodeError:
+            # cp949로 인코딩할 수 없는 경우 (한글 문제)
+            print(f"⚠️ 한글 경로 문제로 임시 복사: {image_path}")
+            # 임시 디렉토리에 영문 이름으로 복사
+            import tempfile
+            import shutil
+            temp_dir = tempfile.gettempdir()
+            temp_name = f"temp_image_{int(time.time())}.jpg"
+            temp_path = os.path.join(temp_dir, temp_name)
+            shutil.copy2(image_path, temp_path)
+            path_encoded = temp_path.encode('cp949')
+            print(f"임시 파일 생성: {temp_path}")
+        
+        ret = self.lib.R600DrawImage(x, y, width, height, path_encoded, mode)
         self._check_result(ret, f"이미지 그리기 ({image_path})")
     
     def commit_canvas(self) -> str:
@@ -221,26 +267,65 @@ class R600Printer:
         if ret != 0:
             raise R600PrinterError(f"캔버스 커밋 실패: {ret}")
         
-        self.committed_img_info = img_info_buffer.value.decode('cp949')
-        print(f"캔버스 커밋 성공. 이미지 정보: {self.committed_img_info}")
+        img_info = img_info_buffer.value.decode('cp949')
+        print(f"캔버스 커밋 성공. 이미지 정보: {img_info}")
         print(f"실제 이미지 정보 길이: {p_img_info_len.contents.value}")
         
-        return self.committed_img_info
+        return img_info
     
-    def print_draw(self, img_info: Optional[str] = None):
-        """인쇄 실행"""
-        if img_info is None:
-            if self.committed_img_info is None:
-                raise R600PrinterError("커밋된 이미지 정보가 없습니다. 먼저 commit_canvas()를 호출하세요.")
-            img_info = self.committed_img_info
+    def prepare_front_canvas(self, front_image_path: str, watermark_path: Optional[str] = None,
+                           card_width: float = 53.98, card_height: float = 85.6) -> str:
+        """앞면 캔버스 준비"""
+        print("=== 앞면 캔버스 준비 ===")
         
-        ret = self.lib.R600PrintDraw(img_info.encode('cp949'), ctypes.c_char_p(None))
-        self._check_result(ret, "인쇄 실행")
+        # 캔버스 설정
+        self.setup_canvas()
+        
+        # 워터마크 그리기 (레이어 모드인 경우)
+        if watermark_path:
+            self.draw_watermark(0.0, 0.0, card_width, card_height, watermark_path)
+        
+        # 앞면 이미지 그리기
+        self.draw_image(0.0, 0.0, card_width, card_height, front_image_path)
+        
+        # 캔버스 커밋
+        self.front_img_info = self.commit_canvas()
+        return self.front_img_info
     
-    def print_normal_card(self, image_path: str, card_width: float = 53.98, card_height: float = 85.6):
-        """일반 카드 인쇄 - 리소스 정리 강화"""
+    def prepare_back_canvas(self, back_image_path: Optional[str] = None, 
+                          watermark_path: Optional[str] = None,
+                          card_width: float = 53.98, card_height: float = 85.6) -> str:
+        """뒷면 캔버스 준비"""
+        print("=== 뒷면 캔버스 준비 ===")
+        
+        # 캔버스 클리어 및 재설정
+        self.clear_canvas()
+        self.setup_canvas()
+        
+        # 뒷면 이미지가 있는 경우
+        if back_image_path and os.path.exists(back_image_path):
+            # 워터마크 그리기 (레이어 모드인 경우)
+            if watermark_path:
+                self.draw_watermark(0.0, 0.0, card_width, card_height, watermark_path)
+            
+            # 뒷면 이미지 그리기
+            self.draw_image(0.0, 0.0, card_width, card_height, back_image_path)
+        else:
+            # 뒷면 이미지가 없으면 빈 캔버스 또는 기본 이미지
+            print("뒷면 이미지가 없습니다. 빈 뒷면으로 설정합니다.")
+        
+        # 캔버스 커밋
+        self.back_img_info = self.commit_canvas()
+        return self.back_img_info
+    
+    def print_dual_side_card(self, front_image_path: str, back_image_path: Optional[str] = None,
+                           front_watermark_path: Optional[str] = None,
+                           back_watermark_path: Optional[str] = None,
+                           card_width: float = 53.98, card_height: float = 85.6,
+                           print_mode: str = "normal"):
+        """양면 카드 인쇄"""
         try:
-            print("=== 일반 카드 인쇄 시작 ===")
+            print("=== 양면 카드 인쇄 시작 ===")
             
             # 1. 카드 삽입
             self.inject_card()
@@ -248,37 +333,47 @@ class R600Printer:
             # 2. 리본 옵션 설정
             self.set_ribbon_option(ribbon_type=1, key=0, value="2")
             
-            # 3. 캔버스 설정
-            self.setup_canvas()
+            # 3. 앞면 캔버스 준비
+            if print_mode == "layered":
+                front_img_info = self.prepare_front_canvas(
+                    front_image_path, front_watermark_path, card_width, card_height
+                )
+            else:
+                front_img_info = self.prepare_front_canvas(
+                    front_image_path, None, card_width, card_height
+                )
             
-            # # 4. 원본 이미지를 워터마크로 먼저 그리기
-            # self.draw_watermark(0.0, 0.0, card_width, card_height, "")
+            # 4. 뒷면 캔버스 준비
+            if print_mode == "layered":
+                back_img_info = self.prepare_back_canvas(
+                    back_image_path, back_watermark_path, card_width, card_height
+                )
+            else:
+                back_img_info = self.prepare_back_canvas(
+                    back_image_path, None, card_width, card_height
+                )
             
-            # 5. 원본 이미지 그리기
-            self.draw_image(0.0, 0.0, card_width, card_height, image_path)
+            # 5. 양면 인쇄 실행
+            print("양면 인쇄 실행 중...")
+            ret = self.lib.R600PrintDraw(
+                front_img_info.encode('cp949') if front_img_info else ctypes.c_char_p(None),
+                back_img_info.encode('cp949') if back_img_info else ctypes.c_char_p(None)
+            )
+            self._check_result(ret, "양면 인쇄 실행")
             
-            # 6. 캔버스 커밋
-            self.commit_canvas()
+            # 6. 인쇄 완료 대기
+            time.sleep(3)
             
-            # 7. 잠시 대기
-            time.sleep(1)
-            
-            # 8. 인쇄 실행
-            self.print_draw()
-            
-            # 9. 인쇄 완료 대기
-            time.sleep(2)
-            
-            # 10. 카드 배출
+            # 7. 카드 배출
             self.eject_card()
             
-            # 11. 배출 완료 대기
+            # 8. 배출 완료 대기
             time.sleep(1)
             
-            print("=== 일반 카드 인쇄 완료 ===")
+            print("=== 양면 카드 인쇄 완료 ===")
             
         except R600PrinterError as e:
-            print(f"일반 카드 인쇄 중 오류 발생: {e}")
+            print(f"양면 카드 인쇄 중 오류 발생: {e}")
             # 오류 발생 시에도 카드 배출 시도
             try:
                 self.eject_card()
@@ -286,11 +381,12 @@ class R600Printer:
                 pass
             raise
 
-    def print_layered_card(self, watermark_path: str, image_path: Optional[str] = None,
-                          card_width: float = 53.98, card_height: float = 85.6):
-        """레이어 카드 인쇄 - 리소스 정리 강화"""
+    def print_single_side_card(self, image_path: str, watermark_path: Optional[str] = None,
+                             card_width: float = 53.98, card_height: float = 85.6,
+                             print_mode: str = "normal"):
+        """단면 카드 인쇄 (하위 호환성)"""
         try:
-            print("=== 레이어 카드 인쇄 시작 (YMCW) ===")
+            print("=== 단면 카드 인쇄 시작 ===")
             
             # 1. 카드 삽입
             self.inject_card()
@@ -298,45 +394,48 @@ class R600Printer:
             # 2. 리본 옵션 설정
             self.set_ribbon_option(ribbon_type=1, key=0, value="2")
             
-            # 3. 캔버스 설정
-            self.setup_canvas()
+            # 3. 캔버스 준비
+            if print_mode == "layered":
+                img_info = self.prepare_front_canvas(image_path, watermark_path, card_width, card_height)
+            else:
+                img_info = self.prepare_front_canvas(image_path, None, card_width, card_height)
             
-            # 4. 워터마크 레이어 그리기
-            if watermark_path:
-                self.draw_watermark(0.0, 0.0, card_width, card_height, watermark_path)
-                
-            # 5. 베이스 이미지 그리기
-            if image_path:
-                self.draw_image(0.0, 0.0, card_width, card_height, image_path)
+            # 4. 단면 인쇄 실행 (뒷면은 None)
+            ret = self.lib.R600PrintDraw(
+                img_info.encode('cp949'),
+                ctypes.c_char_p(None)
+            )
+            self._check_result(ret, "단면 인쇄 실행")
             
-            # 6. 캔버스 커밋
-            self.commit_canvas()
-            
-            # 7. 잠시 대기
-            time.sleep(1)
-            
-            # 8. 인쇄 실행
-            self.print_draw()
-            
-            # 9. 인쇄 완료 대기
+            # 5. 인쇄 완료 대기
             time.sleep(2)
             
-            # 10. 카드 배출
+            # 6. 카드 배출
             self.eject_card()
             
-            # 11. 배출 완료 대기
+            # 7. 배출 완료 대기
             time.sleep(1)
             
-            print("=== 레이어 카드 인쇄 완료 (YMCW) ===")
+            print("=== 단면 카드 인쇄 완료 ===")
             
         except R600PrinterError as e:
-            print(f"레이어 카드 인쇄 중 오류 발생: {e}")
+            print(f"단면 카드 인쇄 중 오류 발생: {e}")
             # 오류 발생 시에도 카드 배출 시도
             try:
                 self.eject_card()
             except:
                 pass
             raise
+
+    # 하위 호환성을 위한 기존 메서드들
+    def print_normal_card(self, image_path: str, card_width: float = 53.98, card_height: float = 85.6):
+        """일반 카드 인쇄 (하위 호환성)"""
+        self.print_single_side_card(image_path, None, card_width, card_height, "normal")
+
+    def print_layered_card(self, watermark_path: str, image_path: Optional[str] = None,
+                          card_width: float = 53.98, card_height: float = 85.6):
+        """레이어 카드 인쇄 (하위 호환성)"""
+        self.print_single_side_card(image_path or "", watermark_path, card_width, card_height, "layered")
 
     def cleanup_and_close(self):
         """강화된 리소스 정리"""
@@ -353,17 +452,35 @@ class R600Printer:
             except:
                 print("[DEBUG] 카드 배출 건너뜀 (정상)")
             
-            # 2. 라이브러리 정리
+            # 2. 임시 파일 정리
+            try:
+                import tempfile
+                import glob
+                temp_dir = tempfile.gettempdir()
+                temp_files = glob.glob(os.path.join(temp_dir, "temp_watermark_*.jpg"))
+                temp_files.extend(glob.glob(os.path.join(temp_dir, "temp_image_*.jpg")))
+                
+                for temp_file in temp_files:
+                    try:
+                        os.remove(temp_file)
+                        print(f"[DEBUG] 임시 파일 삭제: {temp_file}")
+                    except:
+                        pass
+            except Exception as e:
+                print(f"[DEBUG] 임시 파일 정리 오류: {e}")
+            
+            # 3. 라이브러리 정리
             if self.lib:
                 ret = self.lib.R600LibClear()
                 print(f"[DEBUG] 라이브러리 정리 결과: {ret}")
                 
-                # 3. 잠깐 대기 (중요!)
+                # 4. 잠깐 대기 (중요!)
                 time.sleep(2)
                 
-            # 4. 상태 초기화
+            # 5. 상태 초기화
             self.selected_printer = None
-            self.committed_img_info = None
+            self.front_img_info = None
+            self.back_img_info = None
             self.is_initialized = False
             
             print("[DEBUG] 프린터 리소스 정리 완료")

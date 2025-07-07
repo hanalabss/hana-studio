@@ -1,5 +1,5 @@
 """
-메인 윈도우 UI 구성
+메인 윈도우 UI 구성 - 양면 인쇄 지원
 """
 
 from PySide6.QtWidgets import (
@@ -18,7 +18,7 @@ from .styles import get_header_style, get_status_bar_style
 
 
 class HanaStudioMainWindow:
-    """메인 윈도우 UI 구성을 담당하는 클래스"""
+    """메인 윈도우 UI 구성을 담당하는 클래스 - 양면 인쇄 지원"""
     
     def __init__(self, parent_widget):
         self.parent = parent_widget
@@ -69,7 +69,7 @@ class HanaStudioMainWindow:
         title_label.setFont(QFont("Segoe UI", 24, QFont.Weight.Bold))
         title_label.setStyleSheet("color: #2C3E50;")
         
-        subtitle_label = QLabel("AI 기반 이미지 배경 제거 및 카드 인쇄 도구")
+        subtitle_label = QLabel("AI 기반 이미지 배경 제거 및 양면 카드 인쇄 도구")
         subtitle_label.setFont(QFont("Segoe UI", 11))
         subtitle_label.setStyleSheet("color: #7F8C8D; margin-top: 5px;")
         
@@ -108,34 +108,48 @@ class HanaStudioMainWindow:
         splitter.addWidget(panel)
     
     def create_right_panel(self, parent_splitter):
-        """우측 이미지 뷰어 패널 생성"""
+        """우측 이미지 뷰어 패널 생성 - 양면 미리보기"""
         right_panel = QWidget()
         right_panel.setStyleSheet("background-color: #F8F9FA;")
         right_layout = QVBoxLayout(right_panel)
         
-        # 이미지 뷰어 그룹
+        # 원본 이미지 뷰어 그룹
         from PySide6.QtWidgets import QGroupBox
-        viewer_group = QGroupBox("🖼️ 이미지 미리보기")
-        viewer_layout = QGridLayout(viewer_group)
-        viewer_layout.setSpacing(15)
+        original_group = QGroupBox("📷 원본 이미지")
+        original_layout = QHBoxLayout(original_group)
+        original_layout.setSpacing(15)
         
-        # 이미지 뷰어들 생성
-        self.original_viewer = ImageViewer("📷 원본 이미지")
-        self.mask_viewer = ImageViewer("🎭 마스크 이미지")
-        self.composite_viewer = ImageViewer("✨ 합성 미리보기")
+        # 원본 이미지 뷰어들
+        self.front_original_viewer = ImageViewer("📄 앞면 원본")
+        self.back_original_viewer = ImageViewer("📄 뒷면 원본")
         
-        # 그리드에 배치
-        viewer_layout.addWidget(self.original_viewer, 0, 0)
-        viewer_layout.addWidget(self.mask_viewer, 0, 1)
-        viewer_layout.addWidget(self.composite_viewer, 1, 0, 1, 2)
+        original_layout.addWidget(self.front_original_viewer)
+        original_layout.addWidget(self.back_original_viewer)
         
-        # 그리드 비율 설정
-        viewer_layout.setRowStretch(0, 1)
-        viewer_layout.setRowStretch(1, 1)
-        viewer_layout.setColumnStretch(0, 1)
-        viewer_layout.setColumnStretch(1, 1)
+        # 처리 결과 뷰어 그룹
+        result_group = QGroupBox("✨ 처리 결과")
+        result_layout = QHBoxLayout(result_group)
+        result_layout.setSpacing(15)
         
-        right_layout.addWidget(viewer_group)
+        # 처리 결과 뷰어들
+        self.front_result_viewer = ImageViewer("🎭 앞면 처리 결과")
+        self.back_result_viewer = ImageViewer("🎭 뒷면 처리 결과")
+        
+        result_layout.addWidget(self.front_result_viewer)
+        result_layout.addWidget(self.back_result_viewer)
+        
+        # 최종 미리보기 그룹
+        preview_group = QGroupBox("🖼️ 최종 미리보기")
+        preview_layout = QVBoxLayout(preview_group)
+        
+        self.final_preview_viewer = ImageViewer("💎 최종 카드 미리보기")
+        preview_layout.addWidget(self.final_preview_viewer)
+        
+        # 레이아웃에 추가
+        right_layout.addWidget(original_group, 1)
+        right_layout.addWidget(result_group, 1)
+        right_layout.addWidget(preview_group, 1)
+        
         parent_splitter.addWidget(right_panel)
     
     def create_status_bar(self, parent_layout):
@@ -153,7 +167,7 @@ class HanaStudioMainWindow:
         status_layout.addWidget(self.status_text)
         status_layout.addStretch()
         
-        version_label = QLabel("Hana Studio v1.0")
+        version_label = QLabel("Hana Studio v1.0 - 양면 인쇄 지원")
         version_label.setStyleSheet("color: #ADB5BD; font-size: 10px;")
         status_layout.addWidget(version_label)
         
@@ -170,8 +184,10 @@ class HanaStudioMainWindow:
             'printer_panel': self.printer_panel,
             'progress_panel': self.progress_panel,
             'log_panel': self.log_panel,
-            'original_viewer': self.original_viewer,
-            'mask_viewer': self.mask_viewer,
-            'composite_viewer': self.composite_viewer,
+            'front_original_viewer': self.front_original_viewer,
+            'back_original_viewer': self.back_original_viewer,
+            'front_result_viewer': self.front_result_viewer,
+            'back_result_viewer': self.back_result_viewer,
+            'final_preview_viewer': self.final_preview_viewer,
             'status_text': self.status_text
         }

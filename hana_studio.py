@@ -1,5 +1,5 @@
 """
-Hana Studio 메인 애플리케이션 클래스 - 리팩토링된 버전
+Hana Studio 메인 애플리케이션 클래스 - 양면 인쇄 지원
 """
 
 import os
@@ -19,18 +19,22 @@ from config import config, AppConstants
 
 
 class HanaStudio(QMainWindow):
-    """Hana Studio 메인 애플리케이션 클래스"""
+    """Hana Studio 메인 애플리케이션 클래스 - 양면 인쇄 지원"""
     
     def __init__(self):
         super().__init__()
         
         # 데이터 속성들
-        self.current_image_path = None
-        self.original_image = None
-        self.mask_image = None
-        self.composite_image = None
-        self.saved_mask_path = None
+        self.front_image_path = None
+        self.back_image_path = None
+        self.front_original_image = None
+        self.back_original_image = None
+        self.front_mask_image = None
+        self.back_mask_image = None
+        self.front_saved_mask_path = None
+        self.back_saved_mask_path = None
         self.print_mode = "normal"
+        self.is_dual_side = False
         
         # 코어 모듈들
         self.image_processor = ImageProcessor()
@@ -48,7 +52,7 @@ class HanaStudio(QMainWindow):
         
     def _setup_window(self):
         """윈도우 기본 설정"""
-        self.setWindowTitle(f"{AppConstants.APP_NAME} - {AppConstants.APP_DESCRIPTION}")
+        self.setWindowTitle(f"{AppConstants.APP_NAME} - 양면 카드 인쇄 지원")
         
         # 윈도우 크기 설정
         geometry = config.get('window_geometry')
@@ -71,10 +75,12 @@ class HanaStudio(QMainWindow):
         components = self.ui.components
         
         # 파일 선택
-        components['file_panel'].select_btn.clicked.connect(self.select_image)
+        components['file_panel'].front_btn.clicked.connect(self.select_front_image)
+        components['file_panel'].back_btn.clicked.connect(self.select_back_image)
+        components['file_panel'].dual_side_check.toggled.connect(self.on_dual_side_toggled)
         
         # 이미지 처리
-        components['processing_panel'].process_requested.connect(self.process_image)
+        components['processing_panel'].process_requested.connect(self.process_images)
         components['processing_panel'].export_requested.connect(self.export_results)
         
         # 인쇄 모드
@@ -99,11 +105,11 @@ class HanaStudio(QMainWindow):
         
         threading.Thread(target=check, daemon=True).start()
     
-    def select_image(self):
-        """이미지 선택"""
+    def select_front_image(self):
+        """앞면 이미지 선택"""
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "이미지 선택",
+            "앞면 이미지 선택",
             "",
             config.get_image_filter()
         )
@@ -117,48 +123,122 @@ class HanaStudio(QMainWindow):
             QMessageBox.warning(self, "경고", error_msg)
             return
         
-        # 파일 정보 업데이트
-        self.current_image_path = file_path
+        # 앞면 이미지 설정
+        self.front_image_path = file_path
         file_name, file_size_mb = self.file_manager.get_file_info(file_path)
         
-        self.ui.components['file_panel'].update_file_info(file_path)
-        self.log(f"이미지 선택: {file_name} ({file_size_mb:.1f}MB)")
+        self.ui.components['file_panel'].update_front_file_info(file_path)
+        self.log(f"앞면 이미지 선택: {file_name} ({file_size_mb:.1f}MB)")
         
-        # 원본 이미지 표시
-        self.ui.components['original_viewer'].set_image(file_path)
-        self.original_image = cv2.imread(file_path)
+        # 앞면 이미지 표시
+        self.ui.components['front_original_viewer'].set_image(file_path)
+        self.front_original_image = cv2.imread(file_path)
         
-        # UI 상태 업데이트
-        self.ui.components['processing_panel'].set_process_enabled(True)
-        self.ui.components['status_text'].setText("이미지 로드 완료 | 처리 대기 중")
-        
-        # 이전 결과 초기화
+        self._update_ui_state()
         self._reset_processing_results()
+    
+    def select_back_image(self):
+        """뒷면 이미지 선택"""
+        if not self.is_dual_side:
+            return
+            
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "뒷면 이미지 선택",
+            "",
+            config.get_image_filter()
+        )
+        
+        if not file_path:
+            return
+        
+        # 이미지 유효성 검사
+        is_valid, error_msg = self.image_processor.validate_image(file_path)
+        if not is_valid:
+            QMessageBox.warning(self, "경고", error_msg)
+            return
+        
+        # 뒷면 이미지 설정
+        self.back_image_path = file_path
+        file_name, file_size_mb = self.file_manager.get_file_info(file_path)
+        
+        self.ui.components['file_panel'].update_back_file_info(file_path)
+        self.log(f"뒷면 이미지 선택: {file_name} ({file_size_mb:.1f}MB)")
+        
+        # 뒷면 이미지 표시
+        self.ui.components['back_original_viewer'].set_image(file_path)
+        self.back_original_image = cv2.imread(file_path)
+        
+        self._update_ui_state()
+    
+    def on_dual_side_toggled(self, checked):
+        """양면 인쇄 토글"""
+        self.is_dual_side = checked
+        
+        if not checked:
+            # 단면 모드로 변경 시 뒷면 데이터 초기화
+            self.back_image_path = None
+            self.back_original_image = None
+            self.back_mask_image = None
+            self.ui.components['back_original_viewer'].clear_image()
+            self.ui.components['back_result_viewer'].clear_image()
+        
+        # 인쇄 버튼 텍스트 업데이트
+        self.ui.components['printer_panel'].update_print_button_text(self.print_mode, checked)
+        
+        mode_text = "양면 인쇄" if checked else "단면 인쇄"
+        self.log(f"인쇄 방식 변경: {mode_text}")
+        
+        self._update_ui_state()
+    
+    def _update_ui_state(self):
+        """UI 상태 업데이트"""
+        # 처리 버튼 활성화 조건
+        can_process = self.front_image_path is not None
+        if self.is_dual_side:
+            # 양면 모드에서는 뒷면 이미지는 선택사항 (앞면만 있어도 처리 가능)
+            pass
+        
+        self.ui.components['processing_panel'].set_process_enabled(can_process)
+        self._update_print_button_state()
+        
+        # 상태 메시지 업데이트
+        if can_process:
+            if self.is_dual_side:
+                status = "양면 인쇄 준비 완료" if self.back_image_path else "양면 인쇄 준비 (뒷면 이미지 선택사항)"
+            else:
+                status = "단면 인쇄 준비 완료"
+            self.ui.components['status_text'].setText(status)
+        else:
+            self.ui.components['status_text'].setText("앞면 이미지를 선택해주세요")
     
     def _reset_processing_results(self):
         """처리 결과 초기화"""
-        self.mask_image = None
-        self.composite_image = None
-        self.saved_mask_path = None
+        self.front_mask_image = None
+        self.back_mask_image = None
+        self.front_saved_mask_path = None
+        self.back_saved_mask_path = None
         
         self.ui.components['processing_panel'].set_export_enabled(False)
-        self.ui.components['mask_viewer'].clear_image()
-        self.ui.components['composite_viewer'].clear_image()
+        self.ui.components['front_result_viewer'].clear_image()
+        self.ui.components['back_result_viewer'].clear_image()
+        self.ui.components['final_preview_viewer'].clear_image()
         
         self._update_print_button_state()
     
-    def process_image(self):
+    def process_images(self):
         """이미지 처리 시작"""
-        if not self.current_image_path:
+        if not self.front_image_path:
             return
         
         # UI 상태 변경
         self.ui.components['processing_panel'].set_process_enabled(False)
         self.ui.components['progress_panel'].show_progress()
         
-        # 처리 스레드 시작
-        self.processing_thread = ProcessingThread(self.current_image_path, self.image_processor)
-        self.processing_thread.finished.connect(self.on_processing_finished)
+        # 앞면 이미지 처리 시작
+        self.log("앞면 이미지 배경 제거 시작...")
+        self.processing_thread = ProcessingThread(self.front_image_path, self.image_processor)
+        self.processing_thread.finished.connect(self.on_front_processing_finished)
         self.processing_thread.error.connect(self.on_processing_error)
         self.processing_thread.progress.connect(self.on_processing_progress)
         self.processing_thread.start()
@@ -168,19 +248,37 @@ class HanaStudio(QMainWindow):
         self.ui.components['progress_panel'].update_status(message)
         self.log(message)
     
-    def on_processing_finished(self, mask_array):
-        """처리 완료"""
-        self.mask_image = mask_array
+    def on_front_processing_finished(self, mask_array):
+        """앞면 처리 완료"""
+        self.front_mask_image = mask_array
+        self.ui.components['front_result_viewer'].set_image(mask_array)
+        self.log("✅ 앞면 배경 제거 완료!")
         
-        # 마스크 이미지 표시
-        self.ui.components['mask_viewer'].set_image(mask_array)
+        # 뒷면 이미지가 있고 양면 모드인 경우 뒷면도 처리
+        if self.is_dual_side and self.back_image_path:
+            self.log("뒷면 이미지 배경 제거 시작...")
+            self.back_processing_thread = ProcessingThread(self.back_image_path, self.image_processor)
+            self.back_processing_thread.finished.connect(self.on_back_processing_finished)
+            self.back_processing_thread.error.connect(self.on_processing_error)
+            self.back_processing_thread.progress.connect(self.on_processing_progress)
+            self.back_processing_thread.start()
+        else:
+            # 뒷면 처리가 없으면 바로 완료 처리
+            self.on_all_processing_finished()
+    
+    def on_back_processing_finished(self, mask_array):
+        """뒷면 처리 완료"""
+        self.back_mask_image = mask_array
+        self.ui.components['back_result_viewer'].set_image(mask_array)
+        self.log("✅ 뒷면 배경 제거 완료!")
         
-        # 합성 이미지 생성 및 표시
-        if self.original_image is not None:
-            self.composite_image = self.image_processor.create_composite_preview(
-                self.original_image, self.mask_image
-            )
-            self.ui.components['composite_viewer'].set_image(self.composite_image)
+        # 모든 처리 완료
+        self.on_all_processing_finished()
+    
+    def on_all_processing_finished(self):
+        """모든 이미지 처리 완료"""
+        # 최종 미리보기 생성
+        self._create_final_preview()
         
         # UI 상태 업데이트
         self.ui.components['progress_panel'].hide_progress()
@@ -189,8 +287,45 @@ class HanaStudio(QMainWindow):
         
         self._update_print_button_state()
         
-        self.log("✅ 배경 제거 처리 완료!")
+        self.log("✅ 모든 이미지 처리 완료!")
         self.ui.components['status_text'].setText("처리 완료 | 결과 저장 및 인쇄 가능")
+    
+    def _create_final_preview(self):
+        """최종 미리보기 생성"""
+        try:
+            if self.front_original_image is not None and self.front_mask_image is not None:
+                # 앞면 합성 미리보기
+                front_composite = self.image_processor.create_composite_preview(
+                    self.front_original_image, self.front_mask_image
+                )
+                
+                if self.is_dual_side and self.back_original_image is not None and self.back_mask_image is not None:
+                    # 양면 카드 미리보기 (앞면과 뒷면을 나란히 배치)
+                    back_composite = self.image_processor.create_composite_preview(
+                        self.back_original_image, self.back_mask_image
+                    )
+                    
+                    # 앞면과 뒷면을 가로로 연결
+                    h1, w1 = front_composite.shape[:2]
+                    h2, w2 = back_composite.shape[:2]
+                    
+                    # 높이를 맞춤
+                    if h1 != h2:
+                        target_height = min(h1, h2)
+                        front_composite = cv2.resize(front_composite, 
+                                                   (int(w1 * target_height / h1), target_height))
+                        back_composite = cv2.resize(back_composite, 
+                                                  (int(w2 * target_height / h2), target_height))
+                    
+                    # 가로로 연결
+                    final_preview = np.hstack([front_composite, back_composite])
+                else:
+                    # 단면 또는 뒷면이 없는 경우
+                    final_preview = front_composite
+                
+                self.ui.components['final_preview_viewer'].set_image(final_preview)
+        except Exception as e:
+            self.log(f"❌ 최종 미리보기 생성 실패: {e}")
     
     def on_processing_error(self, error_message):
         """처리 오류"""
@@ -203,8 +338,9 @@ class HanaStudio(QMainWindow):
         QMessageBox.critical(self, "처리 오류", f"이미지 처리 중 오류가 발생했습니다:\n\n{error_message}")
     
     def export_results(self):
-        """결과 저장"""
-        if self.mask_image is None:
+        """결과 저장 - 양면 지원"""
+        if self.front_mask_image is None:
+            QMessageBox.warning(self, "경고", "저장할 결과가 없습니다.")
             return
         
         # 저장 폴더 선택
@@ -214,26 +350,50 @@ class HanaStudio(QMainWindow):
         if not folder_path:
             return
         
-        # 저장 실행
-        success, message = self.file_manager.export_results(
-            self.current_image_path,
-            self.mask_image,
-            self.composite_image,
-            folder_path
-        )
-        
-        if success:
-            self.log(f"✅ {message}")
-            self.ui.components['status_text'].setText("저장 완료")
-            QMessageBox.information(self, "저장 완료", message)
-        else:
-            self.log(f"❌ {message}")
-            QMessageBox.critical(self, "저장 오류", message)
+        try:
+            # 합성 이미지 생성 (필요시)
+            front_composite = None
+            back_composite = None
+            
+            if self.front_original_image is not None and self.front_mask_image is not None:
+                front_composite = self.image_processor.create_composite_preview(
+                    self.front_original_image, self.front_mask_image
+                )
+            
+            if (self.back_original_image is not None and self.back_mask_image is not None 
+                and self.is_dual_side):
+                back_composite = self.image_processor.create_composite_preview(
+                    self.back_original_image, self.back_mask_image
+                )
+            
+            # 양면 결과 저장
+            success, message = self.file_manager.export_dual_results(
+                front_image_path=self.front_image_path,
+                front_mask_image=self.front_mask_image,
+                back_image_path=self.back_image_path,
+                back_mask_image=self.back_mask_image,
+                front_composite=front_composite,
+                back_composite=back_composite,
+                output_folder=folder_path
+            )
+            
+            if success:
+                self.log(f"✅ {message}")
+                self.ui.components['status_text'].setText("저장 완료")
+                QMessageBox.information(self, "저장 완료", message)
+            else:
+                self.log(f"❌ {message}")
+                QMessageBox.critical(self, "저장 오류", message)
+                
+        except Exception as e:
+            error_msg = f"저장 중 오류: {e}"
+            self.log(f"❌ {error_msg}")
+            QMessageBox.critical(self, "저장 오류", error_msg)
     
     def on_print_mode_changed(self, mode):
         """인쇄 모드 변경"""
         self.print_mode = mode
-        self.ui.components['printer_panel'].update_print_button_text(mode)
+        self.ui.components['printer_panel'].update_print_button_text(mode, self.is_dual_side)
         self._update_print_button_state()
         
         mode_text = '일반 인쇄' if mode == 'normal' else '레이어 인쇄(YMCW)'
@@ -246,9 +406,11 @@ class HanaStudio(QMainWindow):
             return
         
         if self.print_mode == "normal":
-            can_print = self.current_image_path is not None
+            # 일반 모드: 앞면 이미지만 있으면 인쇄 가능
+            can_print = self.front_image_path is not None
         else:
-            can_print = (self.current_image_path is not None and self.mask_image is not None)
+            # 레이어 모드: 앞면 이미지와 마스크가 있어야 함
+            can_print = (self.front_image_path is not None and self.front_mask_image is not None)
         
         self.ui.components['printer_panel'].set_print_enabled(can_print)
     
@@ -284,33 +446,46 @@ class HanaStudio(QMainWindow):
             QMessageBox.warning(self, "경고", "프린터를 사용할 수 없습니다.")
             return
         
-        if not self.current_image_path:
-            QMessageBox.warning(self, "경고", "원본 이미지를 먼저 선택해주세요.")
+        if not self.front_image_path:
+            QMessageBox.warning(self, "경고", "앞면 이미지를 먼저 선택해주세요.")
             return
         
         # 인쇄 모드별 확인
         if self.print_mode == "layered":
-            if self.mask_image is None:
+            if self.front_mask_image is None:
                 QMessageBox.warning(self, "경고", "레이어 인쇄를 위해서는 배경 제거를 먼저 실행해주세요.")
                 return
             
-            # 마스크 이미지 저장
-            self.saved_mask_path = self.file_manager.save_mask_for_printing(
-                self.mask_image, self.current_image_path
+            # 앞면 마스크 이미지 저장
+            self.front_saved_mask_path = self.file_manager.save_mask_for_printing(
+                self.front_mask_image, self.front_image_path, "front"
             )
-            if not self.saved_mask_path:
-                QMessageBox.critical(self, "오류", "마스크 이미지 저장에 실패했습니다.")
+            if not self.front_saved_mask_path:
+                QMessageBox.critical(self, "오류", "앞면 마스크 이미지 저장에 실패했습니다.")
                 return
+            
+            # 뒷면 마스크도 저장 (있는 경우)
+            if self.is_dual_side and self.back_mask_image is not None and self.back_image_path:
+                self.back_saved_mask_path = self.file_manager.save_mask_for_printing(
+                    self.back_mask_image, self.back_image_path, "back"
+                )
+                if not self.back_saved_mask_path:
+                    self.log("⚠️ 뒷면 마스크 저장 실패, 뒷면은 일반 모드로 인쇄됩니다.")
         
         # 인쇄 확인 다이얼로그
         mode_text = "일반 인쇄" if self.print_mode == "normal" else "레이어 인쇄 (YMCW)"
-        file_name, _ = self.file_manager.get_file_info(self.current_image_path)
+        side_text = "양면" if self.is_dual_side else "단면"
         
-        detail_text = f"원본 이미지: {file_name}\n"
-        if self.print_mode == "layered" and self.saved_mask_path:
-            mask_name = os.path.basename(self.saved_mask_path)
-            detail_text += f"마스크 이미지: {mask_name}\n"
-        detail_text += f"인쇄 모드: {mode_text}"
+        front_name, _ = self.file_manager.get_file_info(self.front_image_path)
+        detail_text = f"앞면 이미지: {front_name}\n"
+        
+        if self.is_dual_side and self.back_image_path:
+            back_name, _ = self.file_manager.get_file_info(self.back_image_path)
+            detail_text += f"뒷면 이미지: {back_name}\n"
+        elif self.is_dual_side:
+            detail_text += "뒷면 이미지: 없음 (빈 뒷면으로 인쇄)\n"
+        
+        detail_text += f"인쇄 방식: {side_text} {mode_text}"
         
         reply = QMessageBox.question(
             self,
@@ -329,12 +504,14 @@ class HanaStudio(QMainWindow):
         self.ui.components['progress_panel'].show_progress()
         
         # 프린터 스레드 시작
-        mask_path = self.saved_mask_path if self.print_mode == "layered" else None
         self.printer_thread = PrinterThread(
-            self.printer_dll_path,
-            self.current_image_path,
-            mask_path,
-            self.print_mode
+            dll_path=self.printer_dll_path,
+            front_image_path=self.front_image_path,
+            back_image_path=self.back_image_path,
+            front_mask_path=self.front_saved_mask_path if self.print_mode == "layered" else None,
+            back_mask_path=self.back_saved_mask_path if self.print_mode == "layered" else None,
+            print_mode=self.print_mode,
+            is_dual_side=self.is_dual_side
         )
         
         self.printer_thread.progress.connect(self.on_printer_progress)
@@ -353,13 +530,14 @@ class HanaStudio(QMainWindow):
         self.ui.components['printer_panel'].set_print_enabled(True)
         
         mode_text = "일반 인쇄" if self.print_mode == "normal" else "레이어 인쇄"
+        side_text = "양면" if self.is_dual_side else "단면"
         
         if success:
-            self.log(f"✅ {mode_text} 완료!")
+            self.log(f"✅ {side_text} {mode_text} 완료!")
             self.ui.components['status_text'].setText("인쇄 완료")
-            QMessageBox.information(self, "성공", f"{mode_text}가 완료되었습니다!")
+            QMessageBox.information(self, "성공", f"{side_text} {mode_text}가 완료되었습니다!")
         else:
-            self.log(f"❌ {mode_text} 실패")
+            self.log(f"❌ {side_text} {mode_text} 실패")
             self.ui.components['status_text'].setText("인쇄 실패")
     
     def on_printer_error(self, error_message):

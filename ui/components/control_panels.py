@@ -1,17 +1,17 @@
 """
-좌측 컨트롤 패널 컴포넌트들
+좌측 컨트롤 패널 컴포넌트들 - 양면 인쇄 지원
 """
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, 
-    QLabel, QRadioButton, QButtonGroup, QProgressBar, QTextEdit
+    QLabel, QRadioButton, QButtonGroup, QProgressBar, QTextEdit, QCheckBox
 )
 from PySide6.QtCore import Signal
 from .modern_button import ModernButton
 
 
 class FileSelectionPanel(QGroupBox):
-    """파일 선택 패널"""
+    """파일 선택 패널 - 양면 지원"""
     file_selected = Signal(str)  # 파일 경로 시그널
     
     def __init__(self):
@@ -21,18 +21,46 @@ class FileSelectionPanel(QGroupBox):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         
-        self.select_btn = ModernButton("이미지 선택", primary=True)
-        self.file_label = QLabel("선택된 파일이 없습니다")
+        # 앞면 이미지 선택
+        self.front_btn = ModernButton("앞면 이미지 선택", primary=True)
+        self.front_label = QLabel("앞면: 선택된 파일이 없습니다")
         
-        layout.addWidget(self.select_btn)
-        layout.addWidget(self.file_label)
+        # 뒷면 이미지 선택
+        self.back_btn = ModernButton("뒷면 이미지 선택")
+        self.back_label = QLabel("뒷면: 선택된 파일이 없습니다")
         
-        # 신호 연결은 외부에서 처리
+        # 양면 인쇄 활성화 체크박스
+        self.dual_side_check = QCheckBox("양면 인쇄 사용")
+        self.dual_side_check.toggled.connect(self._on_dual_side_toggled)
+        
+        layout.addWidget(self.front_btn)
+        layout.addWidget(self.front_label)
+        layout.addWidget(self.dual_side_check)
+        layout.addWidget(self.back_btn)
+        layout.addWidget(self.back_label)
+        
+        # 초기에는 뒷면 비활성화
+        self.back_btn.setEnabled(False)
+        
+    def _on_dual_side_toggled(self, checked):
+        """양면 인쇄 토글"""
+        self.back_btn.setEnabled(checked)
+        if not checked:
+            self.back_label.setText("뒷면: 선택된 파일이 없습니다")
     
-    def update_file_info(self, file_path: str):
-        """파일 정보 업데이트"""
+    def update_front_file_info(self, file_path: str):
+        """앞면 파일 정보 업데이트"""
         import os
-        self.file_label.setText(f"📁 {os.path.basename(file_path)}")
+        self.front_label.setText(f"앞면: 📁 {os.path.basename(file_path)}")
+    
+    def update_back_file_info(self, file_path: str):
+        """뒷면 파일 정보 업데이트"""
+        import os
+        self.back_label.setText(f"뒷면: 📁 {os.path.basename(file_path)}")
+    
+    def is_dual_side_enabled(self) -> bool:
+        """양면 인쇄 활성화 여부"""
+        return self.dual_side_check.isChecked()
 
 
 class ProcessingOptionsPanel(QGroupBox):
@@ -70,7 +98,7 @@ class ProcessingOptionsPanel(QGroupBox):
 
 
 class PrintModePanel(QGroupBox):
-    """인쇄 모드 패널"""
+    """인쇄 모드 패널 - 양면 지원"""
     mode_changed = Signal(str)  # "normal" 또는 "layered"
     
     def __init__(self):
@@ -83,7 +111,7 @@ class PrintModePanel(QGroupBox):
         
         # 라디오 버튼들
         self.normal_radio = QRadioButton("일반 인쇄")
-        self.layered_radio = QRadioButton("레이어 인쇄")
+        self.layered_radio = QRadioButton("레이어 인쇄 (YMCW)")
         self.normal_radio.setChecked(True)
         
         # 버튼 그룹
@@ -92,7 +120,7 @@ class PrintModePanel(QGroupBox):
         self.button_group.addButton(self.layered_radio, 1)
         
         # 설명 라벨
-        self.mode_description_label = QLabel("📖 원본 이미지만 인쇄합니다")
+        self.mode_description_label = QLabel("📖 원본 이미지를 양면 인쇄합니다")
         self.mode_description_label.setStyleSheet("""
             color: #6C757D; font-size: 10px;
             padding: 4px 8px;
@@ -112,10 +140,10 @@ class PrintModePanel(QGroupBox):
         """모드 변경 시 처리"""
         if self.normal_radio.isChecked():
             self.print_mode = "normal"
-            self.mode_description_label.setText("📖 원본 이미지만 인쇄합니다")
+            self.mode_description_label.setText("📖 원본 이미지를 양면 인쇄합니다")
         else:
             self.print_mode = "layered"
-            self.mode_description_label.setText("📖 원본 이미지 위에 마스크 워터마크를 포함하여 인쇄합니다")
+            self.mode_description_label.setText("📖 원본 이미지 위에 마스크 워터마크를 포함하여 양면 인쇄합니다")
         
         self.mode_changed.emit(self.print_mode)
     
@@ -143,7 +171,7 @@ class PrinterPanel(QGroupBox):
         
         # 버튼들
         self.test_printer_btn = ModernButton("프린터 연결 테스트")
-        self.print_card_btn = ModernButton("카드 인쇄", primary=True)
+        self.print_card_btn = ModernButton("양면 카드 인쇄", primary=True)
         self.print_card_btn.setEnabled(False)
         
         layout.addWidget(self.printer_status_label)
@@ -166,12 +194,13 @@ class PrinterPanel(QGroupBox):
         """인쇄 버튼 활성화/비활성화"""
         self.print_card_btn.setEnabled(enabled)
     
-    def update_print_button_text(self, mode: str):
+    def update_print_button_text(self, mode: str, is_dual: bool = True):
         """인쇄 버튼 텍스트 업데이트"""
         if mode == "normal":
-            self.print_card_btn.setText("일반 카드 인쇄")
+            text = "양면 일반 인쇄" if is_dual else "단면 일반 인쇄"
         else:
-            self.print_card_btn.setText("레이어 카드 인쇄")
+            text = "양면 레이어 인쇄" if is_dual else "단면 레이어 인쇄"
+        self.print_card_btn.setText(text)
 
 
 class ProgressPanel(QGroupBox):
