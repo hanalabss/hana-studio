@@ -25,8 +25,8 @@ class Config:
         'window_geometry': {
             'width': 1600,
             'height': 900,
-            'x': 100,
-            'y': 100
+            'x': 0,
+            'y': 0
         },
         'directories': {
             'output': 'output',
