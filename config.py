@@ -15,7 +15,7 @@ class Config:
     # 기본 설정값
     DEFAULT_SETTINGS = {
         'ai_model': 'isnet-general-use',
-        'alpha_threshold': 45,
+        'alpha_threshold': 200,
         'output_quality': 95,
         'auto_save_results': False,
         'max_image_size': 2048,
