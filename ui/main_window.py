@@ -72,12 +72,12 @@ class HanaStudioMainWindow:
         title_label.setFont(QFont("Segoe UI", 20, QFont.Weight.Bold))  # 22 → 20으로 축소
         title_label.setStyleSheet("color: #2C3E50; background: transparent;")
         
-        # subtitle_label = QLabel("AI 기반 이미지 배경 제거 및 양면 카드 인쇄 도구")
-        # subtitle_label.setFont(QFont("Segoe UI", 10))  # 11 → 10으로 축소
-        # subtitle_label.setStyleSheet("color: #6C757D; background: transparent;")
+        subtitle_label = QLabel("AI 기반 이미지 배경 제거 및 양면 카드 인쇄 도구")
+        subtitle_label.setFont(QFont("Segoe UI", 10))  # 11 → 10으로 축소
+        subtitle_label.setStyleSheet("color: #6C757D; background: transparent;")
         
         title_layout.addWidget(title_label)
-        # title_layout.addWidget(subtitle_label)
+        title_layout.addWidget(subtitle_label)
         
         header_layout.addLayout(title_layout)
         header_layout.addStretch()
@@ -160,7 +160,7 @@ class HanaStudioMainWindow:
                 padding: 8px;
             }
         """)
-        front_group.setFixedHeight(200)  # 220 → 200으로 축소
+        front_group.setFixedHeight(210)  # 회전 버튼 공간을 위해 높이 증가
         
         front_layout = QHBoxLayout(front_group)
         front_layout.setSpacing(10)  # 12 → 10으로 축소
@@ -173,19 +173,19 @@ class HanaStudioMainWindow:
         front_title.setFixedWidth(50)  # 55 → 50으로 축소
         front_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        # 앞면 이미지 뷰어들 - 크기 축소
+        # 앞면 이미지 뷰어들 - 회전 기능 포함
         self.front_original_viewer = ImageViewer("원본")
-        self.front_original_viewer.setFixedSize(240, 150)  # 260×170 → 240×150으로 축소
+        self.front_original_viewer.setFixedSize(240, 170)  # 회전 버튼 공간 포함
         
         # 화살표
         arrow1 = QLabel("→")
-        arrow1.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))  # 18 → 16으로 축소
+        arrow1.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
         arrow1.setStyleSheet("color: #4A90E2; border: none;")
         arrow1.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        arrow1.setFixedWidth(30)  # 35 → 30으로 축소
+        arrow1.setFixedWidth(30)
         
         self.front_result_viewer = ImageViewer("배경제거")
-        self.front_result_viewer.setFixedSize(240, 150)  # 크기 축소
+        self.front_result_viewer.setFixedSize(240, 170)
         
         front_layout.addWidget(front_title)
         front_layout.addWidget(self.front_original_viewer)
@@ -203,7 +203,7 @@ class HanaStudioMainWindow:
                 padding: 8px;
             }
         """)
-        back_group.setFixedHeight(200)  # 220 → 200으로 축소
+        back_group.setFixedHeight(210)  # 회전 버튼 공간을 위해 높이 증가
         
         back_layout = QHBoxLayout(back_group)
         back_layout.setSpacing(10)
@@ -216,9 +216,9 @@ class HanaStudioMainWindow:
         back_title.setFixedWidth(50)
         back_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        # 뒷면 이미지 뷰어들
+        # 뒷면 이미지 뷰어들 - 회전 기능 포함
         self.back_original_viewer = ImageViewer("원본")
-        self.back_original_viewer.setFixedSize(240, 150)  # 크기 축소
+        self.back_original_viewer.setFixedSize(240, 170)
         
         # 화살표
         arrow2 = QLabel("→")
@@ -228,7 +228,7 @@ class HanaStudioMainWindow:
         arrow2.setFixedWidth(30)
         
         self.back_result_viewer = ImageViewer("배경제거")
-        self.back_result_viewer.setFixedSize(240, 150)  # 크기 축소
+        self.back_result_viewer.setFixedSize(240, 170)
         
         back_layout.addWidget(back_title)
         back_layout.addWidget(self.back_original_viewer)
