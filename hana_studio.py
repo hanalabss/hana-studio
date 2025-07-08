@@ -1,11 +1,14 @@
 """
-Hana Studio 메인 애플리케이션 클래스 - final_preview_viewer 제거로 인한 수정
+Hana Studio 메인 애플리케이션 클래스 - 새로운 ImageViewer와 완전 호환
+회전 기능 지원 및 이미지 표시 문제 해결
 """
 
 import os
 import cv2
 import numpy as np
 import threading
+import time
+import tempfile
 from pathlib import Path
 
 from PySide6.QtWidgets import QMainWindow, QFileDialog, QMessageBox
@@ -161,41 +164,60 @@ class HanaStudio(QMainWindow):
                 self.log(f"❌ 프린터 확인 오류: {e}")
         
         threading.Thread(target=check, daemon=True).start()
-    
+
     def select_front_image(self):
-        """앞면 이미지 선택"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "앞면 이미지 선택",
-            "",
-            config.get_image_filter()
-        )
+            """앞면 이미지 선택 - 개선된 버전"""
+            file_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "앞면 이미지 선택",
+                "",
+                config.get_image_filter()
+            )
+            
+            if not file_path:
+                return
+            
+            print(f"[DEBUG] 선택된 앞면 이미지: {file_path}")
+            
+            # 이미지 유효성 검사
+            is_valid, error_msg = self.image_processor.validate_image(file_path)
+            if not is_valid:
+                QMessageBox.warning(self, "경고", error_msg)
+                return
+            
+            # 앞면 이미지 설정
+            self.front_image_path = file_path
+            file_name, file_size_mb = self.file_manager.get_file_info(file_path)
+            
+            # UI 업데이트
+            self.ui.components['file_panel'].update_front_file_info(file_path)
+            self.log(f"앞면 이미지 선택: {file_name} ({file_size_mb:.1f}MB)")
+            
+            # ImageViewer에 이미지 설정 - 먼저 실행
+            print("[DEBUG] ImageViewer에 이미지 설정 시작")
+            self.ui.components['front_original_viewer'].set_image(file_path)
+            
+            # OpenCV로도 읽기 (기존 로직 유지)
+            try:
+                self.front_original_image = cv2.imread(file_path)
+                if self.front_original_image is None:
+                    # 한글 경로 문제일 수 있음
+                    print("[DEBUG] OpenCV 직접 읽기 실패, 안전한 방법 시도")
+                    with open(file_path, 'rb') as f:
+                        image_data = f.read()
+                    nparr = np.frombuffer(image_data, np.uint8)
+                    self.front_original_image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                    
+                print(f"[DEBUG] OpenCV 이미지 로드 완료: {self.front_original_image.shape if self.front_original_image is not None else 'None'}")
+            except Exception as e:
+                print(f"[DEBUG] OpenCV 이미지 로드 실패: {e}")
+                self.front_original_image = None
+            
+            self._update_ui_state()
+            self._reset_processing_results()
         
-        if not file_path:
-            return
-        
-        # 이미지 유효성 검사
-        is_valid, error_msg = self.image_processor.validate_image(file_path)
-        if not is_valid:
-            QMessageBox.warning(self, "경고", error_msg)
-            return
-        
-        # 앞면 이미지 설정
-        self.front_image_path = file_path
-        file_name, file_size_mb = self.file_manager.get_file_info(file_path)
-        
-        self.ui.components['file_panel'].update_front_file_info(file_path)
-        self.log(f"앞면 이미지 선택: {file_name} ({file_size_mb:.1f}MB)")
-        
-        # 앞면 이미지 표시
-        self.ui.components['front_original_viewer'].set_image(file_path)
-        self.front_original_image = cv2.imread(file_path)
-        
-        self._update_ui_state()
-        self._reset_processing_results()
-    
     def select_back_image(self):
-        """뒷면 이미지 선택"""
+        """뒷면 이미지 선택 - 개선된 버전"""
         if not self.is_dual_side:
             return
             
@@ -209,6 +231,8 @@ class HanaStudio(QMainWindow):
         if not file_path:
             return
         
+        print(f"[DEBUG] 선택된 뒷면 이미지: {file_path}")
+        
         # 이미지 유효성 검사
         is_valid, error_msg = self.image_processor.validate_image(file_path)
         if not is_valid:
@@ -219,15 +243,32 @@ class HanaStudio(QMainWindow):
         self.back_image_path = file_path
         file_name, file_size_mb = self.file_manager.get_file_info(file_path)
         
+        # UI 업데이트
         self.ui.components['file_panel'].update_back_file_info(file_path)
         self.log(f"뒷면 이미지 선택: {file_name} ({file_size_mb:.1f}MB)")
         
-        # 뒷면 이미지 표시
+        # ImageViewer에 이미지 설정 - 먼저 실행
+        print("[DEBUG] 뒷면 ImageViewer에 이미지 설정 시작")
         self.ui.components['back_original_viewer'].set_image(file_path)
-        self.back_original_image = cv2.imread(file_path)
+        
+        # OpenCV로도 읽기 (기존 로직 유지)
+        try:
+            self.back_original_image = cv2.imread(file_path)
+            if self.back_original_image is None:
+                # 한글 경로 문제일 수 있음
+                print("[DEBUG] 뒷면 OpenCV 직접 읽기 실패, 안전한 방법 시도")
+                with open(file_path, 'rb') as f:
+                    image_data = f.read()
+                nparr = np.frombuffer(image_data, np.uint8)
+                self.back_original_image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                
+            print(f"[DEBUG] 뒷면 OpenCV 이미지 로드 완료: {self.back_original_image.shape if self.back_original_image is not None else 'None'}")
+        except Exception as e:
+            print(f"[DEBUG] 뒷면 OpenCV 이미지 로드 실패: {e}")
+            self.back_original_image = None
         
         self._update_ui_state()
-    
+
     def on_dual_side_toggled(self, checked):
         """양면 인쇄 토글"""
         self.is_dual_side = checked
@@ -305,22 +346,21 @@ class HanaStudio(QMainWindow):
             self.ui.components['status_text'].setText("앞면 이미지를 선택해주세요")
     
     def _reset_processing_results(self):
-        """처리 결과 초기화 - final_preview_viewer 제거"""
+        """처리 결과 초기화 - 새로운 ImageViewer 호환"""
         self.front_mask_image = None
         self.back_mask_image = None
         self.front_saved_mask_path = None
         self.back_saved_mask_path = None
         
         self.ui.components['processing_panel'].set_export_enabled(False)
+        # 새로운 ImageViewer의 clear_image 메서드 사용
         self.ui.components['front_result_viewer'].clear_image()
         self.ui.components['back_result_viewer'].clear_image()
-        
-        # final_preview_viewer는 제거되었으므로 호출하지 않음
         
         self._update_print_button_state()
     
     def process_images(self):
-        """이미지 처리 시작"""
+        """이미지 처리 시작 - 회전된 이미지 고려"""
         if not self.front_image_path:
             return
         
@@ -328,9 +368,23 @@ class HanaStudio(QMainWindow):
         self.ui.components['processing_panel'].set_process_enabled(False)
         self.ui.components['progress_panel'].show_progress()
         
-        # 앞면 이미지 처리 시작
-        self.log("앞면 이미지 배경 제거 시작...")
-        self.processing_thread = ProcessingThread(self.front_image_path, self.image_processor)
+        # 회전된 이미지 처리를 위해 현재 표시된 이미지 사용
+        front_viewer = self.ui.components['front_original_viewer']
+        current_front_image = front_viewer.get_current_image_array()
+        
+        if current_front_image is not None:
+            # 회전된 이미지를 임시 파일로 저장
+            temp_dir = tempfile.gettempdir()
+            temp_front_path = os.path.join(temp_dir, f"temp_front_{int(time.time())}.jpg")
+            cv2.imwrite(temp_front_path, current_front_image)
+            
+            self.log("앞면 이미지 배경 제거 시작... (회전 적용됨)")
+            self.processing_thread = ProcessingThread(temp_front_path, self.image_processor)
+        else:
+            # 원본 이미지 사용 (회전되지 않은 경우)
+            self.log("앞면 이미지 배경 제거 시작...")
+            self.processing_thread = ProcessingThread(self.front_image_path, self.image_processor)
+        
         self.processing_thread.finished.connect(self.on_front_processing_finished)
         self.processing_thread.error.connect(self.on_processing_error)
         self.processing_thread.progress.connect(self.on_processing_progress)
@@ -342,15 +396,30 @@ class HanaStudio(QMainWindow):
         self.log(message)
     
     def on_front_processing_finished(self, mask_array):
-        """앞면 처리 완료"""
+        """앞면 처리 완료 - 새로운 ImageViewer 호환"""
         self.front_mask_image = mask_array
+        # 새로운 ImageViewer는 numpy 배열을 직접 받을 수 있음
         self.ui.components['front_result_viewer'].set_image(mask_array)
         self.log("✅ 앞면 배경 제거 완료!")
         
         # 뒷면 이미지가 있고 양면 모드인 경우 뒷면도 처리
         if self.is_dual_side and self.back_image_path:
-            self.log("뒷면 이미지 배경 제거 시작...")
-            self.back_processing_thread = ProcessingThread(self.back_image_path, self.image_processor)
+            # 뒷면도 회전이 적용되었는지 확인
+            back_viewer = self.ui.components['back_original_viewer']
+            current_back_image = back_viewer.get_current_image_array()
+            
+            if current_back_image is not None:
+                # 뒷면도 회전된 이미지를 임시 파일로 저장
+                temp_dir = tempfile.gettempdir()
+                temp_back_path = os.path.join(temp_dir, f"temp_back_{int(time.time())}.jpg")
+                cv2.imwrite(temp_back_path, current_back_image)
+                
+                self.log("뒷면 이미지 배경 제거 시작... (회전 적용됨)")
+                self.back_processing_thread = ProcessingThread(temp_back_path, self.image_processor)
+            else:
+                self.log("뒷면 이미지 배경 제거 시작...")
+                self.back_processing_thread = ProcessingThread(self.back_image_path, self.image_processor)
+            
             self.back_processing_thread.finished.connect(self.on_back_processing_finished)
             self.back_processing_thread.error.connect(self.on_processing_error)
             self.back_processing_thread.progress.connect(self.on_processing_progress)
@@ -360,8 +429,9 @@ class HanaStudio(QMainWindow):
             self.on_all_processing_finished()
     
     def on_back_processing_finished(self, mask_array):
-        """뒷면 처리 완료"""
+        """뒷면 처리 완료 - 새로운 ImageViewer 호환"""
         self.back_mask_image = mask_array
+        # 새로운 ImageViewer는 numpy 배열을 직접 받을 수 있음
         self.ui.components['back_result_viewer'].set_image(mask_array)
         self.log("✅ 뒷면 배경 제거 완료!")
         
@@ -369,8 +439,8 @@ class HanaStudio(QMainWindow):
         self.on_all_processing_finished()
     
     def on_all_processing_finished(self):
-        """모든 이미지 처리 완료 - final_preview 제거"""
-        # UI 상태 업데이트 (final_preview 생성 제거)
+        """모든 이미지 처리 완료"""
+        # UI 상태 업데이트
         self.ui.components['progress_panel'].hide_progress()
         self.ui.components['processing_panel'].set_process_enabled(True)
         self.ui.components['processing_panel'].set_export_enabled(True)
@@ -408,16 +478,32 @@ class HanaStudio(QMainWindow):
             front_composite = None
             back_composite = None
             
-            if self.front_original_image is not None and self.front_mask_image is not None:
+            # 회전된 이미지를 고려해서 합성 이미지 생성
+            front_viewer = self.ui.components['front_original_viewer']
+            current_front_image = front_viewer.get_current_image_array()
+            
+            if current_front_image is not None and self.front_mask_image is not None:
+                front_composite = self.image_processor.create_composite_preview(
+                    current_front_image, self.front_mask_image
+                )
+            elif self.front_original_image is not None and self.front_mask_image is not None:
                 front_composite = self.image_processor.create_composite_preview(
                     self.front_original_image, self.front_mask_image
                 )
             
-            if (self.back_original_image is not None and self.back_mask_image is not None 
-                and self.is_dual_side):
-                back_composite = self.image_processor.create_composite_preview(
-                    self.back_original_image, self.back_mask_image
-                )
+            # 뒷면도 동일하게 처리
+            if self.is_dual_side and self.back_mask_image is not None:
+                back_viewer = self.ui.components['back_original_viewer']
+                current_back_image = back_viewer.get_current_image_array()
+                
+                if current_back_image is not None:
+                    back_composite = self.image_processor.create_composite_preview(
+                        current_back_image, self.back_mask_image
+                    )
+                elif self.back_original_image is not None:
+                    back_composite = self.image_processor.create_composite_preview(
+                        self.back_original_image, self.back_mask_image
+                    )
             
             # 양면 결과 저장
             success, message = self.file_manager.export_dual_results(
@@ -521,16 +607,8 @@ class HanaStudio(QMainWindow):
             )
             test_thread.start()
             
-            # 타임아웃 타이머 설정 (10초)
-            # QTimer.singleShot(10000, self._on_printer_test_timeout)
-            
         except Exception as e:
             self._on_printer_test_finished(False, f"테스트 시작 실패: {e}")
-
-    def _on_printer_test_timeout(self):
-        """프린터 테스트 타임아웃"""
-        if hasattr(self, 'test_worker'):
-            self._on_printer_test_finished(False, "프린터 테스트 시간 초과 (10초)")
 
     def _on_printer_test_finished(self, success: bool, message: str):
         """프린터 테스트 결과 처리 (메인 스레드에서 실행)"""
@@ -603,6 +681,29 @@ class HanaStudio(QMainWindow):
                 if not self.back_saved_mask_path:
                     self.log("⚠️ 뒷면 마스크 저장 실패, 뒷면은 일반 모드로 인쇄됩니다.")
         
+        # 회전된 이미지를 고려한 인쇄 경로 준비
+        front_print_path = self.front_image_path
+        back_print_path = self.back_image_path
+        
+        # 앞면이 회전되었다면 임시 파일로 저장
+        front_viewer = self.ui.components['front_original_viewer']
+        current_front_image = front_viewer.get_current_image_array()
+        if current_front_image is not None and front_viewer.get_rotation_angle() != 0:
+            temp_dir = tempfile.gettempdir()
+            front_print_path = os.path.join(temp_dir, f"print_front_{int(time.time())}.jpg")
+            cv2.imwrite(front_print_path, current_front_image)
+            self.log(f"앞면 이미지 회전 적용됨 ({front_viewer.get_rotation_angle()}도)")
+        
+        # 뒷면이 회전되었다면 임시 파일로 저장
+        if self.is_dual_side and self.back_image_path:
+            back_viewer = self.ui.components['back_original_viewer']
+            current_back_image = back_viewer.get_current_image_array()
+            if current_back_image is not None and back_viewer.get_rotation_angle() != 0:
+                temp_dir = tempfile.gettempdir()
+                back_print_path = os.path.join(temp_dir, f"print_back_{int(time.time())}.jpg")
+                cv2.imwrite(back_print_path, current_back_image)
+                self.log(f"뒷면 이미지 회전 적용됨 ({back_viewer.get_rotation_angle()}도)")
+        
         # 인쇄 확인 다이얼로그
         mode_text = "일반 인쇄" if self.print_mode == "normal" else "레이어 인쇄 (YMCW)"
         side_text = "양면" if self.is_dual_side else "단면"
@@ -610,9 +711,17 @@ class HanaStudio(QMainWindow):
         front_name, _ = self.file_manager.get_file_info(self.front_image_path)
         detail_text = f"앞면 이미지: {front_name}\n"
         
+        # 회전 정보 추가
+        if front_viewer.get_rotation_angle() != 0:
+            detail_text += f"  (회전: {front_viewer.get_rotation_angle()}도)\n"
+        
         if self.is_dual_side and self.back_image_path:
             back_name, _ = self.file_manager.get_file_info(self.back_image_path)
             detail_text += f"뒷면 이미지: {back_name}\n"
+            # 뒷면 회전 정보 추가
+            back_viewer = self.ui.components['back_original_viewer']
+            if back_viewer.get_rotation_angle() != 0:
+                detail_text += f"  (회전: {back_viewer.get_rotation_angle()}도)\n"
         elif self.is_dual_side:
             detail_text += "뒷면 이미지: 없음 (빈 뒷면으로 인쇄)\n"
         
@@ -639,21 +748,27 @@ class HanaStudio(QMainWindow):
         if reply != QMessageBox.StandardButton.Yes:
             return
         
-        # 인쇄 시작
-        self._start_multi_print()
+        # 인쇄 시작 - 회전된 이미지 경로 사용
+        self._start_multi_print(front_print_path, back_print_path)
     
-    def _start_multi_print(self):
-        """여러장 인쇄 시작"""
+    def _start_multi_print(self, front_path=None, back_path=None):
+        """여러장 인쇄 시작 - 회전된 이미지 지원"""
         try:
             # UI 상태 변경
             self.ui.components['printer_panel'].set_print_enabled(False)
             self.ui.components['progress_panel'].show_progress()
             
+            # 기본값 설정
+            if front_path is None:
+                front_path = self.front_image_path
+            if back_path is None:
+                back_path = self.back_image_path
+            
             # 프린터 스레드 시작
             self.current_printer_thread = print_manager.start_multi_print(
                 dll_path=self.printer_dll_path,
-                front_image_path=self.front_image_path,
-                back_image_path=self.back_image_path,
+                front_image_path=front_path,
+                back_image_path=back_path,
                 front_mask_path=self.front_saved_mask_path if self.print_mode == "layered" else None,
                 back_mask_path=self.back_saved_mask_path if self.print_mode == "layered" else None,
                 print_mode=self.print_mode,
