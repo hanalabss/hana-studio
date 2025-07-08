@@ -1,6 +1,6 @@
 """
-좌측 컨트롤 패널 컴포넌트들 - 양면 인쇄 및 여러장 인쇄 지원
-유동적 크기 조절로 내용에 맞게 자동 크기 조정
+파일 선택 패널 - 뒷면 버튼 스타일 수정
+양면 모드 활성화 시 앞면 버튼과 동일한 primary 스타일 적용
 """
 
 from PySide6.QtWidgets import (
@@ -62,8 +62,8 @@ class FileSelectionPanel(QGroupBox):
         self.dual_side_check.setMaximumHeight(15)  # 최대 높이 제한
         self.dual_side_check.toggled.connect(self._on_dual_side_toggled)
         
-        # 뒷면 이미지 선택
-        self.back_btn = ModernButton("뒷면 이미지 선택")
+        # 뒷면 이미지 선택 - primary=False로 시작하고 나중에 변경
+        self.back_btn = ModernButton("뒷면 이미지 선택", primary=False)
         self.back_btn.setFixedHeight(30)
         
         self.back_label = QLabel("뒷면: 선택된 파일이 없습니다")
@@ -91,26 +91,11 @@ class FileSelectionPanel(QGroupBox):
         """양면 인쇄 토글"""
         self.back_btn.setEnabled(checked)
         if checked:
-            # 활성화시 primary 색상으로 변경
-            self.back_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #4A90E2;
-                    color: white;
-                    border: none;
-                    border-radius: 5px;
-                    font-weight: 600;
-                    font-size: 10px;
-                }
-                QPushButton:hover {
-                    background-color: #357ABD;
-                }
-                QPushButton:pressed {
-                    background-color: #2E6BA8;
-                }
-            """)
+            # 활성화시 ModernButton의 primary 스타일로 변경
+            self.back_btn.set_primary(True)
         else:
-            # 비활성화시 기본 색상으로 복원
-            self.back_btn.setStyleSheet("")
+            # 비활성화시 기본 스타일로 복원
+            self.back_btn.set_primary(False)
             self.back_label.setText("뒷면: 선택된 파일이 없습니다")
     
     def update_front_file_info(self, file_path: str):
@@ -130,7 +115,6 @@ class FileSelectionPanel(QGroupBox):
     def is_dual_side_enabled(self) -> bool:
         """양면 인쇄 활성화 여부"""
         return self.dual_side_check.isChecked()
-
 
 class ProcessingOptionsPanel(QGroupBox):
     """처리 옵션 패널"""
@@ -172,12 +156,13 @@ class ProcessingOptionsPanel(QGroupBox):
 
 
 class PrintModePanel(QGroupBox):
-    """인쇄 모드 패널 - 양면 지원"""
+    """인쇄 모드 패널 - 양면/단면 구분"""
     mode_changed = Signal(str)  # "normal" 또는 "layered"
     
     def __init__(self):
         super().__init__("📋 인쇄 모드")
         self.print_mode = "normal"
+        self.is_dual_side = False  # 양면/단면 상태 추가
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         self._setup_ui()
     
@@ -209,8 +194,8 @@ class PrintModePanel(QGroupBox):
         self.button_group.addButton(self.normal_radio, 0)
         self.button_group.addButton(self.layered_radio, 1)
         
-        # 설명 라벨
-        self.mode_description_label = QLabel("📖 원본 이미지를 양면 인쇄합니다")
+        # 설명 라벨 - 초기는 단면으로 시작
+        self.mode_description_label = QLabel("📖 원본 이미지를 단면 인쇄합니다")
         self.mode_description_label.setStyleSheet("""
             color: #6C757D; 
             font-size: 13px;
@@ -232,18 +217,31 @@ class PrintModePanel(QGroupBox):
         """모드 변경 시 처리"""
         if self.normal_radio.isChecked():
             self.print_mode = "normal"
-            description = "📖 원본 이미지를 양면 인쇄합니다"
         else:
             self.print_mode = "layered"
-            description = "📖 원본 이미지 위에 마스크 워터마크를 포함하여 양면 인쇄합니다"
+        
+        self._update_description()
+        self.mode_changed.emit(self.print_mode)
+    
+    def _update_description(self):
+        """설명 업데이트 - 양면/단면 구분"""
+        side_text = "양면" if self.is_dual_side else "단면"
+        
+        if self.print_mode == "normal":
+            description = f"📖 원본 이미지를 {side_text} 인쇄합니다"
+        else:
+            description = f"📖 원본 이미지 위에 마스크 워터마크를 포함하여 {side_text} 인쇄합니다"
         
         self.mode_description_label.setText(description)
-        self.mode_changed.emit(self.print_mode)
+    
+    def update_dual_side_status(self, is_dual_side: bool):
+        """양면/단면 상태 업데이트"""
+        self.is_dual_side = is_dual_side
+        self._update_description()
     
     def get_mode(self) -> str:
         """현재 모드 반환"""
         return self.print_mode
-
 
 class PrintQuantityPanel(QGroupBox):
     """인쇄 매수 선택 패널"""

@@ -1,6 +1,6 @@
 """
-메인 윈도우 UI 구성 - 가로 배치 레이아웃
-유동적 크기 조절로 내용에 맞게 자동 크기 조정
+메인 윈도우 UI 구성 - 컨트롤 패널 가로 사이즈 조정
+패널들을 화면 가로 범위에 맞춰 균등하게 배치
 """
 
 from PySide6.QtWidgets import (
@@ -40,7 +40,7 @@ class HanaStudioMainWindow:
         # 1. 헤더
         self.create_header(main_layout)
         
-        # 2. 컨트롤 패널 영역 (가로 배치) - 유동적 크기
+        # 2. 컨트롤 패널 영역 (가로 배치) - 가로 스크롤 제거, 균등 배치
         self.create_control_area(main_layout)
         
         # 3. 메인 컨텐츠 영역 (이미지 뷰어만)
@@ -78,67 +78,67 @@ class HanaStudioMainWindow:
         parent_layout.addWidget(header_frame)
     
     def create_control_area(self, parent_layout):
-        """컨트롤 패널 영역 생성 - 가로 배치, 유동적 크기"""
-        # 스크롤 가능한 컨트롤 영역 - 높이를 훨씬 작게 설정
-        scroll_area = QScrollArea()
-        scroll_area.setMinimumHeight(120)  # 최소 높이 대폭 줄임 (150 → 120)
-        scroll_area.setMaximumHeight(280)  # 최대 높이 대폭 줄임 (180 → 140)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll_area.setStyleSheet("""
-            QScrollArea {
+        """컨트롤 패널 영역 생성 - 가로 스크롤 제거, 패널 균등 배치"""
+        # 컨트롤 컨테이너 - 스크롤 제거
+        control_container = QFrame()
+        control_container.setFixedHeight(280)  # 고정 높이
+        control_container.setStyleSheet("""
+            QFrame {
                 border: 2px solid #DEE2E6;
                 border-radius: 10px;
                 background-color: #FFFFFF;
             }
-            QScrollBar:horizontal {
-                background-color: #F8F9FA;
-                height: 12px;
-                border-radius: 6px;
-            }
-            QScrollBar::handle:horizontal {
-                background-color: #CED4DA;
-                border-radius: 6px;
-                min-width: 20px;
-            }
-            QScrollBar::handle:horizontal:hover {
-                background-color: #ADB5BD;
-            }
         """)
         
-        # 컨트롤 컨테이너
-        control_container = QWidget()
-        scroll_area.setWidget(control_container)
-        scroll_area.setWidgetResizable(True)
-        
-        # 가로 레이아웃
+        # 가로 레이아웃 - 패널 간 간격 대폭 증가
         control_layout = QHBoxLayout(control_container)
-        control_layout.setSpacing(10)  # 패널 간 간격 줄임 (15 → 10)
-        control_layout.setContentsMargins(10, 8, 10, 8)  # 여백 줄임 (15,15,15,15 → 10,8,10,8)
+        control_layout.setSpacing(25)  # 패널 간 간격 대폭 증가 (10 → 25)
+        control_layout.setContentsMargins(20, 12, 20, 12)  # 좌우 여백 증가 (10 → 20)
         
-        # 각 패널들 생성 및 추가 - 고정 너비 제거
+        # 각 패널들 생성
         self.file_panel = FileSelectionPanel()
         self.processing_panel = ProcessingOptionsPanel()
         self.print_mode_panel = PrintModePanel()
         self.print_quantity_panel = PrintQuantityPanel()
         self.printer_panel = PrinterPanel()
-        self.progress_panel = ProgressPanel()  # 진행상황 패널 추가
+        self.progress_panel = ProgressPanel()
         self.log_panel = LogPanel()
         
-        # 패널들을 레이아웃에 추가 - 각각 최소 너비만 설정
+        # 패널들 리스트
         panels = [
-            self.file_panel, self.processing_panel, self.print_mode_panel,
-            self.print_quantity_panel, self.printer_panel, self.progress_panel, self.log_panel
+            self.file_panel, 
+            self.processing_panel, 
+            self.print_mode_panel,
+            self.print_quantity_panel, 
+            self.printer_panel, 
+            self.progress_panel, 
+            self.log_panel
         ]
         
+        # 각 패널별로 개별 너비 설정
+        default_panel_width = 210  # 기본 패널 너비
+        
+        # 파일선택 패널과 처리로그 패널은 더 넓게
+        panel_widths = {
+            self.file_panel: 250,           # 파일선택 패널 +40px
+            self.processing_panel: default_panel_width,
+            self.print_mode_panel: default_panel_width,
+            self.print_quantity_panel: default_panel_width,
+            self.printer_panel: default_panel_width,
+            self.progress_panel: default_panel_width,  # 진행상황 패널 210px 유지
+            self.log_panel: 250             # 처리로그 패널 +40px
+        }
+        
         for panel in panels:
-            panel.setMinimumWidth(160)  # 최소 너비 줄임 (200 → 160)
-            panel.setMaximumWidth(220)  # 최대 너비 줄임 (280 → 220)
+            panel_width = panel_widths[panel]
+            panel.setFixedWidth(panel_width)
             control_layout.addWidget(panel)
         
-        control_layout.addStretch()  # 남은 공간 채우기
+        # 새로운 공간 계산
+        # 250 + 210 + 210 + 210 + 210 + 250 + 210 = 1550px
+        # + 6개 간격 * 25px = 150px + 좌우여백 40px = 1740px total
         
-        parent_layout.addWidget(scroll_area)
+        parent_layout.addWidget(control_container)
     
     def create_image_area(self, parent_layout):
         """이미지 뷰어 영역 생성 - 2줄 배치, 크기 축소"""

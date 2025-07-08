@@ -1,11 +1,12 @@
 """
-Hana Studio 메인 진입점 - 리팩토링된 버전
+Hana Studio 메인 진입점 - High DPI 경고 수정
 """
 
 import sys
 import os
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QGuiApplication
 
 from hana_studio import HanaStudio
 from ui.styles import get_light_palette
@@ -21,15 +22,22 @@ def setup_environment():
 
 
 def setup_application() -> QApplication:
-    """QApplication 설정"""
+    """QApplication 설정 - High DPI 경고 수정"""
+    
+    # Qt6에서 권장하는 방식으로 High DPI 설정 (QApplication 생성 전)
+    try:
+        # Qt6에서는 이 방법이 권장됨
+        QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
+            Qt.HighDpiScaleFactorRoundingPolicy.Floor
+        )
+    except AttributeError:
+        # 구버전 Qt에서는 이 속성이 없을 수 있음
+        pass
+    
     app = QApplication(sys.argv)
     
-    # 고해상도 DPI 지원 설정
-    try:
-        app.setAttribute(Qt.ApplicationAttribute.AA_EnableHighDpiScaling, False)
-        app.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
-    except AttributeError:
-        print("일부 DPI 속성을 설정할 수 없습니다. 버전 호환성 문제일 수 있습니다.")
+    # Qt6에서 deprecated된 속성들 제거
+    # 대신 환경변수로 처리했음
     
     # 앱 정보 설정
     app.setApplicationName(AppConstants.APP_NAME)

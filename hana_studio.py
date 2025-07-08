@@ -1,5 +1,5 @@
 """
-Hana Studio 메인 애플리케이션 클래스 - 양면 인쇄 및 여러장 인쇄 지원
+Hana Studio 메인 애플리케이션 클래스 - final_preview_viewer 제거로 인한 수정
 """
 
 import os
@@ -189,6 +189,9 @@ class HanaStudio(QMainWindow):
             self.ui.components['back_original_viewer'].clear_image()
             self.ui.components['back_result_viewer'].clear_image()
         
+        # 인쇄 모드 패널에 양면/단면 상태 전달
+        self.ui.components['print_mode_panel'].update_dual_side_status(checked)
+        
         # 인쇄 버튼 텍스트 업데이트
         self.ui.components['printer_panel'].update_print_button_text(
             self.print_mode, checked, self.print_quantity
@@ -251,7 +254,7 @@ class HanaStudio(QMainWindow):
             self.ui.components['status_text'].setText("앞면 이미지를 선택해주세요")
     
     def _reset_processing_results(self):
-        """처리 결과 초기화"""
+        """처리 결과 초기화 - final_preview_viewer 제거"""
         self.front_mask_image = None
         self.back_mask_image = None
         self.front_saved_mask_path = None
@@ -260,7 +263,8 @@ class HanaStudio(QMainWindow):
         self.ui.components['processing_panel'].set_export_enabled(False)
         self.ui.components['front_result_viewer'].clear_image()
         self.ui.components['back_result_viewer'].clear_image()
-        self.ui.components['final_preview_viewer'].clear_image()
+        
+        # final_preview_viewer는 제거되었으므로 호출하지 않음
         
         self._update_print_button_state()
     
@@ -314,11 +318,8 @@ class HanaStudio(QMainWindow):
         self.on_all_processing_finished()
     
     def on_all_processing_finished(self):
-        """모든 이미지 처리 완료"""
-        # 최종 미리보기 생성
-        self._create_final_preview()
-        
-        # UI 상태 업데이트
+        """모든 이미지 처리 완료 - final_preview 제거"""
+        # UI 상태 업데이트 (final_preview 생성 제거)
         self.ui.components['progress_panel'].hide_progress()
         self.ui.components['processing_panel'].set_process_enabled(True)
         self.ui.components['processing_panel'].set_export_enabled(True)
@@ -327,43 +328,6 @@ class HanaStudio(QMainWindow):
         
         self.log("✅ 모든 이미지 처리 완료!")
         self.ui.components['status_text'].setText("처리 완료 | 결과 저장 및 인쇄 가능")
-    
-    def _create_final_preview(self):
-        """최종 미리보기 생성"""
-        try:
-            if self.front_original_image is not None and self.front_mask_image is not None:
-                # 앞면 합성 미리보기
-                front_composite = self.image_processor.create_composite_preview(
-                    self.front_original_image, self.front_mask_image
-                )
-                
-                if self.is_dual_side and self.back_original_image is not None and self.back_mask_image is not None:
-                    # 양면 카드 미리보기 (앞면과 뒷면을 나란히 배치)
-                    back_composite = self.image_processor.create_composite_preview(
-                        self.back_original_image, self.back_mask_image
-                    )
-                    
-                    # 앞면과 뒷면을 가로로 연결
-                    h1, w1 = front_composite.shape[:2]
-                    h2, w2 = back_composite.shape[:2]
-                    
-                    # 높이를 맞춤
-                    if h1 != h2:
-                        target_height = min(h1, h2)
-                        front_composite = cv2.resize(front_composite, 
-                                                   (int(w1 * target_height / h1), target_height))
-                        back_composite = cv2.resize(back_composite, 
-                                                  (int(w2 * target_height / h2), target_height))
-                    
-                    # 가로로 연결
-                    final_preview = np.hstack([front_composite, back_composite])
-                else:
-                    # 단면 또는 뒷면이 없는 경우
-                    final_preview = front_composite
-                
-                self.ui.components['final_preview_viewer'].set_image(final_preview)
-        except Exception as e:
-            self.log(f"❌ 최종 미리보기 생성 실패: {e}")
     
     def on_processing_error(self, error_message):
         """처리 오류"""
