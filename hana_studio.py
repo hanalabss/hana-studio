@@ -413,31 +413,108 @@ class HanaStudio(QMainWindow):
         self.ui.components['printer_panel'].set_print_enabled(can_print)
     
     def test_printer_connection(self):
-        """프린터 연결 테스트"""
+        """프린터 연결 테스트 - 크래시 방지 버전"""
         if not self.printer_available or not self.printer_dll_path:
             QMessageBox.warning(self, "경고", "프린터 DLL을 찾을 수 없습니다.")
             return
         
+        # 테스트 버튼 비활성화
         self.ui.components['printer_panel'].set_test_enabled(False)
+        self.ui.components['printer_panel'].update_status("🔄 프린터 테스트 중...")
         
-        def test_connection():
-            try:
-                if test_printer_connection():
-                    self.log("✅ 프린터 연결 테스트 성공!")
-                    self.ui.components['printer_panel'].update_status("✅ 프린터 연결 가능")
-                    QMessageBox.information(self, "성공", "프린터 연결 테스트가 성공했습니다!")
-                else:
-                    self.log("❌ 프린터 연결 테스트 실패")
-                    self.ui.components['printer_panel'].update_status("❌ 프린터 연결 실패")
-                    QMessageBox.warning(self, "실패", "프린터를 찾을 수 없습니다.\n프린터가 켜져 있고 네트워크에 연결되어 있는지 확인해주세요.")
-            except Exception as e:
-                self.log(f"❌ 프린터 테스트 오류: {e}")
-                QMessageBox.critical(self, "오류", f"프린터 테스트 중 오류가 발생했습니다:\n{e}")
-            finally:
-                self.ui.components['printer_panel'].set_test_enabled(True)
+        # 시그널을 사용해서 메인 스레드에서 메시지박스 표시
+        from PySide6.QtCore import QTimer, Signal, QObject
         
-        threading.Thread(target=test_connection, daemon=True).start()
-    
+        class PrinterTestWorker(QObject):
+            """프린터 테스트 전용 워커"""
+            test_finished = Signal(bool, str)  # 성공여부, 메시지
+            
+            def __init__(self, dll_path):
+                super().__init__()
+                self.dll_path = dll_path
+            
+            def test_connection(self):
+                """실제 프린터 테스트 (스레드에서 실행)"""
+                try:
+                    # 간단한 프린터 연결 테스트만 수행
+                    from printer.r600_printer import R600Printer
+                    
+                    # 매우 짧은 타임아웃으로 빠른 테스트
+                    with R600Printer(self.dll_path) as printer:
+                        printer.set_timeout(3000)  # 3초 타임아웃
+                        printers = printer.enum_printers()
+                        
+                        if len(printers) > 0:
+                            self.test_finished.emit(True, f"프린터 발견: {printers[0]}")
+                        else:
+                            self.test_finished.emit(False, "프린터를 찾을 수 없습니다.")
+                            
+                except Exception as e:
+                    error_msg = f"프린터 테스트 실패: {str(e)[:100]}"
+                    self.test_finished.emit(False, error_msg)
+        
+        # 워커 생성 및 시그널 연결
+        self.test_worker = PrinterTestWorker(self.printer_dll_path)
+        self.test_worker.test_finished.connect(self._on_printer_test_finished)
+        
+        # 타이머로 스레드 시작 (메인 스레드에서 안전하게)
+        QTimer.singleShot(100, self._start_printer_test)
+
+    def _start_printer_test(self):
+        """프린터 테스트 시작 (메인 스레드에서 실행)"""
+        try:
+            import threading
+            test_thread = threading.Thread(
+                target=self.test_worker.test_connection,
+                daemon=True
+            )
+            test_thread.start()
+            
+            # 타임아웃 타이머 설정 (10초)
+            # QTimer.singleShot(10000, self._on_printer_test_timeout)
+            
+        except Exception as e:
+            self._on_printer_test_finished(False, f"테스트 시작 실패: {e}")
+
+    def _on_printer_test_timeout(self):
+        """프린터 테스트 타임아웃"""
+        if hasattr(self, 'test_worker'):
+            self._on_printer_test_finished(False, "프린터 테스트 시간 초과 (10초)")
+
+    def _on_printer_test_finished(self, success: bool, message: str):
+        """프린터 테스트 결과 처리 (메인 스레드에서 실행)"""
+        try:
+            # UI 상태 복원
+            self.ui.components['printer_panel'].set_test_enabled(True)
+            
+            if success:
+                self.log(f"✅ {message}")
+                self.ui.components['printer_panel'].update_status("✅ 프린터 연결 가능")
+                
+                # 성공 시에는 간단한 로그만 출력 (메시지박스 없음)
+                self.ui.components['status_text'].setText("프린터 테스트 성공")
+                
+            else:
+                self.log(f"❌ {message}")
+                self.ui.components['printer_panel'].update_status("❌ 프린터 연결 실패")
+                
+                # 실패 시에만 메시지박스 표시 (메인 스레드에서)
+                QMessageBox.warning(
+                    self, 
+                    "프린터 테스트 실패", 
+                    f"프린터 연결을 확인할 수 없습니다.\n\n{message}\n\n"
+                    "프린터가 켜져 있고 네트워크에 연결되어 있는지 확인해주세요."
+                )
+            
+            # 워커 정리
+            if hasattr(self, 'test_worker'):
+                delattr(self, 'test_worker')
+                
+        except Exception as e:
+            self.log(f"❌ 테스트 결과 처리 오류: {e}")
+            self.ui.components['printer_panel'].set_test_enabled(True)
+            self.ui.components['printer_panel'].update_status("❌ 테스트 오류")
+        
     def print_card(self):
         """카드 인쇄 - 여러장 지원"""
         if not self.printer_available or not self.printer_dll_path:
