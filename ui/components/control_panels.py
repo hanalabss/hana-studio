@@ -346,7 +346,7 @@ class PrintQuantityPanel(QGroupBox):
 
 
 class PrinterPanel(QGroupBox):
-    """프린터 연동 패널"""
+    """프린터 연동 패널 - 초기 텍스트 수정"""
     test_requested = Signal()
     print_requested = Signal()
     
@@ -357,8 +357,8 @@ class PrinterPanel(QGroupBox):
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(5)  # 간격 늘림
-        layout.setContentsMargins(8, 8, 8, 8)  # 여백 늘림
+        layout.setSpacing(5)
+        layout.setContentsMargins(8, 8, 8, 8)
         
         # 상태 라벨
         self.printer_status_label = QLabel("프린터 상태 확인 중...")
@@ -373,11 +373,12 @@ class PrinterPanel(QGroupBox):
         
         # 버튼들
         self.test_printer_btn = ModernButton("프린터 연결 테스트")
-        self.test_printer_btn.setFixedHeight(45)  # 높이 대폭 증가 (40 → 45)
+        self.test_printer_btn.setFixedHeight(45)
         
-        self.print_card_btn = ModernButton("양면 카드 인쇄", primary=True)
+        # 초기 버튼 텍스트를 "단면 일반 인쇄"로 설정
+        self.print_card_btn = ModernButton("단면 일반 인쇄", primary=True)
         self.print_card_btn.setEnabled(False)
-        self.print_card_btn.setFixedHeight(50)  # 높이 대폭 증가 (40 → 50)
+        self.print_card_btn.setFixedHeight(50)
         
         layout.addWidget(self.printer_status_label)
         layout.addWidget(self.test_printer_btn)
@@ -400,8 +401,8 @@ class PrinterPanel(QGroupBox):
         """인쇄 버튼 활성화/비활성화"""
         self.print_card_btn.setEnabled(enabled)
     
-    def update_print_button_text(self, mode: str, is_dual: bool = True, quantity: int = 1):
-        """인쇄 버튼 텍스트 업데이트"""
+    def update_print_button_text(self, mode: str, is_dual: bool = False, quantity: int = 1):
+        """인쇄 버튼 텍스트 업데이트 - 기본값을 단면으로 수정"""
         if mode == "normal":
             base_text = "양면 일반 인쇄" if is_dual else "단면 일반 인쇄"
         else:
@@ -414,8 +415,7 @@ class PrinterPanel(QGroupBox):
         
         text = truncate_text(text, 20)
         self.print_card_btn.setText(text)
-
-
+        
 class ProgressPanel(QGroupBox):
     """진행 상황 패널"""
     
