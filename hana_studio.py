@@ -16,6 +16,8 @@ from ui import HanaStudioMainWindow, get_app_style
 from core import ImageProcessor, ProcessingThread, FileManager
 from printer import PrinterThread, find_printer_dll, test_printer_connection
 from printer.printer_thread import print_manager
+from printer.printer_discovery import PrinterInfo
+from ui.components.printer_selection_dialog import show_printer_selection_dialog
 from config import config, AppConstants
 
 
@@ -46,12 +48,61 @@ class HanaStudio(QMainWindow):
         self.printer_available = False
         self.printer_dll_path = None
         self.current_printer_thread = None
+        self.selected_printer_info = None
         
         # UI 초기화
         self.ui = HanaStudioMainWindow(self)
         self._setup_window()
         self._connect_signals()
+        # 프린터 선택 (필수) - 메인 윈도우 표시 전에 실행
+        if not self._select_printer_on_startup():
+            # 프린터 선택 실패 시 프로그램 종료
+            import sys
+            sys.exit(1)
+        
         self._check_printer_availability()
+    
+    
+    def _select_printer_on_startup(self) -> bool:
+        """시작 시 프린터 선택 (필수)"""
+        try:
+            # DLL 파일 찾기
+            self.printer_dll_path = find_printer_dll()
+            if not self.printer_dll_path:
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.critical(
+                    None,
+                    "DLL 파일 없음",
+                    "프린터 DLL 파일(libDSRetransfer600App.dll)을 찾을 수 없습니다.\n\n"
+                    "DLL 파일을 다음 위치 중 하나에 배치해주세요:\n"
+                    "• 메인 폴더\n"
+                    "• dll/ 폴더\n"
+                    "• lib/ 폴더"
+                )
+                return False
+            
+            # 프린터 선택 다이얼로그 표시
+            selected_printer = show_printer_selection_dialog(self.printer_dll_path, self)
+            
+            if not selected_printer:
+                # 사용자가 취소하거나 프린터가 없음
+                return False
+            
+            # 선택된 프린터 정보 저장
+            self.selected_printer_info = selected_printer
+            self.printer_available = True
+            
+            print(f"✅ 프린터 선택 완료: {selected_printer}")
+            return True
+            
+        except Exception as e:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                None,
+                "프린터 선택 오류",
+                f"프린터 선택 중 오류가 발생했습니다:\n\n{e}"
+            )
+            return False
         
     def _setup_window(self):
         """윈도우 기본 설정"""

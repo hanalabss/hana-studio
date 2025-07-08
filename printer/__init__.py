@@ -18,6 +18,12 @@ from .printer_utils import (
     test_printer_connection,
     test_print_modes
 )
+from .printer_discovery import (
+    PrinterInfo,
+    PrinterDiscovery,
+    discover_available_printers,
+    get_printer_display_name
+)
 
 __all__ = [
     # 예외 클래스들
@@ -36,10 +42,16 @@ __all__ = [
     'get_default_dll_paths',
     'find_printer_dll',
     'test_printer_connection',
-    'test_print_modes'
+    'test_print_modes',
+    
+    # 프린터 탐지 관련
+    'PrinterInfo',
+    'PrinterDiscovery',
+    'discover_available_printers',
+    'get_printer_display_name'
 ]
 
 # 모듈 정보
 __version__ = '1.0.0'
 __author__ = 'Hana Studio Team'
-__description__ = 'RTAI LUKA R600 프린터 연동 모듈'
+__description__ = 'RTAI LUKA R600 프린터 연동 모듈 - TCP/USB 지원'

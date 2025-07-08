@@ -8,11 +8,12 @@ from .control_panels import (
     FileSelectionPanel,
     ProcessingOptionsPanel,
     PrintModePanel,
-    PrintQuantityPanel,  # 새로 추가
+    PrintQuantityPanel,
     PrinterPanel,
     ProgressPanel,
     LogPanel
 )
+from .printer_selection_dialog import PrinterSelectionDialog, show_printer_selection_dialog
 
 __all__ = [
     'ModernButton',
@@ -20,8 +21,10 @@ __all__ = [
     'FileSelectionPanel',
     'ProcessingOptionsPanel',
     'PrintModePanel',
-    'PrintQuantityPanel',  # 새로 추가
+    'PrintQuantityPanel',
     'PrinterPanel',
     'ProgressPanel',
-    'LogPanel'
+    'LogPanel',
+    'PrinterSelectionDialog',
+    'show_printer_selection_dialog'
 ]

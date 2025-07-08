@@ -1,5 +1,5 @@
 """
-R600 프린터 제어 클래스 - 양면 인쇄 지원
+R600 프린터 제어 클래스 - 양면 인쇄 지원 및 선택된 프린터 정보 활용
 """
 
 import ctypes
@@ -7,15 +7,17 @@ import os
 import time
 from typing import List, Optional, Tuple
 from .exceptions import R600PrinterError, PrinterInitializationError, DLLNotFoundError
+from .printer_discovery import PrinterInfo
 
 
 class R600Printer:
-    """R600 프린터 제어 클래스 - 양면 인쇄 지원"""
+    """R600 프린터 제어 클래스 - 양면 인쇄 지원 및 선택된 프린터 활용"""
     
-    def __init__(self, dll_path: str = './libDSRetransfer600App.dll'):
+    def __init__(self, dll_path: str = './libDSRetransfer600App.dll', selected_printer: Optional[PrinterInfo] = None):
         """R600 프린터 초기화"""
         self.lib = None
-        self.selected_printer = None
+        self.selected_printer_info = selected_printer
+        self.selected_printer_name = None
         self.front_img_info = None
         self.back_img_info = None
         self.is_initialized = False
@@ -32,6 +34,10 @@ class R600Printer:
             self._initialize_library()
             self.is_initialized = True
             
+            # 선택된 프린터가 있으면 자동으로 설정
+            if self.selected_printer_info:
+                self.auto_select_printer()
+            
         except Exception as e:
             print(f"[DEBUG] 예외 발생 위치: {type(e).__name__}: {e}")
             raise PrinterInitializationError(f"프린터 초기화 실패: {e}")
@@ -45,6 +51,14 @@ class R600Printer:
             ctypes.POINTER(ctypes.c_int)
         ]
         self.lib.R600EnumTcpPrt.restype = ctypes.c_uint
+        
+        # USB 프린터 열거 함수 추가
+        self.lib.R600EnumUsbPrt.argtypes = [
+            ctypes.POINTER(ctypes.c_char), 
+            ctypes.POINTER(ctypes.c_uint), 
+            ctypes.POINTER(ctypes.c_int)
+        ]
+        self.lib.R600EnumUsbPrt.restype = ctypes.c_uint
         
         self.lib.R600TcpSetTimeout.argtypes = [ctypes.c_int, ctypes.c_int]
         self.lib.R600TcpSetTimeout.restype = ctypes.c_uint
@@ -119,38 +133,108 @@ class R600Printer:
         else:
             raise R600PrinterError(f"{operation} 실패: 오류 코드 {result}")
     
+    def auto_select_printer(self):
+        """초기화 시 선택된 프린터 자동 설정"""
+        if not self.selected_printer_info:
+            print("⚠️ 선택된 프린터 정보가 없습니다.")
+            return False
+        
+        try:
+            # 선택된 프린터로 바로 설정
+            printer_name = self.selected_printer_info.name
+            print(f"🎯 선택된 프린터로 자동 설정: {printer_name} ({self.selected_printer_info.connection_type})")
+            
+            ret = self.lib.R600SelectPrt(printer_name.encode('cp949'))
+            self._check_result(ret, f"프린터 자동 선택 ({printer_name})")
+            self.selected_printer_name = printer_name
+            
+            print(f"✅ 프린터 자동 선택 완료: {printer_name}")
+            return True
+            
+        except Exception as e:
+            print(f"❌ 프린터 자동 선택 실패: {e}")
+            return False
+    
     def enum_printers(self) -> List[str]:
+        """프린터 목록 조회 - 선택된 프린터 타입에 맞춰 조회"""
+        if self.selected_printer_info:
+            # 이미 선택된 프린터가 있으면 그것만 반환
+            return [self.selected_printer_info.name]
+        
+        # 선택된 프린터 정보가 없으면 TCP와 USB 모두 조회
+        all_printers = []
+        
+        # TCP 프린터 조회
+        tcp_printers = self._enum_tcp_printers()
+        all_printers.extend(tcp_printers)
+        
+        # USB 프린터 조회
+        usb_printers = self._enum_usb_printers()
+        all_printers.extend(usb_printers)
+        
+        return all_printers
+    
+    def _enum_tcp_printers(self) -> List[str]:
         """TCP 프린터 목록 조회"""
-        list_buffer_size = 1024
-        printer_list_buffer = ctypes.create_string_buffer(list_buffer_size)
-        enum_list_len = ctypes.c_uint(list_buffer_size)
-        num_printers = ctypes.c_int()
+        printers = []
         
-        ret = self.lib.R600EnumTcpPrt(
-            printer_list_buffer, 
-            ctypes.byref(enum_list_len), 
-            ctypes.byref(num_printers)
-        )
-        
-        if ret != 0:
-            raise R600PrinterError(f"프린터 열거 실패: {ret}")
-        
-        actual_len = enum_list_len.value
-        printer_count = num_printers.value
-        
-        if actual_len > 0 and printer_count > 0:
-            printer_names_str = printer_list_buffer.value.decode('cp949')
-            printer_names = [name.strip() for name in printer_names_str.split('\n') if name.strip()]
+        try:
+            list_buffer_size = 1024
+            printer_list_buffer = ctypes.create_string_buffer(list_buffer_size)
+            enum_list_len = ctypes.c_uint(list_buffer_size)
+            num_printers = ctypes.c_int()
             
-            print(f"발견된 프린터 수: {printer_count}")
-            print("프린터 목록:")
-            for name in printer_names:
-                print(f"- {name}")
+            ret = self.lib.R600EnumTcpPrt(
+                printer_list_buffer, 
+                ctypes.byref(enum_list_len), 
+                ctypes.byref(num_printers)
+            )
             
-            return printer_names
-        else:
-            print("프린터를 찾을 수 없습니다.")
-            return []
+            if ret == 0:
+                actual_len = enum_list_len.value
+                printer_count = num_printers.value
+                
+                if actual_len > 0 and printer_count > 0:
+                    printer_names_str = printer_list_buffer.value.decode('cp949')
+                    printer_names = [name.strip() for name in printer_names_str.split('\n') if name.strip()]
+                    printers.extend(printer_names)
+                    print(f"📡 TCP 프린터 {len(printer_names)}대 발견")
+        
+        except Exception as e:
+            print(f"❌ TCP 프린터 조회 중 오류: {e}")
+        
+        return printers
+    
+    def _enum_usb_printers(self) -> List[str]:
+        """USB 프린터 목록 조회"""
+        printers = []
+        
+        try:
+            list_buffer_size = 1024
+            printer_list_buffer = ctypes.create_string_buffer(list_buffer_size)
+            enum_list_len = ctypes.c_uint(list_buffer_size)
+            num_printers = ctypes.c_int()
+            
+            ret = self.lib.R600EnumUsbPrt(
+                printer_list_buffer, 
+                ctypes.byref(enum_list_len), 
+                ctypes.byref(num_printers)
+            )
+            
+            if ret == 0:
+                actual_len = enum_list_len.value
+                printer_count = num_printers.value
+                
+                if actual_len > 0 and printer_count > 0:
+                    printer_names_str = printer_list_buffer.value.decode('cp949')
+                    printer_names = [name.strip() for name in printer_names_str.split('\n') if name.strip()]
+                    printers.extend(printer_names)
+                    print(f"🔌 USB 프린터 {len(printer_names)}대 발견")
+        
+        except Exception as e:
+            print(f"❌ USB 프린터 조회 중 오류: {e}")
+        
+        return printers
     
     def set_timeout(self, timeout_ms: int = 10000):
         """타임아웃 설정"""
@@ -161,7 +245,7 @@ class R600Printer:
         """프린터 선택"""
         ret = self.lib.R600SelectPrt(printer_name.encode('cp949'))
         self._check_result(ret, f"프린터 선택 ({printer_name})")
-        self.selected_printer = printer_name
+        self.selected_printer_name = printer_name
     
     def inject_card(self):
         """카드 삽입"""
@@ -478,7 +562,7 @@ class R600Printer:
                 time.sleep(2)
                 
             # 5. 상태 초기화
-            self.selected_printer = None
+            self.selected_printer_name = None
             self.front_img_info = None
             self.back_img_info = None
             self.is_initialized = False
