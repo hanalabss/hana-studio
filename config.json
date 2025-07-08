@@ -9,9 +9,9 @@
   "theme": "light",
   "window_geometry": {
     "width": 1920,
-    "height": 1017,
-    "x": -1,
-    "y": 32
+    "height": 1022,
+    "x": 1439,
+    "y": 258
   },
   "directories": {
     "output": "output",

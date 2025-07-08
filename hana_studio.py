@@ -164,43 +164,60 @@ class HanaStudio(QMainWindow):
                 self.log(f"❌ 프린터 확인 오류: {e}")
         
         threading.Thread(target=check, daemon=True).start()
-    
+
     def select_front_image(self):
-        """앞면 이미지 선택 - 새로운 ImageViewer 호환"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "앞면 이미지 선택",
-            "",
-            config.get_image_filter()
-        )
+            """앞면 이미지 선택 - 개선된 버전"""
+            file_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "앞면 이미지 선택",
+                "",
+                config.get_image_filter()
+            )
+            
+            if not file_path:
+                return
+            
+            print(f"[DEBUG] 선택된 앞면 이미지: {file_path}")
+            
+            # 이미지 유효성 검사
+            is_valid, error_msg = self.image_processor.validate_image(file_path)
+            if not is_valid:
+                QMessageBox.warning(self, "경고", error_msg)
+                return
+            
+            # 앞면 이미지 설정
+            self.front_image_path = file_path
+            file_name, file_size_mb = self.file_manager.get_file_info(file_path)
+            
+            # UI 업데이트
+            self.ui.components['file_panel'].update_front_file_info(file_path)
+            self.log(f"앞면 이미지 선택: {file_name} ({file_size_mb:.1f}MB)")
+            
+            # ImageViewer에 이미지 설정 - 먼저 실행
+            print("[DEBUG] ImageViewer에 이미지 설정 시작")
+            self.ui.components['front_original_viewer'].set_image(file_path)
+            
+            # OpenCV로도 읽기 (기존 로직 유지)
+            try:
+                self.front_original_image = cv2.imread(file_path)
+                if self.front_original_image is None:
+                    # 한글 경로 문제일 수 있음
+                    print("[DEBUG] OpenCV 직접 읽기 실패, 안전한 방법 시도")
+                    with open(file_path, 'rb') as f:
+                        image_data = f.read()
+                    nparr = np.frombuffer(image_data, np.uint8)
+                    self.front_original_image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                    
+                print(f"[DEBUG] OpenCV 이미지 로드 완료: {self.front_original_image.shape if self.front_original_image is not None else 'None'}")
+            except Exception as e:
+                print(f"[DEBUG] OpenCV 이미지 로드 실패: {e}")
+                self.front_original_image = None
+            
+            self._update_ui_state()
+            self._reset_processing_results()
         
-        if not file_path:
-            return
-        
-        # 이미지 유효성 검사
-        is_valid, error_msg = self.image_processor.validate_image(file_path)
-        if not is_valid:
-            QMessageBox.warning(self, "경고", error_msg)
-            return
-        
-        # 앞면 이미지 설정
-        self.front_image_path = file_path
-        file_name, file_size_mb = self.file_manager.get_file_info(file_path)
-        
-        self.ui.components['file_panel'].update_front_file_info(file_path)
-        self.log(f"앞면 이미지 선택: {file_name} ({file_size_mb:.1f}MB)")
-        
-        # 새로운 ImageViewer의 set_image 메서드 사용
-        self.ui.components['front_original_viewer'].set_image(file_path)
-        
-        # OpenCV로도 읽기 (기존 로직 유지)
-        self.front_original_image = cv2.imread(file_path)
-        
-        self._update_ui_state()
-        self._reset_processing_results()
-    
     def select_back_image(self):
-        """뒷면 이미지 선택 - 새로운 ImageViewer 호환"""
+        """뒷면 이미지 선택 - 개선된 버전"""
         if not self.is_dual_side:
             return
             
@@ -214,6 +231,8 @@ class HanaStudio(QMainWindow):
         if not file_path:
             return
         
+        print(f"[DEBUG] 선택된 뒷면 이미지: {file_path}")
+        
         # 이미지 유효성 검사
         is_valid, error_msg = self.image_processor.validate_image(file_path)
         if not is_valid:
@@ -224,17 +243,32 @@ class HanaStudio(QMainWindow):
         self.back_image_path = file_path
         file_name, file_size_mb = self.file_manager.get_file_info(file_path)
         
+        # UI 업데이트
         self.ui.components['file_panel'].update_back_file_info(file_path)
         self.log(f"뒷면 이미지 선택: {file_name} ({file_size_mb:.1f}MB)")
         
-        # 새로운 ImageViewer의 set_image 메서드 사용
+        # ImageViewer에 이미지 설정 - 먼저 실행
+        print("[DEBUG] 뒷면 ImageViewer에 이미지 설정 시작")
         self.ui.components['back_original_viewer'].set_image(file_path)
         
         # OpenCV로도 읽기 (기존 로직 유지)
-        self.back_original_image = cv2.imread(file_path)
+        try:
+            self.back_original_image = cv2.imread(file_path)
+            if self.back_original_image is None:
+                # 한글 경로 문제일 수 있음
+                print("[DEBUG] 뒷면 OpenCV 직접 읽기 실패, 안전한 방법 시도")
+                with open(file_path, 'rb') as f:
+                    image_data = f.read()
+                nparr = np.frombuffer(image_data, np.uint8)
+                self.back_original_image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                
+            print(f"[DEBUG] 뒷면 OpenCV 이미지 로드 완료: {self.back_original_image.shape if self.back_original_image is not None else 'None'}")
+        except Exception as e:
+            print(f"[DEBUG] 뒷면 OpenCV 이미지 로드 실패: {e}")
+            self.back_original_image = None
         
         self._update_ui_state()
-    
+
     def on_dual_side_toggled(self, checked):
         """양면 인쇄 토글"""
         self.is_dual_side = checked
