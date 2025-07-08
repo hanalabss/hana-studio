@@ -1,10 +1,11 @@
 """
-메인 윈도우 UI 구성 - 양면 인쇄 및 여러장 인쇄 지원
+메인 윈도우 UI 구성 - 가로 배치 레이아웃
+유동적 크기 조절로 내용에 맞게 자동 크기 조정
 """
 
 from PySide6.QtWidgets import (
-    QVBoxLayout, QHBoxLayout, QGridLayout, QWidget, 
-    QFrame, QLabel, QSplitter
+    QVBoxLayout, QHBoxLayout, QProgressBar, QWidget, 
+    QFrame, QLabel, QSplitter, QScrollArea
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
@@ -18,7 +19,7 @@ from .styles import get_header_style, get_status_bar_style
 
 
 class HanaStudioMainWindow:
-    """메인 윈도우 UI 구성을 담당하는 클래스 - 양면 인쇄 및 여러장 인쇄 지원"""
+    """메인 윈도우 UI 구성을 담당하는 클래스 - 가로 배치 레이아웃"""
     
     def __init__(self, parent_widget):
         self.parent = parent_widget
@@ -31,31 +32,23 @@ class HanaStudioMainWindow:
         central_widget.setStyleSheet("background-color: #F8F9FA;")
         self.parent.setCentralWidget(central_widget)
         
-        # 메인 레이아웃
+        # 메인 레이아웃 (세로)
         main_layout = QVBoxLayout(central_widget)
-        main_layout.setSpacing(20)
+        main_layout.setSpacing(15)
         main_layout.setContentsMargins(20, 20, 20, 20)
         
-        # 헤더
+        # 1. 헤더
         self.create_header(main_layout)
         
-        # 메인 컨텐츠 (좌우 분할)
-        content_splitter = QSplitter(Qt.Orientation.Horizontal)
-        main_layout.addWidget(content_splitter)
+        # 2. 컨트롤 패널 영역 (가로 배치) - 유동적 크기
+        self.create_control_area(main_layout)
         
-        # 좌측 패널 (컨트롤)
-        self.create_left_panel(content_splitter)
+        # 3. 메인 컨텐츠 영역 (이미지 뷰어만)
+        self.create_image_area(main_layout)
         
-        # 우측 패널 (이미지 뷰어)
-        self.create_right_panel(content_splitter)
-        
-        # 하단 상태바
+        # 4. 하단 상태바
         self.create_status_bar(main_layout)
-        
-        # 분할 비율 설정
-        # content_splitter.setSizes([380, 1420])  # 좌측 패널 크기 고정
-        content_splitter.setStretchFactor(0, 0)  # 좌측 패널
-        content_splitter.setStretchFactor(1, 1)  # 우측 뷰어
+    
     def create_header(self, parent_layout):
         """헤더 생성"""
         header_frame = QFrame()
@@ -84,129 +77,185 @@ class HanaStudioMainWindow:
         
         parent_layout.addWidget(header_frame)
     
-    def create_left_panel(self, splitter):
-        """좌측 컨트롤 패널 생성 - 적절한 간격과 크기 조정"""
-        panel = QWidget()
-        panel.setFixedWidth(400)  # 패널 너비 약간 증가
-        
-        # 스크롤 영역 추가 (내용이 많을 경우 대비)
-        from PySide6.QtWidgets import QScrollArea
+    def create_control_area(self, parent_layout):
+        """컨트롤 패널 영역 생성 - 가로 배치, 유동적 크기"""
+        # 스크롤 가능한 컨트롤 영역 - 높이를 훨씬 작게 설정
         scroll_area = QScrollArea()
-        scroll_area.setWidget(panel)
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        scroll_area.setFixedWidth(420)  # 스크롤바 공간 포함
+        scroll_area.setMinimumHeight(120)  # 최소 높이 대폭 줄임 (150 → 120)
+        scroll_area.setMaximumHeight(280)  # 최대 높이 대폭 줄임 (180 → 140)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll_area.setStyleSheet("""
             QScrollArea {
-                border: none;
-                background-color: #F8F9FA;
+                border: 2px solid #DEE2E6;
+                border-radius: 10px;
+                background-color: #FFFFFF;
             }
-            QScrollBar:vertical {
+            QScrollBar:horizontal {
                 background-color: #F8F9FA;
-                width: 12px;
+                height: 12px;
                 border-radius: 6px;
             }
-            QScrollBar::handle:vertical {
+            QScrollBar::handle:horizontal {
                 background-color: #CED4DA;
                 border-radius: 6px;
-                min-height: 20px;
+                min-width: 20px;
             }
-            QScrollBar::handle:vertical:hover {
+            QScrollBar::handle:horizontal:hover {
                 background-color: #ADB5BD;
             }
         """)
         
-        layout = QVBoxLayout(panel)
-        layout.setSpacing(15)  # 패널 간 충분한 간격
-        layout.setContentsMargins(10, 15, 10, 15)  # 적절한 여백
+        # 컨트롤 컨테이너
+        control_container = QWidget()
+        scroll_area.setWidget(control_container)
+        scroll_area.setWidgetResizable(True)
         
-        # 각 패널들 생성 (모두 고정 크기)
+        # 가로 레이아웃
+        control_layout = QHBoxLayout(control_container)
+        control_layout.setSpacing(10)  # 패널 간 간격 줄임 (15 → 10)
+        control_layout.setContentsMargins(10, 8, 10, 8)  # 여백 줄임 (15,15,15,15 → 10,8,10,8)
+        
+        # 각 패널들 생성 및 추가 - 고정 너비 제거
         self.file_panel = FileSelectionPanel()
         self.processing_panel = ProcessingOptionsPanel()
         self.print_mode_panel = PrintModePanel()
         self.print_quantity_panel = PrintQuantityPanel()
         self.printer_panel = PrinterPanel()
-        self.progress_panel = ProgressPanel()
+        self.progress_panel = ProgressPanel()  # 진행상황 패널 추가
         self.log_panel = LogPanel()
         
-        # 패널들을 레이아웃에 추가
-        # 컴팩트한 패널들은 고정 크기로 추가
-        layout.addWidget(self.file_panel)
-        layout.addWidget(self.processing_panel)
-        layout.addWidget(self.print_mode_panel)
-        layout.addWidget(self.print_quantity_panel)
-        layout.addWidget(self.printer_panel)
-        layout.addWidget(self.progress_panel)
+        # 패널들을 레이아웃에 추가 - 각각 최소 너비만 설정
+        panels = [
+            self.file_panel, self.processing_panel, self.print_mode_panel,
+            self.print_quantity_panel, self.printer_panel, self.progress_panel, self.log_panel
+        ]
         
-        # 로그 패널은 남은 공간을 모두 차지 (확장 가능)
-        layout.addWidget(self.log_panel, 1)
+        for panel in panels:
+            panel.setMinimumWidth(160)  # 최소 너비 줄임 (200 → 160)
+            panel.setMaximumWidth(220)  # 최대 너비 줄임 (280 → 220)
+            control_layout.addWidget(panel)
         
-        # 스크롤 영역을 스플리터에 추가
-        splitter.addWidget(scroll_area)
+        control_layout.addStretch()  # 남은 공간 채우기
         
-    def create_right_panel(self, parent_splitter):
-        """우측 이미지 뷰어 패널 생성 - 양면 미리보기"""
-        right_panel = QWidget()
-        right_panel.setStyleSheet("background-color: #F8F9FA;")
-        right_layout = QVBoxLayout(right_panel)
+        parent_layout.addWidget(scroll_area)
+    
+    def create_image_area(self, parent_layout):
+        """이미지 뷰어 영역 생성 - 2줄 배치, 크기 축소"""
+        image_widget = QWidget()
+        image_widget.setStyleSheet("background-color: #F8F9FA;")
+        image_layout = QVBoxLayout(image_widget)
+        image_layout.setSpacing(15)
+        image_layout.setContentsMargins(12, 12, 12, 12)
         
-        # 원본 이미지 뷰어 그룹
-        from PySide6.QtWidgets import QGroupBox
-        original_group = QGroupBox("📷 원본 이미지")
-        original_layout = QHBoxLayout(original_group)
-        original_layout.setSpacing(15)
+        # 앞면 이미지 영역 (1줄)
+        front_group = QFrame()
+        front_group.setStyleSheet("""
+            QFrame {
+                background-color: #FFFFFF;
+                border: 2px solid #DEE2E6;
+                border-radius: 10px;
+                padding: 12px;
+            }
+        """)
+        front_group.setFixedHeight(240)  # 높이 축소 (300 → 240)
         
-        # 원본 이미지 뷰어들
-        self.front_original_viewer = ImageViewer("📄 앞면 원본")
-        self.back_original_viewer = ImageViewer("📄 뒷면 원본")
+        front_layout = QHBoxLayout(front_group)
+        front_layout.setSpacing(15)
         
-        original_layout.addWidget(self.front_original_viewer)
-        original_layout.addWidget(self.back_original_viewer)
+        # 앞면 라벨
+        front_title = QLabel("📄 앞면")
+        front_title.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        front_title.setStyleSheet("color: #495057; border: none; padding: 3px;")
+        front_title.setFixedWidth(60)
+        front_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        # 처리 결과 뷰어 그룹
-        result_group = QGroupBox("✨ 처리 결과")
-        result_layout = QHBoxLayout(result_group)
-        result_layout.setSpacing(15)
+        # 앞면 이미지 뷰어들 - 크기 축소
+        self.front_original_viewer = ImageViewer("원본")
+        self.front_original_viewer.setFixedSize(280, 190)  # 크기 축소 (350x250 → 280x190)
         
-        # 처리 결과 뷰어들
-        self.front_result_viewer = ImageViewer("🎭 앞면 처리 결과")
-        self.back_result_viewer = ImageViewer("🎭 뒷면 처리 결과")
+        # 화살표
+        arrow1 = QLabel("→")
+        arrow1.setFont(QFont("Segoe UI", 20, QFont.Weight.Bold))
+        arrow1.setStyleSheet("color: #4A90E2; border: none;")
+        arrow1.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        arrow1.setFixedWidth(40)
         
-        result_layout.addWidget(self.front_result_viewer)
-        result_layout.addWidget(self.back_result_viewer)
+        self.front_result_viewer = ImageViewer("배경제거")
+        self.front_result_viewer.setFixedSize(280, 190)  # 크기 축소
         
-        # 최종 미리보기 그룹
-        preview_group = QGroupBox("🖼️ 최종 미리보기")
-        preview_layout = QVBoxLayout(preview_group)
+        front_layout.addWidget(front_title)
+        front_layout.addWidget(self.front_original_viewer)
+        front_layout.addWidget(arrow1)
+        front_layout.addWidget(self.front_result_viewer)
+        front_layout.addStretch()
         
-        self.final_preview_viewer = ImageViewer("💎 최종 카드 미리보기")
-        preview_layout.addWidget(self.final_preview_viewer)
+        # 뒷면 이미지 영역 (2줄)
+        back_group = QFrame()
+        back_group.setStyleSheet("""
+            QFrame {
+                background-color: #FFFFFF;
+                border: 2px solid #DEE2E6;
+                border-radius: 10px;
+                padding: 12px;
+            }
+        """)
+        back_group.setFixedHeight(240)  # 높이 축소 (300 → 240)
+        
+        back_layout = QHBoxLayout(back_group)
+        back_layout.setSpacing(15)
+        
+        # 뒷면 라벨
+        back_title = QLabel("📄 뒷면")
+        back_title.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        back_title.setStyleSheet("color: #495057; border: none; padding: 3px;")
+        back_title.setFixedWidth(60)
+        back_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # 뒷면 이미지 뷰어들 - 크기 축소
+        self.back_original_viewer = ImageViewer("원본")
+        self.back_original_viewer.setFixedSize(280, 190)  # 크기 축소
+        
+        # 화살표
+        arrow2 = QLabel("→")
+        arrow2.setFont(QFont("Segoe UI", 20, QFont.Weight.Bold))
+        arrow2.setStyleSheet("color: #4A90E2; border: none;")
+        arrow2.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        arrow2.setFixedWidth(40)
+        
+        self.back_result_viewer = ImageViewer("배경제거")
+        self.back_result_viewer.setFixedSize(280, 190)  # 크기 축소
+        
+        back_layout.addWidget(back_title)
+        back_layout.addWidget(self.back_original_viewer)
+        back_layout.addWidget(arrow2)
+        back_layout.addWidget(self.back_result_viewer)
+        back_layout.addStretch()
         
         # 레이아웃에 추가
-        right_layout.addWidget(original_group, 1)
-        right_layout.addWidget(result_group, 1)
-        right_layout.addWidget(preview_group, 1)
+        image_layout.addWidget(front_group)
+        image_layout.addWidget(back_group)
+        image_layout.addStretch()  # 남은 공간
         
-        parent_splitter.addWidget(right_panel)
+        parent_layout.addWidget(image_widget, 1)  # 확장 가능하게 추가
     
     def create_status_bar(self, parent_layout):
         """하단 상태바 생성"""
         status_frame = QFrame()
-        status_frame.setFixedHeight(40)
+        status_frame.setFixedHeight(35)  # 높이 축소 (40 → 35)
         status_frame.setStyleSheet(get_status_bar_style())
         
         status_layout = QHBoxLayout(status_frame)
-        status_layout.setContentsMargins(20, 10, 20, 10)
+        status_layout.setContentsMargins(20, 8, 20, 8)
         
         self.status_text = QLabel("준비 완료 | AI 모델 초기화 중...")
-        self.status_text.setStyleSheet("color: #6C757D; font-size: 11px;")
+        self.status_text.setStyleSheet("color: #6C757D; font-size: 10px;")
         
         status_layout.addWidget(self.status_text)
         status_layout.addStretch()
         
         version_label = QLabel("Hana Studio v1.0 - 양면 및 여러장 인쇄 지원")
-        version_label.setStyleSheet("color: #ADB5BD; font-size: 10px;")
+        version_label.setStyleSheet("color: #ADB5BD; font-size: 9px;")
         status_layout.addWidget(version_label)
         
         parent_layout.addWidget(status_frame)
@@ -219,14 +268,18 @@ class HanaStudioMainWindow:
             'file_panel': self.file_panel,
             'processing_panel': self.processing_panel,
             'print_mode_panel': self.print_mode_panel,
-            'print_quantity_panel': self.print_quantity_panel,  # 새로 추가
+            'print_quantity_panel': self.print_quantity_panel,
             'printer_panel': self.printer_panel,
-            'progress_panel': self.progress_panel,
+            'progress_panel': self.progress_panel,  # 진행상황 패널 추가
             'log_panel': self.log_panel,
             'front_original_viewer': self.front_original_viewer,
             'back_original_viewer': self.back_original_viewer,
             'front_result_viewer': self.front_result_viewer,
             'back_result_viewer': self.back_result_viewer,
-            'final_preview_viewer': self.final_preview_viewer,
-            'status_text': self.status_text
+            'final_preview_viewer': None,  # 최종 미리보기 제거
+            'status_text': self.status_text,
+            # 통합된 진행상황 컴포넌트들 (상단 패널에서 참조)
+            'progress_bar': self.progress_panel.progress_bar,
+            'status_label': self.progress_panel.status_label,
+            'log_text': self.log_panel.log_text  # 상단 로그 패널의 log_text 참조
         }
