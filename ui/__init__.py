@@ -1,14 +1,13 @@
 """
-UI 컴포넌트 모듈 초기화
+UI 컴포넌트 모듈 초기화 - ProcessingOptionsPanel 제거
 """
 
 from .components.modern_button import ModernButton
 from .components.image_viewer import ImageViewer
 from .components.control_panels import (
     FileSelectionPanel,
-    ProcessingOptionsPanel,
     PrintModePanel,
-    PrintQuantityPanel,  # 새로 추가
+    PrintQuantityPanel,
     PrinterPanel,
     ProgressPanel,
     LogPanel
@@ -21,9 +20,8 @@ __all__ = [
     'ModernButton',
     'ImageViewer',
     'FileSelectionPanel',
-    'ProcessingOptionsPanel', 
     'PrintModePanel',
-    'PrintQuantityPanel',  # 새로 추가
+    'PrintQuantityPanel',
     'PrinterPanel',
     'ProgressPanel',
     'LogPanel',

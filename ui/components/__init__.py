@@ -1,12 +1,11 @@
 """
-UI 컴포넌트들 초기화
+UI 컴포넌트들 초기화 - ProcessingOptionsPanel 제거
 """
 
 from .modern_button import ModernButton
 from .image_viewer import ImageViewer
 from .control_panels import (
     FileSelectionPanel,
-    ProcessingOptionsPanel,
     PrintModePanel,
     PrintQuantityPanel,
     PrinterPanel,
@@ -19,7 +18,6 @@ __all__ = [
     'ModernButton',
     'ImageViewer',
     'FileSelectionPanel',
-    'ProcessingOptionsPanel',
     'PrintModePanel',
     'PrintQuantityPanel',
     'PrinterPanel',

@@ -1,6 +1,6 @@
 """
-메인 윈도우 UI 구성 - 이미지 영역 대폭 확대 및 중앙 정렬
-남는 공간을 최대한 활용하여 더 큰 이미지 미리보기 제공
+ui/main_window.py 수정
+메인 윈도우 UI 구성 - 통합 마스킹 미리보기 및 개별 배경제거 버튼
 """
 
 from PySide6.QtWidgets import (
@@ -10,16 +10,16 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 
-from .components.image_viewer import ImageViewer
+from .components.image_viewer import ImageViewer, UnifiedMaskViewer
 from .components.control_panels import (
-    FileSelectionPanel, ProcessingOptionsPanel, PrintModePanel,
+    FileSelectionPanel, PrintModePanel,
     PrinterPanel, ProgressPanel, LogPanel, PrintQuantityPanel
 )
 from .styles import get_header_style, get_status_bar_style
 
 
 class HanaStudioMainWindow:
-    """메인 윈도우 UI 구성을 담당하는 클래스 - 대형 이미지 뷰어 및 중앙 정렬"""
+    """메인 윈도우 UI 구성을 담당하는 클래스 - 통합 마스킹 미리보기"""
     
     def __init__(self, parent_widget):
         self.parent = parent_widget
@@ -32,27 +32,27 @@ class HanaStudioMainWindow:
         central_widget.setStyleSheet("background-color: #F8F9FA;")
         self.parent.setCentralWidget(central_widget)
         
-        # 메인 레이아웃 (세로) - 여백 대폭 축소
+        # 메인 레이아웃 (세로)
         main_layout = QVBoxLayout(central_widget)
-        main_layout.setSpacing(8)  # 12 → 8로 축소
-        main_layout.setContentsMargins(10, 8, 10, 8)  # 15,15,15,15 → 10,8,10,8로 축소
+        main_layout.setSpacing(8)
+        main_layout.setContentsMargins(10, 8, 10, 8)
         
         # 1. 헤더
         self.create_header(main_layout)
         
-        # 2. 컨트롤 패널 영역 (가로 배치)
-        self.create_control_area(main_layout)
+        # 2. 컨트롤 패널 영역 (가로 배치) - 배경제거 버튼 제거
+        self.create_simplified_control_area(main_layout)
         
-        # 3. 메인 컨텐츠 영역 (이미지 뷰어 대폭 확대)
-        self.create_large_image_area(main_layout)
+        # 3. 메인 컨텐츠 영역 (통합 마스킹 미리보기)
+        self.create_unified_image_area(main_layout)
         
         # 4. 하단 상태바
         self.create_status_bar(main_layout)
     
     def create_header(self, parent_layout):
-        """헤더 생성 - 높이 축소"""
+        """헤더 생성"""
         header_frame = QFrame()
-        header_frame.setFixedHeight(55)  # 65 → 55로 축소
+        header_frame.setFixedHeight(55)
         header_frame.setStyleSheet("""
             QFrame {
                 background-color: #FFFFFF;
@@ -62,17 +62,16 @@ class HanaStudioMainWindow:
         """)
         
         header_layout = QHBoxLayout(header_frame)
-        header_layout.setContentsMargins(20, 8, 20, 8)  # 12 → 8로 축소
+        header_layout.setContentsMargins(20, 8, 20, 8)
         
         # 로고/제목 영역
         title_layout = QVBoxLayout()
         title_layout.setSpacing(2)
         
         title_label = QLabel("🎨 Hana Studio")
-        title_label.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))  # 20 → 18로 축소
+        title_label.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
         title_label.setStyleSheet("color: #2C3E50; background: transparent;")
 
-        
         title_layout.addWidget(title_label)
 
         header_layout.addLayout(title_layout)
@@ -80,10 +79,10 @@ class HanaStudioMainWindow:
         
         parent_layout.addWidget(header_frame)
     
-    def create_control_area(self, parent_layout):
-        """컨트롤 패널 영역 생성 - 높이 축소"""
+    def create_simplified_control_area(self, parent_layout):
+        """간소화된 컨트롤 패널 영역 - 결과 저장 패널 제거"""
         control_container = QFrame()
-        control_container.setFixedHeight(240)  # 260 → 240으로 축소
+        control_container.setFixedHeight(240)
         control_container.setStyleSheet("""
             QFrame {
                 border: 2px solid #DEE2E6;
@@ -94,12 +93,11 @@ class HanaStudioMainWindow:
         
         # 가로 레이아웃
         control_layout = QHBoxLayout(control_container)
-        control_layout.setSpacing(18)  # 20 → 18로 축소
-        control_layout.setContentsMargins(12, 8, 12, 8)  # 15,10,15,10 → 12,8,12,8로 축소
+        control_layout.setSpacing(20)  # 간격 늘림
+        control_layout.setContentsMargins(15, 8, 15, 8)
         
-        # 각 패널들 생성
+        # 각 패널들 생성 (ProcessingOptionsPanel 제거)
         self.file_panel = FileSelectionPanel()
-        self.processing_panel = ProcessingOptionsPanel()
         self.print_mode_panel = PrintModePanel()
         self.print_quantity_panel = PrintQuantityPanel()
         self.printer_panel = PrinterPanel()
@@ -109,7 +107,6 @@ class HanaStudioMainWindow:
         # 패널들 리스트
         panels = [
             self.file_panel, 
-            self.processing_panel, 
             self.print_mode_panel,
             self.print_quantity_panel, 
             self.printer_panel, 
@@ -117,17 +114,14 @@ class HanaStudioMainWindow:
             self.log_panel
         ]
         
-        # 각 패널별로 개별 너비 설정
-        default_panel_width = 200
-        
+        # 각 패널별로 개별 너비 설정 (더 넓게 조정)
         panel_widths = {
-            self.file_panel: 240,
-            self.processing_panel: default_panel_width,
-            self.print_mode_panel: default_panel_width,
-            self.print_quantity_panel: default_panel_width,
-            self.printer_panel: default_panel_width,
-            self.progress_panel: default_panel_width,
-            self.log_panel: 240
+            self.file_panel: 260,
+            self.print_mode_panel: 220,
+            self.print_quantity_panel: 220,
+            self.printer_panel: 220,
+            self.progress_panel: 220,
+            self.log_panel: 260
         }
         
         for panel in panels:
@@ -137,99 +131,121 @@ class HanaStudioMainWindow:
         
         parent_layout.addWidget(control_container)
     
-    def create_large_image_area(self, parent_layout):
-        """이미지 뷰어 영역 대폭 확대 - 상단 여백 최소화"""
+    def create_unified_image_area(self, parent_layout):
+        """통합 마스킹 이미지 뷰어 영역"""
         image_widget = QWidget()
         image_widget.setStyleSheet("background-color: #F8F9FA;")
         image_layout = QVBoxLayout(image_widget)
-        image_layout.setSpacing(12)  # 15 → 12로 축소
-        image_layout.setContentsMargins(15, 5, 15, 10)  # 20,15,20,15 → 15,5,15,10으로 축소 (특히 상단)
+        image_layout.setSpacing(12)
+        image_layout.setContentsMargins(15, 5, 15, 10)
         
-        # === 앞면 이미지 영역 (대폭 확대) ===
-        front_group = self.create_image_row("📄 앞면", is_front=True)
+        # === 앞면 이미지 영역 ===
+        front_group = self.create_unified_image_row("📄 앞면", is_front=True)
         
-        # === 뒷면 이미지 영역 (대폭 확대) ===
-        back_group = self.create_image_row("📄 뒷면", is_front=False)
+        # === 뒷면 이미지 영역 ===
+        back_group = self.create_unified_image_row("📄 뒷면", is_front=False)
         
-        # 레이아웃에 추가 - 남는 공간을 모두 활용
-        image_layout.addWidget(front_group, 1)  # 비율 1
-        image_layout.addWidget(back_group, 1)   # 비율 1
+        # 레이아웃에 추가
+        image_layout.addWidget(front_group, 1)
+        image_layout.addWidget(back_group, 1)
         
-        parent_layout.addWidget(image_widget, 1)  # 메인에서도 최대 확장
+        parent_layout.addWidget(image_widget, 1)
     
-    def create_image_row(self, title: str, is_front: bool) -> QFrame:
-        """이미지 행 생성 - 중앙 정렬 및 대형 뷰어"""
+    def create_unified_image_row(self, title: str, is_front: bool) -> QFrame:
+        """통합 마스킹이 포함된 이미지 행 생성 - [원본+배경제거버튼] → [통합 마스킹] → [수동 업로드]"""
         group = QFrame()
         group.setStyleSheet("""
             QFrame {
                 background-color: #FFFFFF;
                 border: 2px solid #DEE2E6;
                 border-radius: 12px;
-                padding: 15px;
+                padding: 10px;
             }
         """)
         
         # 행 레이아웃 (가로)
         row_layout = QHBoxLayout(group)
-        row_layout.setSpacing(18)  # 20 → 18로 축소
-        row_layout.setContentsMargins(15, 15, 15, 15)  # 20,20,20,20 → 15,15,15,15로 축소
+        row_layout.setSpacing(15)
+        row_layout.setContentsMargins(15, 15, 15, 15)
         
-        # === 왼쪽 여백 (중앙 정렬을 위한) ===
+        # === 중앙 정렬을 위한 여백 ===
         row_layout.addStretch(1)
         
         # === 제목 라벨 ===
         title_label = QLabel(title)
-        title_label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))  # 폰트 크기 증가
+        title_label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
         title_label.setStyleSheet("""
             color: #495057; 
             border: none; 
             padding: 8px 12px;
             background-color: transparent;
-            min-width: 80px;
         """)
-        title_label.setFixedWidth(100)  # 너비 증가
+        title_label.setFixedWidth(120)
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        # === 원본 이미지 뷰어 (대폭 확대) ===
+        # === 원본 이미지 뷰어 (배경제거 버튼 포함) ===
         if is_front:
-            self.front_original_viewer = ImageViewer("원본")
+            self.front_original_viewer = ImageViewer("원본", enable_process_button=True)
             original_viewer = self.front_original_viewer
         else:
-            self.back_original_viewer = ImageViewer("원본")
+            self.back_original_viewer = ImageViewer("원본", enable_process_button=True)
             original_viewer = self.back_original_viewer
         
-        # 이미지 뷰어 크기 대폭 증가 (기존 240x170 → 350x260) - 약간 축소로 화면에 잘 맞추기
-        original_viewer.setFixedSize(350, 260)
+        original_viewer.setFixedSize(280, 240)  # 높이 증가 (버튼 공간)
         
-        # === 화살표 (크기 증가) ===
-        arrow = QLabel("→")
-        arrow.setFont(QFont("Segoe UI", 24, QFont.Weight.Bold))  # 폰트 크기 증가
-        arrow.setStyleSheet("""
+        # === 화살표 1 ===
+        arrow1 = QLabel("→")
+        arrow1.setFont(QFont("Segoe UI", 20, QFont.Weight.Bold))
+        arrow1.setStyleSheet("""
             color: #4A90E2; 
             border: none;
             padding: 10px;
             background-color: transparent;
         """)
-        arrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        arrow.setFixedSize(60, 60)  # 화살표 영역도 증가
+        arrow1.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        arrow1.setFixedSize(40, 40)
         
-        # === 결과 이미지 뷰어 (대폭 확대) ===
+        # === 통합 마스킹 미리보기 뷰어 ===
         if is_front:
-            self.front_result_viewer = ImageViewer("배경제거")
-            result_viewer = self.front_result_viewer
+            self.front_unified_mask_viewer = UnifiedMaskViewer("마스킹 미리보기")
+            unified_mask_viewer = self.front_unified_mask_viewer
         else:
-            self.back_result_viewer = ImageViewer("배경제거")
-            result_viewer = self.back_result_viewer
+            self.back_unified_mask_viewer = UnifiedMaskViewer("마스킹 미리보기")
+            unified_mask_viewer = self.back_unified_mask_viewer
         
-        result_viewer.setFixedSize(350, 260)  # 동일한 크기
+        unified_mask_viewer.setFixedSize(280, 200)
         
-        # === 컴포넌트 배치 (중앙 정렬) ===
+        # === 화살표 2 ===
+        arrow2 = QLabel("→")
+        arrow2.setFont(QFont("Segoe UI", 20, QFont.Weight.Bold))
+        arrow2.setStyleSheet("""
+            color: #28A745; 
+            border: none;
+            padding: 10px;
+            background-color: transparent;
+        """)
+        arrow2.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        arrow2.setFixedSize(40, 40)
+        
+        # === 수동 마스킹 업로드 뷰어 ===
+        if is_front:
+            self.front_manual_mask_viewer = ImageViewer("수동 마스킹\n(클릭하여 업로드)", enable_click_upload=True)
+            manual_mask_viewer = self.front_manual_mask_viewer
+        else:
+            self.back_manual_mask_viewer = ImageViewer("수동 마스킹\n(클릭하여 업로드)", enable_click_upload=True)
+            manual_mask_viewer = self.back_manual_mask_viewer
+        
+        manual_mask_viewer.setFixedSize(280, 200)
+        
+        # === 컴포넌트 배치 ===
         row_layout.addWidget(title_label)
         row_layout.addWidget(original_viewer)
-        row_layout.addWidget(arrow)
-        row_layout.addWidget(result_viewer)
+        row_layout.addWidget(arrow1)
+        row_layout.addWidget(unified_mask_viewer)
+        row_layout.addWidget(arrow2)
+        row_layout.addWidget(manual_mask_viewer)
         
-        # === 오른쪽 여백 (중앙 정렬을 위한) ===
+        # === 중앙 정렬을 위한 여백 ===
         row_layout.addStretch(1)
         
         return group
@@ -255,7 +271,7 @@ class HanaStudioMainWindow:
         status_layout.addWidget(self.status_text)
         status_layout.addStretch()
         
-        version_label = QLabel("Hana Studio v1.0 - 양면 및 여러장 인쇄 지원")
+        version_label = QLabel("Hana Studio v1.0 - 통합 마스킹 지원")
         version_label.setStyleSheet("color: #ADB5BD; font-size: 9px; background: transparent;")
         status_layout.addWidget(version_label)
         
@@ -264,20 +280,34 @@ class HanaStudioMainWindow:
     # 컴포넌트 접근을 위한 속성들
     @property
     def components(self):
-        """모든 UI 컴포넌트에 대한 접근"""
+        """모든 UI 컴포넌트에 대한 접근 - 결과 저장 패널 제거"""
         return {
             'file_panel': self.file_panel,
-            'processing_panel': self.processing_panel,
             'print_mode_panel': self.print_mode_panel,
             'print_quantity_panel': self.print_quantity_panel,
             'printer_panel': self.printer_panel,
             'progress_panel': self.progress_panel,
             'log_panel': self.log_panel,
+            
+            # 원본 이미지 뷰어들 (배경제거 버튼 포함)
             'front_original_viewer': self.front_original_viewer,
             'back_original_viewer': self.back_original_viewer,
-            'front_result_viewer': self.front_result_viewer,
-            'back_result_viewer': self.back_result_viewer,
-            'final_preview_viewer': None,
+            
+            # 통합 마스킹 미리보기 뷰어들
+            'front_unified_mask_viewer': self.front_unified_mask_viewer,
+            'back_unified_mask_viewer': self.back_unified_mask_viewer,
+            
+            # 수동 마스킹 업로드 뷰어들
+            'front_manual_mask_viewer': self.front_manual_mask_viewer,
+            'back_manual_mask_viewer': self.back_manual_mask_viewer,
+            
+            # 하위 호환성을 위한 별칭들
+            'front_result_viewer': self.front_unified_mask_viewer,
+            'back_result_viewer': self.back_unified_mask_viewer,
+            'front_auto_result_viewer': self.front_unified_mask_viewer,
+            'back_auto_result_viewer': self.back_unified_mask_viewer,
+            
+            # 기타
             'status_text': self.status_text,
             'progress_bar': self.progress_panel.progress_bar,
             'status_label': self.progress_panel.status_label,

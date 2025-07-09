@@ -1,6 +1,6 @@
 """
-파일 선택 패널 - 뒷면 버튼 스타일 수정
-양면 모드 활성화 시 앞면 버튼과 동일한 primary 스타일 적용
+ui/components/control_panels.py 수정
+처리 옵션 패널에서 배경제거 버튼 제거 (이제 개별 이미지 뷰어에 있음)
 """
 
 from PySide6.QtWidgets import (
@@ -20,7 +20,7 @@ def truncate_text(text: str, max_length: int = 30) -> str:
 
 
 class FileSelectionPanel(QGroupBox):
-    """파일 선택 패널 - 양면 지원"""
+    """파일 선택 패널 - 양면인쇄 체크박스 제거"""
     file_selected = Signal(str)  # 파일 경로 시그널
     
     def __init__(self):
@@ -31,12 +31,12 @@ class FileSelectionPanel(QGroupBox):
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(3)  # 간격 대폭 줄임 (5 → 3)
-        layout.setContentsMargins(6, 6, 6, 6)  # 여백 대폭 줄임 (8,8,8,8 → 6,6,6,6)
+        layout.setSpacing(5)  # 간격 늘림 (3 → 5)
+        layout.setContentsMargins(6, 6, 6, 6)
         
         # 앞면 이미지 선택
         self.front_btn = ModernButton("앞면 이미지 선택", primary=True)
-        self.front_btn.setFixedHeight(30)
+        self.front_btn.setFixedHeight(35)  # 높이 증가 (30 → 35)
         
         self.front_label = QLabel("앞면: 선택된 파일이 없습니다")
         self.front_label.setStyleSheet("""
@@ -45,56 +45,41 @@ class FileSelectionPanel(QGroupBox):
                 color: #6C757D;
                 background-color: #F8F9FA;
                 border-radius: 2px;
+                padding: 4px;
         """)
         self.front_label.setWordWrap(True)
-        self.front_label.setMaximumHeight(26)  # 최대 높이 제한
+        self.front_label.setMaximumHeight(30)  # 높이 증가 (26 → 30)
         
-        # 양면 인쇄 활성화 체크박스
-        self.dual_side_check = QCheckBox("양면 인쇄 사용")
-        self.dual_side_check.setStyleSheet("""
-            QCheckBox {
-                font-size: 15px;
-                font-weight: 500;
-                color: #495057;
-                spacing: 3px;
-            }
-        """)
-        self.dual_side_check.setMaximumHeight(15)  # 최대 높이 제한
-        self.dual_side_check.toggled.connect(self._on_dual_side_toggled)
-        
-        # 뒷면 이미지 선택 - primary=False로 시작하고 나중에 변경
+        # 뒷면 이미지 선택
         self.back_btn = ModernButton("뒷면 이미지 선택", primary=False)
-        self.back_btn.setFixedHeight(30)
+        self.back_btn.setFixedHeight(35)  # 높이 증가 (30 → 35)
         
         self.back_label = QLabel("뒷면: 선택된 파일이 없습니다")
         self.back_label.setStyleSheet("""
                 font-size: 11px; 
                 font-weight: bold;
                 color: #6C757D;
-                
                 background-color: #F8F9FA;
                 border-radius: 2px;
+                padding: 4px;
             """)
         self.back_label.setWordWrap(True)
-        self.back_label.setMaximumHeight(26)  # 최대 높이 제한
+        self.back_label.setMaximumHeight(30)  # 높이 증가 (26 → 30)
         
         layout.addWidget(self.front_btn)
         layout.addWidget(self.front_label)
-        layout.addWidget(self.dual_side_check)
         layout.addWidget(self.back_btn)
         layout.addWidget(self.back_label)
         
-        # 초기에는 뒷면 비활성화
+        # 초기에는 뒷면 비활성화 (인쇄모드 패널에서 제어됨)
         self.back_btn.setEnabled(False)
-        
-    def _on_dual_side_toggled(self, checked):
-        """양면 인쇄 토글"""
-        self.back_btn.setEnabled(checked)
-        if checked:
-            # 활성화시 ModernButton의 primary 스타일로 변경
+    
+    def set_dual_side_enabled(self, enabled: bool):
+        """양면 모드 활성화/비활성화 (외부에서 호출)"""
+        self.back_btn.setEnabled(enabled)
+        if enabled:
             self.back_btn.set_primary(True)
         else:
-            # 비활성화시 기본 스타일로 복원
             self.back_btn.set_primary(False)
             self.back_label.setText("뒷면: 선택된 파일이 없습니다")
     
@@ -111,65 +96,54 @@ class FileSelectionPanel(QGroupBox):
         filename = os.path.basename(file_path)
         filename = truncate_text(filename, 25)
         self.back_label.setText(f"뒷면: 📁 {filename}")
-    
-    def is_dual_side_enabled(self) -> bool:
-        """양면 인쇄 활성화 여부"""
-        return self.dual_side_check.isChecked()
 
-class ProcessingOptionsPanel(QGroupBox):
-    """처리 옵션 패널"""
-    process_requested = Signal()
-    export_requested = Signal()
-    
-    def __init__(self):
-        super().__init__("⚙️ 처리 옵션")
-        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
-        self._setup_ui()
-    
-    def _setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(3)  # 간격 대폭 줄임 (5 → 3)
-        layout.setContentsMargins(6, 6, 6, 6)  # 여백 대폭 줄임
-        
-        self.process_btn = ModernButton("배경 제거 시작", primary=True)
-        self.process_btn.setEnabled(False)
-        self.process_btn.setFixedHeight(40)  # 높이 대폭 줄임 (28 → 24)
-        
-        self.export_btn = ModernButton("결과 저장")
-        self.export_btn.setEnabled(False)
-        self.export_btn.setFixedHeight(40)  # 높이 대폭 줄임 (28 → 24)
-        
-        layout.addWidget(self.process_btn)
-        layout.addWidget(self.export_btn)
-        
-        # 신호 연결
-        self.process_btn.clicked.connect(self.process_requested.emit)
-        self.export_btn.clicked.connect(self.export_requested.emit)
-    
-    def set_process_enabled(self, enabled: bool):
-        """처리 버튼 활성화/비활성화"""
-        self.process_btn.setEnabled(enabled)
-    
-    def set_export_enabled(self, enabled: bool):
-        """저장 버튼 활성화/비활성화"""
-        self.export_btn.setEnabled(enabled)
+
+# ProcessingOptionsPanel 클래스 완전 삭제 - 더 이상 필요없음
 
 
 class PrintModePanel(QGroupBox):
-    """인쇄 모드 패널 - 양면/단면 구분"""
+    """인쇄 모드 패널 - 양면인쇄 체크박스 추가"""
     mode_changed = Signal(str)  # "normal" 또는 "layered"
+    dual_side_changed = Signal(bool)  # 양면인쇄 변경 시그널 추가
     
     def __init__(self):
         super().__init__("📋 인쇄 모드")
         self.print_mode = "normal"
-        self.is_dual_side = False  # 양면/단면 상태 추가
+        self.is_dual_side = False
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         self._setup_ui()
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(4)  # 간격 늘림
-        layout.setContentsMargins(8, 8, 8, 8)  # 여백 늘림
+        layout.setSpacing(6)  # 간격 늘림 (4 → 6)
+        layout.setContentsMargins(8, 8, 8, 8)
+        
+        # 양면 인쇄 활성화 체크박스 (파일선택 패널에서 이동)
+        self.dual_side_check = QCheckBox("양면 인쇄 사용")
+        self.dual_side_check.setStyleSheet("""
+            QCheckBox {
+                font-size: 14px;
+                font-weight: 600;
+                color: #495057;
+                spacing: 5px;
+                padding: 4px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+            }
+            QCheckBox::indicator:unchecked {
+                border: 2px solid #6C757D;
+                border-radius: 3px;
+                background-color: white;
+            }
+            QCheckBox::indicator:checked {
+                border: 2px solid #4A90E2;
+                border-radius: 3px;
+                background-color: #4A90E2;
+            }
+        """)
+        self.dual_side_check.toggled.connect(self._on_dual_side_toggled)
         
         # 라디오 버튼들
         self.normal_radio = QRadioButton("일반 인쇄")
@@ -179,8 +153,8 @@ class PrintModePanel(QGroupBox):
         # 라디오 버튼 스타일 조정
         radio_style = """
             QRadioButton {
-                font-size: 16px;
-                font-weight: 600;
+                font-size: 15px;
+                font-weight: 500;
                 color: #495057;
                 spacing: 5px;
                 padding: 3px;
@@ -199,19 +173,26 @@ class PrintModePanel(QGroupBox):
         self.mode_description_label.setStyleSheet("""
             color: #6C757D; 
             font-size: 13px;
-            padding: 6px;
+            padding: 8px;
             background-color: #F8F9FA;
             border-left: 3px solid #4A90E2;
             border-radius: 4px;
         """)
         self.mode_description_label.setWordWrap(True)
         
+        layout.addWidget(self.dual_side_check)
         layout.addWidget(self.normal_radio)
         layout.addWidget(self.layered_radio)
         layout.addWidget(self.mode_description_label)
         
         # 신호 연결
         self.normal_radio.toggled.connect(self._on_mode_changed)
+    
+    def _on_dual_side_toggled(self, checked):
+        """양면 인쇄 토글"""
+        self.is_dual_side = checked
+        self._update_description()
+        self.dual_side_changed.emit(checked)  # 시그널 발송
     
     def _on_mode_changed(self):
         """모드 변경 시 처리"""
@@ -234,14 +215,14 @@ class PrintModePanel(QGroupBox):
         
         self.mode_description_label.setText(description)
     
-    def update_dual_side_status(self, is_dual_side: bool):
-        """양면/단면 상태 업데이트"""
-        self.is_dual_side = is_dual_side
-        self._update_description()
-    
     def get_mode(self) -> str:
         """현재 모드 반환"""
         return self.print_mode
+    
+    def is_dual_side_enabled(self) -> bool:
+        """양면 인쇄 활성화 여부"""
+        return self.dual_side_check.isChecked()
+
 
 class PrintQuantityPanel(QGroupBox):
     """인쇄 매수 선택 패널"""
@@ -254,8 +235,8 @@ class PrintQuantityPanel(QGroupBox):
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(5)  # 간격 늘림
-        layout.setContentsMargins(8, 8, 8, 8)  # 여백 늘림
+        layout.setSpacing(5)
+        layout.setContentsMargins(8, 8, 8, 8)
         
         # 매수 선택 영역
         quantity_layout = QHBoxLayout()
@@ -273,7 +254,7 @@ class PrintQuantityPanel(QGroupBox):
         self.quantity_spinbox.setMaximum(100)
         self.quantity_spinbox.setValue(1)
         self.quantity_spinbox.setSuffix(" 장")
-        self.quantity_spinbox.setFixedSize(80, 35)  # 크기 대폭 증가 (60,22 → 80,35)
+        self.quantity_spinbox.setFixedSize(80, 35)
         self.quantity_spinbox.setStyleSheet("""
             QSpinBox {
                 background-color: #FFFFFF;
@@ -346,7 +327,7 @@ class PrintQuantityPanel(QGroupBox):
 
 
 class PrinterPanel(QGroupBox):
-    """프린터 연동 패널 - 초기 텍스트 수정"""
+    """프린터 연동 패널"""
     test_requested = Signal()
     print_requested = Signal()
     
@@ -402,7 +383,7 @@ class PrinterPanel(QGroupBox):
         self.print_card_btn.setEnabled(enabled)
     
     def update_print_button_text(self, mode: str, is_dual: bool = False, quantity: int = 1):
-        """인쇄 버튼 텍스트 업데이트 - 기본값을 단면으로 수정"""
+        """인쇄 버튼 텍스트 업데이트"""
         if mode == "normal":
             base_text = "양면 일반 인쇄" if is_dual else "단면 일반 인쇄"
         else:
@@ -415,7 +396,8 @@ class PrinterPanel(QGroupBox):
         
         text = truncate_text(text, 20)
         self.print_card_btn.setText(text)
-        
+
+
 class ProgressPanel(QGroupBox):
     """진행 상황 패널"""
     
@@ -426,12 +408,12 @@ class ProgressPanel(QGroupBox):
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(4)  # 간격 늘림
-        layout.setContentsMargins(8, 8, 8, 8)  # 여백 늘림
+        layout.setSpacing(4)
+        layout.setContentsMargins(8, 8, 8, 8)
         
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
-        self.progress_bar.setFixedHeight(25)  # 높이 대폭 증가 (16 → 25)
+        self.progress_bar.setFixedHeight(25)
         
         self.status_label = QLabel("대기 중...")
         self.status_label.setStyleSheet("""
@@ -503,7 +485,7 @@ class LogPanel(QGroupBox):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setSpacing(0)
-        layout.setContentsMargins(8, 8, 8, 8)  # 여백 늘림
+        layout.setContentsMargins(8, 8, 8, 8)
         
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
