@@ -1,6 +1,6 @@
 """
-Hana Studio 메인 애플리케이션 클래스 - 수동 마스킹 기능 추가
-자동 배경제거 후 사용자가 수동 마스킹 이미지를 업로드할 수 있음
+hana_studio.py 수정
+메인 애플리케이션 클래스 - 통합 마스킹 미리보기 및 개별 배경제거 버튼
 """
 
 import os
@@ -25,7 +25,7 @@ from config import config, AppConstants
 
 
 class HanaStudio(QMainWindow):
-    """Hana Studio 메인 애플리케이션 클래스 - 수동 마스킹 지원"""
+    """Hana Studio 메인 애플리케이션 클래스 - 통합 마스킹 미리보기"""
     
     def __init__(self):
         super().__init__()
@@ -40,15 +40,11 @@ class HanaStudio(QMainWindow):
         self.front_auto_mask_image = None
         self.back_auto_mask_image = None
         
-        # 수동 마스킹 이미지 (새로 추가)
+        # 수동 마스킹 이미지
         self.front_manual_mask_path = None
         self.back_manual_mask_path = None
         self.front_manual_mask_image = None
         self.back_manual_mask_image = None
-        
-        # 최종 마스킹 이미지 (자동 또는 수동 중 선택)
-        self.front_final_mask_image = None
-        self.back_final_mask_image = None
         
         # 프린터용 저장된 마스크 경로
         self.front_saved_mask_path = None
@@ -134,7 +130,7 @@ class HanaStudio(QMainWindow):
         
     def _setup_window(self):
         """윈도우 기본 설정"""
-        self.setWindowTitle(f"{AppConstants.APP_NAME} - 수동 마스킹 지원")
+        self.setWindowTitle(f"{AppConstants.APP_NAME} - 통합 마스킹 지원")
         
         geometry = config.get('window_geometry')
         default_width = max(geometry.get('width', 1600), 1800)
@@ -151,16 +147,23 @@ class HanaStudio(QMainWindow):
         self.setStyleSheet(get_app_style())
     
     def _connect_signals(self):
-        """시그널 연결 - 수동 마스킹 기능 포함"""
+        """시그널 연결 - 개별 배경제거 버튼 포함"""
         components = self.ui.components
         
         # 파일 선택
         components['file_panel'].front_btn.clicked.connect(self.select_front_image)
         components['file_panel'].back_btn.clicked.connect(self.select_back_image)
         
-        # 이미지 처리
-        components['processing_panel'].process_requested.connect(self.process_images)
-        components['processing_panel'].export_requested.connect(self.export_results)
+        # 개별 배경제거 (새로 추가)
+        components['front_original_viewer'].process_requested.connect(
+            lambda: self.process_single_image(is_front=True)
+        )
+        components['back_original_viewer'].process_requested.connect(
+            lambda: self.process_single_image(is_front=False)
+        )
+        
+        # 결과 저장 (배경제거 버튼 제거됨)
+        # components['processing_panel'].export_requested.connect(self.export_results)
         
         # 인쇄 모드 - 양면인쇄 시그널 추가
         components['print_mode_panel'].mode_changed.connect(self.on_print_mode_changed)
@@ -230,7 +233,7 @@ class HanaStudio(QMainWindow):
             self.front_original_image = None
         
         self._update_ui_state()
-        self._reset_processing_results()
+        self._reset_front_processing_results()
         
     def select_back_image(self):
         """뒷면 이미지 선택"""
@@ -277,7 +280,65 @@ class HanaStudio(QMainWindow):
             self.back_original_image = None
         
         self._update_ui_state()
+        self._reset_back_processing_results()
 
+    def process_single_image(self, is_front: bool):
+        """개별 이미지 배경제거 처리 - 한글 경로 문제 해결"""
+        if is_front:
+            if not self.front_image_path:
+                return
+            image_path = self.front_image_path
+            viewer = self.ui.components['front_original_viewer']
+            side_text = "앞면"
+        else:
+            if not self.back_image_path:
+                return
+            image_path = self.back_image_path
+            viewer = self.ui.components['back_original_viewer']
+            side_text = "뒷면"
+        
+        # 배경제거 버튼 비활성화
+        viewer.set_process_enabled(False)
+        self.ui.components['progress_panel'].show_progress()
+        
+        # 회전된 이미지 처리 - 한글 경로 문제 해결
+        current_image = viewer.get_current_image_array()
+        
+        if current_image is not None:
+            temp_dir = tempfile.gettempdir()
+            # 한글 없는 파일명 사용
+            side_prefix = "front" if is_front else "back"
+            temp_path = os.path.join(temp_dir, f"temp_{side_prefix}_{int(time.time())}.jpg")
+            
+            # 한글 경로 문제 방지를 위해 cv2.imwrite 대신 안전한 방법 사용
+            try:
+                success = cv2.imwrite(temp_path, current_image)
+                if not success:
+                    raise Exception("이미지 저장 실패")
+                
+                self.log(f"{side_text} 이미지 배경 제거 시작... (회전 적용됨)")
+                self.processing_thread = ProcessingThread(temp_path, self.image_processor)
+            except Exception as e:
+                self.log(f"❌ {side_text} 임시 파일 생성 실패: {e}")
+                viewer.set_process_enabled(True)
+                self.ui.components['progress_panel'].hide_progress()
+                return
+        else:
+            self.log(f"{side_text} 이미지 배경 제거 시작...")
+            self.processing_thread = ProcessingThread(image_path, self.image_processor)
+        
+        # 시그널 연결 (어느 쪽인지 구분)
+        if is_front:
+            self.processing_thread.finished.connect(self.on_front_processing_finished)
+        else:
+            self.processing_thread.finished.connect(self.on_back_processing_finished)
+        
+        self.processing_thread.error.connect(
+            lambda error: self.on_processing_error(error, is_front)
+        )
+        self.processing_thread.progress.connect(self.on_processing_progress)
+        self.processing_thread.start()
+    
     def on_dual_side_toggled(self, checked):
         """양면 인쇄 토글 - 인쇄모드 패널에서 이동"""
         self.is_dual_side = checked
@@ -292,9 +353,8 @@ class HanaStudio(QMainWindow):
             self.back_auto_mask_image = None
             self.back_manual_mask_path = None
             self.back_manual_mask_image = None
-            self.back_final_mask_image = None
             self.ui.components['back_original_viewer'].clear_image()
-            self.ui.components['back_auto_result_viewer'].clear_image()
+            self.ui.components['back_unified_mask_viewer'].clear_mask()
             self.ui.components['back_manual_mask_viewer'].clear_image()
         
         # 인쇄 버튼 텍스트 업데이트
@@ -361,17 +421,21 @@ class HanaStudio(QMainWindow):
             if is_front:
                 self.front_manual_mask_path = file_path
                 self.front_manual_mask_image = mask_image
-                self.front_final_mask_image = mask_image  # 수동 마스킹을 최종으로 설정
+                
+                # 통합 마스킹 뷰어에 수동 마스킹 설정
+                self.ui.components['front_unified_mask_viewer'].set_manual_mask(mask_image)
                 
                 self.log(f"✅ {side_text} 수동 마스킹 업로드: {file_name}")
-                self.log(f"   {side_text} 마스킹 이미지가 최종 결과로 설정되었습니다.")
+                self.log(f"   {side_text} 통합 미리보기가 수동 마스킹으로 업데이트되었습니다.")
             else:
                 self.back_manual_mask_path = file_path
                 self.back_manual_mask_image = mask_image
-                self.back_final_mask_image = mask_image
+                
+                # 통합 마스킹 뷰어에 수동 마스킹 설정
+                self.ui.components['back_unified_mask_viewer'].set_manual_mask(mask_image)
                 
                 self.log(f"✅ {side_text} 수동 마스킹 업로드: {file_name}")
-                self.log(f"   {side_text} 마스킹 이미지가 최종 결과로 설정되었습니다.")
+                self.log(f"   {side_text} 통합 미리보기가 수동 마스킹으로 업데이트되었습니다.")
             
             # UI 상태 업데이트
             self._update_ui_state()
@@ -384,25 +448,9 @@ class HanaStudio(QMainWindow):
             QMessageBox.critical(self, "업로드 오류", error_msg)
     
     def _update_ui_state(self):
-        """UI 상태 업데이트"""
-        # 처리 버튼 활성화 조건
-        can_process = self.front_image_path is not None
-        
-        self.ui.components['processing_panel'].set_process_enabled(can_process)
-        self._update_print_button_state()
-        
-        # 저장 버튼 활성화 조건 (자동 또는 수동 마스킹이 있으면)
-        has_front_result = (self.front_auto_mask_image is not None or 
-                           self.front_manual_mask_image is not None)
-        has_back_result = (not self.is_dual_side or 
-                          self.back_auto_mask_image is not None or 
-                          self.back_manual_mask_image is not None)
-        
-        can_export = has_front_result and has_back_result
-        self.ui.components['processing_panel'].set_export_enabled(can_export)
-        
-        # 상태 메시지 업데이트
-        if can_process:
+        """UI 상태 업데이트 - 저장 기능 제거"""
+        # 상태 메시지만 업데이트
+        if self.front_image_path:
             if self.print_quantity > 1:
                 status = f"{'양면' if self.is_dual_side else '단면'} {self.print_quantity}장 인쇄 준비 완료"
             elif self.is_dual_side:
@@ -413,58 +461,27 @@ class HanaStudio(QMainWindow):
         else:
             self.ui.components['status_text'].setText("앞면 이미지를 선택해주세요")
     
-    def _reset_processing_results(self):
-        """처리 결과 초기화"""
-        # 자동 배경제거 결과 초기화
+    def _reset_front_processing_results(self):
+        """앞면 처리 결과 초기화"""
         self.front_auto_mask_image = None
-        self.back_auto_mask_image = None
-        
-        # 수동 마스킹은 유지 (사용자가 직접 업로드한 것이므로)
-        # self.front_manual_mask_image = None  # 주석 처리
-        # self.back_manual_mask_image = None   # 주석 처리
-        
-        # 최종 마스킹 이미지 초기화 (수동이 있으면 수동 유지)
-        self.front_final_mask_image = self.front_manual_mask_image
-        self.back_final_mask_image = self.back_manual_mask_image
-        
-        # 프린터용 저장 경로 초기화
         self.front_saved_mask_path = None
-        self.back_saved_mask_path = None
         
-        # 자동 배경제거 뷰어만 클리어 (수동 마스킹 뷰어는 유지)
-        self.ui.components['front_auto_result_viewer'].clear_image()
-        self.ui.components['back_auto_result_viewer'].clear_image()
+        # 통합 마스킹 뷰어에서 자동 마스킹만 클리어 (수동은 유지)
+        if self.front_manual_mask_image is None:
+            self.ui.components['front_unified_mask_viewer'].clear_mask()
         
         self._update_print_button_state()
     
-    def process_images(self):
-        """이미지 처리 시작 - 자동 배경제거"""
-        if not self.front_image_path:
-            return
+    def _reset_back_processing_results(self):
+        """뒷면 처리 결과 초기화"""
+        self.back_auto_mask_image = None
+        self.back_saved_mask_path = None
         
-        # UI 상태 변경
-        self.ui.components['processing_panel'].set_process_enabled(False)
-        self.ui.components['progress_panel'].show_progress()
+        # 통합 마스킹 뷰어에서 자동 마스킹만 클리어 (수동은 유지)
+        if self.back_manual_mask_image is None:
+            self.ui.components['back_unified_mask_viewer'].clear_mask()
         
-        # 회전된 이미지 처리
-        front_viewer = self.ui.components['front_original_viewer']
-        current_front_image = front_viewer.get_current_image_array()
-        
-        if current_front_image is not None:
-            temp_dir = tempfile.gettempdir()
-            temp_front_path = os.path.join(temp_dir, f"temp_front_{int(time.time())}.jpg")
-            cv2.imwrite(temp_front_path, current_front_image)
-            
-            self.log("앞면 이미지 자동 배경 제거 시작... (회전 적용됨)")
-            self.processing_thread = ProcessingThread(temp_front_path, self.image_processor)
-        else:
-            self.log("앞면 이미지 자동 배경 제거 시작...")
-            self.processing_thread = ProcessingThread(self.front_image_path, self.image_processor)
-        
-        self.processing_thread.finished.connect(self.on_front_processing_finished)
-        self.processing_thread.error.connect(self.on_processing_error)
-        self.processing_thread.progress.connect(self.on_processing_progress)
-        self.processing_thread.start()
+        self._update_print_button_state()
     
     def on_processing_progress(self, message):
         """처리 진행상황 업데이트"""
@@ -474,149 +491,51 @@ class HanaStudio(QMainWindow):
     def on_front_processing_finished(self, mask_array):
         """앞면 자동 배경제거 완료"""
         self.front_auto_mask_image = mask_array
-        # 자동 배경제거 결과를 자동 결과 뷰어에 표시
-        self.ui.components['front_auto_result_viewer'].set_image(mask_array)
         
-        # 수동 마스킹이 없으면 자동 결과를 최종으로 설정
-        if self.front_manual_mask_image is None:
-            self.front_final_mask_image = mask_array
+        # 통합 마스킹 뷰어에 자동 마스킹 설정
+        self.ui.components['front_unified_mask_viewer'].set_auto_mask(mask_array)
         
         self.log("✅ 앞면 자동 배경 제거 완료!")
+        self.log("   앞면 통합 미리보기가 자동 마스킹으로 업데이트되었습니다.")
         
-        # 뒷면 이미지가 있고 양면 모드인 경우 뒷면도 처리
-        if self.is_dual_side and self.back_image_path:
-            back_viewer = self.ui.components['back_original_viewer']
-            current_back_image = back_viewer.get_current_image_array()
-            
-            if current_back_image is not None:
-                temp_dir = tempfile.gettempdir()
-                temp_back_path = os.path.join(temp_dir, f"temp_back_{int(time.time())}.jpg")
-                cv2.imwrite(temp_back_path, current_back_image)
-                
-                self.log("뒷면 이미지 자동 배경 제거 시작... (회전 적용됨)")
-                self.back_processing_thread = ProcessingThread(temp_back_path, self.image_processor)
-            else:
-                self.log("뒷면 이미지 자동 배경 제거 시작...")
-                self.back_processing_thread = ProcessingThread(self.back_image_path, self.image_processor)
-            
-            self.back_processing_thread.finished.connect(self.on_back_processing_finished)
-            self.back_processing_thread.error.connect(self.on_processing_error)
-            self.back_processing_thread.progress.connect(self.on_processing_progress)
-            self.back_processing_thread.start()
-        else:
-            self.on_all_processing_finished()
+        # UI 정리
+        self.ui.components['progress_panel'].hide_progress()
+        self.ui.components['front_original_viewer'].set_process_enabled(True)
+        
+        self._update_ui_state()
+        self._update_print_button_state()
     
     def on_back_processing_finished(self, mask_array):
         """뒷면 자동 배경제거 완료"""
         self.back_auto_mask_image = mask_array
-        # 자동 배경제거 결과를 자동 결과 뷰어에 표시
-        self.ui.components['back_auto_result_viewer'].set_image(mask_array)
         
-        # 수동 마스킹이 없으면 자동 결과를 최종으로 설정
-        if self.back_manual_mask_image is None:
-            self.back_final_mask_image = mask_array
+        # 통합 마스킹 뷰어에 자동 마스킹 설정
+        self.ui.components['back_unified_mask_viewer'].set_auto_mask(mask_array)
         
         self.log("✅ 뒷면 자동 배경 제거 완료!")
+        self.log("   뒷면 통합 미리보기가 자동 마스킹으로 업데이트되었습니다.")
         
-        self.on_all_processing_finished()
-    
-    def on_all_processing_finished(self):
-        """모든 이미지 처리 완료"""
-        # UI 상태 업데이트
+        # UI 정리
         self.ui.components['progress_panel'].hide_progress()
-        self.ui.components['processing_panel'].set_process_enabled(True)
+        self.ui.components['back_original_viewer'].set_process_enabled(True)
         
         self._update_ui_state()
         self._update_print_button_state()
-        
-        # 사용자에게 수동 마스킹 옵션 안내
-        self.log("✅ 자동 배경 제거 완료!")
-        self.log("💡 결과가 만족스럽지 않다면 수동 마스킹 영역을 클릭하여 직접 마스킹된 이미지를 업로드하세요.")
-        self.ui.components['status_text'].setText("자동 처리 완료 | 수동 마스킹 업로드 가능")
     
-    def on_processing_error(self, error_message):
+    def on_processing_error(self, error_message, is_front: bool):
         """처리 오류"""
+        side_text = "앞면" if is_front else "뒷면"
+        viewer = self.ui.components['front_original_viewer'] if is_front else self.ui.components['back_original_viewer']
+        
         self.ui.components['progress_panel'].hide_progress()
-        self.ui.components['processing_panel'].set_process_enabled(True)
+        viewer.set_process_enabled(True)
         
-        self.log(f"❌ 처리 오류: {error_message}")
-        self.ui.components['status_text'].setText("오류 발생 | 다시 시도해주세요")
+        self.log(f"❌ {side_text} 처리 오류: {error_message}")
+        self.ui.components['status_text'].setText(f"{side_text} 오류 발생 | 다시 시도해주세요")
         
-        QMessageBox.critical(self, "처리 오류", f"이미지 처리 중 오류가 발생했습니다:\n\n{error_message}")
+        QMessageBox.critical(self, "처리 오류", f"{side_text} 이미지 처리 중 오류가 발생했습니다:\n\n{error_message}")
     
-    def export_results(self):
-        """결과 저장 - 최종 마스킹 이미지 사용"""
-        if self.front_final_mask_image is None:
-            QMessageBox.warning(self, "경고", "저장할 결과가 없습니다.")
-            return
-        
-        # 저장 폴더 선택
-        output_dir = config.get('directories.output', 'output')
-        folder_path = QFileDialog.getExistingDirectory(self, "저장 폴더 선택", output_dir)
-        
-        if not folder_path:
-            return
-        
-        try:
-            # 합성 이미지 생성
-            front_composite = None
-            back_composite = None
-            
-            # 앞면 합성
-            front_viewer = self.ui.components['front_original_viewer']
-            current_front_image = front_viewer.get_current_image_array()
-            
-            if current_front_image is not None and self.front_final_mask_image is not None:
-                front_composite = self.image_processor.create_composite_preview(
-                    current_front_image, self.front_final_mask_image
-                )
-            elif self.front_original_image is not None and self.front_final_mask_image is not None:
-                front_composite = self.image_processor.create_composite_preview(
-                    self.front_original_image, self.front_final_mask_image
-                )
-            
-            # 뒷면 합성
-            if self.is_dual_side and self.back_final_mask_image is not None:
-                back_viewer = self.ui.components['back_original_viewer']
-                current_back_image = back_viewer.get_current_image_array()
-                
-                if current_back_image is not None:
-                    back_composite = self.image_processor.create_composite_preview(
-                        current_back_image, self.back_final_mask_image
-                    )
-                elif self.back_original_image is not None:
-                    back_composite = self.image_processor.create_composite_preview(
-                        self.back_original_image, self.back_final_mask_image
-                    )
-            
-            # 결과 저장
-            success, message = self.file_manager.export_dual_results(
-                front_image_path=self.front_image_path,
-                front_mask_image=self.front_final_mask_image,
-                back_image_path=self.back_image_path,
-                back_mask_image=self.back_final_mask_image,
-                front_composite=front_composite,
-                back_composite=back_composite,
-                output_folder=folder_path
-            )
-            
-            if success:
-                # 어떤 마스킹이 사용되었는지 안내
-                front_type = "수동" if self.front_manual_mask_image is not None else "자동"
-                back_type = "수동" if self.back_manual_mask_image is not None else "자동" if self.back_final_mask_image is not None else "없음"
-                
-                self.log(f"✅ {message}")
-                self.log(f"   앞면: {front_type} 마스킹, 뒷면: {back_type} 마스킹")
-                self.ui.components['status_text'].setText("저장 완료")
-                QMessageBox.information(self, "저장 완료", message)
-            else:
-                self.log(f"❌ {message}")
-                QMessageBox.critical(self, "저장 오류", message)
-                
-        except Exception as e:
-            error_msg = f"저장 중 오류: {e}"
-            self.log(f"❌ {error_msg}")
-            QMessageBox.critical(self, "저장 오류", error_msg)
+    # export_results 메서드 완전 삭제
     
     def _update_print_button_state(self):
         """인쇄 버튼 상태 업데이트"""
@@ -632,8 +551,9 @@ class HanaStudio(QMainWindow):
             # 일반 모드: 앞면 이미지만 있으면 인쇄 가능
             can_print = self.front_image_path is not None
         else:
-            # 레이어 모드: 앞면 이미지와 최종 마스킹이 있어야 함
-            can_print = (self.front_image_path is not None and self.front_final_mask_image is not None)
+            # 레이어 모드: 앞면 이미지와 마스킹이 있어야 함
+            front_mask = self.ui.components['front_unified_mask_viewer'].get_current_mask()
+            can_print = (self.front_image_path is not None and front_mask is not None)
         
         self.ui.components['printer_panel'].set_print_enabled(can_print)
     
@@ -719,7 +639,7 @@ class HanaStudio(QMainWindow):
             self.ui.components['printer_panel'].update_status("❌ 테스트 오류")
         
     def print_card(self):
-        """카드 인쇄 - 최종 마스킹 이미지 사용"""
+        """카드 인쇄 - 통합 마스킹 이미지 사용"""
         if not self.printer_available or not self.printer_dll_path:
             QMessageBox.warning(self, "경고", "프린터를 사용할 수 없습니다.")
             return
@@ -734,25 +654,28 @@ class HanaStudio(QMainWindow):
         
         # 인쇄 모드별 확인
         if self.print_mode == "layered":
-            if self.front_final_mask_image is None:
-                QMessageBox.warning(self, "경고", "레이어 인쇄를 위해서는 마스킹 이미지가 필요합니다.\n자동 배경제거를 실행하거나 수동 마스킹을 업로드해주세요.")
+            front_mask = self.ui.components['front_unified_mask_viewer'].get_current_mask()
+            if front_mask is None:
+                QMessageBox.warning(self, "경고", "레이어 인쇄를 위해서는 마스킹 이미지가 필요합니다.\n개별 배경제거를 실행하거나 수동 마스킹을 업로드해주세요.")
                 return
             
-            # 최종 마스킹 이미지 저장 (자동 또는 수동)
+            # 최종 마스킹 이미지 저장 (통합에서 가져옴)
             self.front_saved_mask_path = self.file_manager.save_mask_for_printing(
-                self.front_final_mask_image, self.front_image_path, "front"
+                front_mask, self.front_image_path, "front"
             )
             if not self.front_saved_mask_path:
                 QMessageBox.critical(self, "오류", "앞면 마스크 이미지 저장에 실패했습니다.")
                 return
             
             # 뒷면 마스크도 저장 (있는 경우)
-            if self.is_dual_side and self.back_final_mask_image is not None and self.back_image_path:
-                self.back_saved_mask_path = self.file_manager.save_mask_for_printing(
-                    self.back_final_mask_image, self.back_image_path, "back"
-                )
-                if not self.back_saved_mask_path:
-                    self.log("⚠️ 뒷면 마스크 저장 실패, 뒷면은 일반 모드로 인쇄됩니다.")
+            if self.is_dual_side and self.back_image_path:
+                back_mask = self.ui.components['back_unified_mask_viewer'].get_current_mask()
+                if back_mask is not None:
+                    self.back_saved_mask_path = self.file_manager.save_mask_for_printing(
+                        back_mask, self.back_image_path, "back"
+                    )
+                    if not self.back_saved_mask_path:
+                        self.log("⚠️ 뒷면 마스크 저장 실패, 뒷면은 일반 모드로 인쇄됩니다.")
         
         # 회전된 이미지를 고려한 인쇄 경로 준비
         front_print_path = self.front_image_path
@@ -786,8 +709,9 @@ class HanaStudio(QMainWindow):
         
         # 마스킹 정보 추가
         if self.print_mode == "layered":
-            front_mask_type = "수동 마스킹" if self.front_manual_mask_image is not None else "자동 마스킹"
-            detail_text += f"  마스킹: {front_mask_type}\n"
+            front_mask_type = self.ui.components['front_unified_mask_viewer'].get_mask_type()
+            front_mask_text = "수동 마스킹" if front_mask_type == "manual" else "자동 마스킹"
+            detail_text += f"  마스킹: {front_mask_text}\n"
         
         # 회전 정보 추가
         if front_viewer.get_rotation_angle() != 0:
@@ -798,9 +722,11 @@ class HanaStudio(QMainWindow):
             detail_text += f"뒷면 이미지: {back_name}\n"
             
             # 뒷면 마스킹 정보
-            if self.print_mode == "layered" and self.back_final_mask_image is not None:
-                back_mask_type = "수동 마스킹" if self.back_manual_mask_image is not None else "자동 마스킹"
-                detail_text += f"  마스킹: {back_mask_type}\n"
+            if self.print_mode == "layered":
+                back_mask_type = self.ui.components['back_unified_mask_viewer'].get_mask_type()
+                if back_mask_type:
+                    back_mask_text = "수동 마스킹" if back_mask_type == "manual" else "자동 마스킹"
+                    detail_text += f"  마스킹: {back_mask_text}\n"
             
             # 뒷면 회전 정보
             back_viewer = self.ui.components['back_original_viewer']
@@ -904,9 +830,13 @@ class HanaStudio(QMainWindow):
             # 사용된 마스킹 타입 정보 추가
             mask_info = ""
             if self.print_mode == "layered":
-                front_mask_type = "수동" if self.front_manual_mask_image is not None else "자동"
-                back_mask_type = "수동" if self.back_manual_mask_image is not None else "자동" if self.back_final_mask_image is not None else "없음"
-                mask_info = f" (앞면: {front_mask_type}, 뒷면: {back_mask_type})"
+                front_mask_type = self.ui.components['front_unified_mask_viewer'].get_mask_type()
+                back_mask_type = self.ui.components['back_unified_mask_viewer'].get_mask_type() if self.is_dual_side else None
+                
+                front_type_text = "수동" if front_mask_type == "manual" else "자동"
+                back_type_text = "수동" if back_mask_type == "manual" else "자동" if back_mask_type else "없음"
+                
+                mask_info = f" (앞면: {front_type_text}, 뒷면: {back_type_text})"
             
             self.log(f"✅ {side_text} {mode_text} {self.print_quantity}장 완료!{mask_info}")
             self.ui.components['status_text'].setText("인쇄 완료")

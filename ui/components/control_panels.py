@@ -1,5 +1,6 @@
 """
-파일 선택 패널 - 양면인쇄 체크박스 제거 및 수동 마스킹 기능 추가 준비
+ui/components/control_panels.py 수정
+처리 옵션 패널에서 배경제거 버튼 제거 (이제 개별 이미지 뷰어에 있음)
 """
 
 from PySide6.QtWidgets import (
@@ -97,43 +98,7 @@ class FileSelectionPanel(QGroupBox):
         self.back_label.setText(f"뒷면: 📁 {filename}")
 
 
-class ProcessingOptionsPanel(QGroupBox):
-    """처리 옵션 패널"""
-    process_requested = Signal()
-    export_requested = Signal()
-    
-    def __init__(self):
-        super().__init__("⚙️ 처리 옵션")
-        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
-        self._setup_ui()
-    
-    def _setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(5)  # 간격 늘림 (3 → 5)
-        layout.setContentsMargins(6, 6, 6, 6)
-        
-        self.process_btn = ModernButton("배경 제거 시작", primary=True)
-        self.process_btn.setEnabled(False)
-        self.process_btn.setFixedHeight(40)
-        
-        self.export_btn = ModernButton("결과 저장")
-        self.export_btn.setEnabled(False)
-        self.export_btn.setFixedHeight(40)
-        
-        layout.addWidget(self.process_btn)
-        layout.addWidget(self.export_btn)
-        
-        # 신호 연결
-        self.process_btn.clicked.connect(self.process_requested.emit)
-        self.export_btn.clicked.connect(self.export_requested.emit)
-    
-    def set_process_enabled(self, enabled: bool):
-        """처리 버튼 활성화/비활성화"""
-        self.process_btn.setEnabled(enabled)
-    
-    def set_export_enabled(self, enabled: bool):
-        """저장 버튼 활성화/비활성화"""
-        self.export_btn.setEnabled(enabled)
+# ProcessingOptionsPanel 클래스 완전 삭제 - 더 이상 필요없음
 
 
 class PrintModePanel(QGroupBox):
