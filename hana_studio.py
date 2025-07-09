@@ -53,6 +53,7 @@ class HanaStudio(QMainWindow):
         self.print_mode = "normal"
         self.is_dual_side = False
         self.print_quantity = 1
+        self.card_orientation = "portrait"  # 새로 추가
         
         # 코어 모듈들
         self.image_processor = ImageProcessor()
@@ -76,7 +77,7 @@ class HanaStudio(QMainWindow):
         
         self._check_printer_availability()
         self._setup_manual_mask_viewers()
-    
+        
     def _setup_manual_mask_viewers(self):
         """수동 마스킹 뷰어 설정"""
         # 수동 마스킹 뷰어들을 클릭 업로드 모드로 설정
@@ -147,7 +148,7 @@ class HanaStudio(QMainWindow):
         self.setStyleSheet(get_app_style())
     
     def _connect_signals(self):
-        """시그널 연결 - 임계값 포함 개별 배경제거 버튼"""
+        """시그널 연결 - 카드 방향 시그널 추가"""
         components = self.ui.components
         
         # 파일 선택
@@ -173,10 +174,30 @@ class HanaStudio(QMainWindow):
         # 나머지 시그널들...
         components['print_mode_panel'].mode_changed.connect(self.on_print_mode_changed)
         components['print_mode_panel'].dual_side_changed.connect(self.on_dual_side_toggled)
+        components['print_mode_panel'].card_orientation_changed.connect(self.on_card_orientation_changed)  # 새로 추가
         components['print_quantity_panel'].quantity_changed.connect(self.on_print_quantity_changed)
         components['printer_panel'].test_requested.connect(self.test_printer_connection)
         components['printer_panel'].print_requested.connect(self.print_card)
-    
+
+    def on_card_orientation_changed(self, orientation: str):
+        """카드 방향 변경 처리"""
+        self.card_orientation = orientation
+        
+        # 미리보기 뷰어들에 방향 적용
+        self.ui.components['front_unified_mask_viewer'].set_card_orientation(orientation)
+        self.ui.components['back_unified_mask_viewer'].set_card_orientation(orientation)
+        
+        # 프린터 버튼 텍스트 업데이트
+        orientation_text = "세로형" if orientation == "portrait" else "가로형"
+        self.ui.components['printer_panel'].update_print_button_text(
+            self.print_mode, self.is_dual_side, self.print_quantity, orientation
+        )
+        
+        self.log(f"카드 방향 변경: {orientation_text}")
+        
+        # 상태 업데이트
+        self._update_ui_state()
+            
     def _check_printer_availability(self):
         """프린터 사용 가능성 확인"""
         def check():
@@ -386,7 +407,7 @@ class HanaStudio(QMainWindow):
         """인쇄 모드 변경"""
         self.print_mode = mode
         self.ui.components['printer_panel'].update_print_button_text(
-            mode, self.is_dual_side, self.print_quantity
+            mode, self.is_dual_side, self.print_quantity, self.card_orientation  # 방향 정보 추가
         )
         self._update_print_button_state()
         
@@ -397,8 +418,19 @@ class HanaStudio(QMainWindow):
         """인쇄 매수 변경"""
         self.print_quantity = quantity
         self.ui.components['printer_panel'].update_print_button_text(
-            self.print_mode, self.is_dual_side, quantity
+            self.print_mode, self.is_dual_side, quantity, self.card_orientation  # 방향 정보 추가
         )
+        
+        self.log(f"인쇄 매수 변경: {quantity}장")
+        
+        if self.front_image_path:
+            orientation_text = "세로형" if self.card_orientation == "portrait" else "가로형"
+            if quantity > 1:
+                status = f"{orientation_text} {'양면' if self.is_dual_side else '단면'} {quantity}장 인쇄 준비 완료"
+            else:
+                status = f"{orientation_text} {'양면' if self.is_dual_side else '단면'} 인쇄 준비 완료"
+            self.ui.components['status_text'].setText(status)
+
         
         self.log(f"인쇄 매수 변경: {quantity}장")
         
@@ -463,15 +495,16 @@ class HanaStudio(QMainWindow):
             QMessageBox.critical(self, "업로드 오류", error_msg)
     
     def _update_ui_state(self):
-        """UI 상태 업데이트 - 저장 기능 제거"""
+        """UI 상태 업데이트 - 카드 방향 정보 포함"""
         # 상태 메시지만 업데이트
         if self.front_image_path:
+            orientation_text = "세로형" if self.card_orientation == "portrait" else "가로형"
             if self.print_quantity > 1:
-                status = f"{'양면' if self.is_dual_side else '단면'} {self.print_quantity}장 인쇄 준비 완료"
+                status = f"{orientation_text} {'양면' if self.is_dual_side else '단면'} {self.print_quantity}장 인쇄 준비 완료"
             elif self.is_dual_side:
-                status = "양면 인쇄 준비 완료" if self.back_image_path else "양면 인쇄 준비 (뒷면 이미지 선택사항)"
+                status = f"{orientation_text} 양면 인쇄 준비 완료" if self.back_image_path else f"{orientation_text} 양면 인쇄 준비 (뒷면 이미지 선택사항)"
             else:
-                status = "단면 인쇄 준비 완료"
+                status = f"{orientation_text} 단면 인쇄 준비 완료"
             self.ui.components['status_text'].setText(status)
         else:
             self.ui.components['status_text'].setText("앞면 이미지를 선택해주세요")
@@ -701,7 +734,7 @@ class HanaStudio(QMainWindow):
             self.ui.components['printer_panel'].update_status("❌ 테스트 오류")
         
     def print_card(self):
-        """카드 인쇄 - 통합 마스킹 이미지 사용"""
+        """카드 인쇄 - 카드 방향 적용"""
         if not self.printer_available or not self.printer_dll_path:
             QMessageBox.warning(self, "경고", "프린터를 사용할 수 없습니다.")
             return
@@ -765,6 +798,7 @@ class HanaStudio(QMainWindow):
         # 인쇄 확인 다이얼로그
         mode_text = "일반 인쇄" if self.print_mode == "normal" else "레이어 인쇄 (YMCW)"
         side_text = "양면" if self.is_dual_side else "단면"
+        orientation_text = "세로형" if self.card_orientation == "portrait" else "가로형"
         
         front_name, _ = self.file_manager.get_file_info(self.front_image_path)
         detail_text = f"앞면 이미지: {front_name}\n"
@@ -797,6 +831,7 @@ class HanaStudio(QMainWindow):
         elif self.is_dual_side:
             detail_text += "뒷면 이미지: 없음 (빈 뒷면으로 인쇄)\n"
         
+        detail_text += f"카드 방향: {orientation_text}\n"  # 새로 추가
         detail_text += f"인쇄 방식: {side_text} {mode_text}\n"
         detail_text += f"인쇄 매수: {self.print_quantity}장"
         
@@ -822,9 +857,9 @@ class HanaStudio(QMainWindow):
         
         # 인쇄 시작
         self._start_multi_print(front_print_path, back_print_path)
-    
+        
     def _start_multi_print(self, front_path=None, back_path=None):
-        """여러장 인쇄 시작"""
+        """여러장 인쇄 시작 - 카드 방향 정보 추가"""
         try:
             self.ui.components['printer_panel'].set_print_enabled(False)
             self.ui.components['progress_panel'].show_progress()
@@ -843,7 +878,8 @@ class HanaStudio(QMainWindow):
                 back_mask_path=self.back_saved_mask_path if self.print_mode == "layered" else None,
                 print_mode=self.print_mode,
                 is_dual_side=self.is_dual_side,
-                quantity=self.print_quantity
+                quantity=self.print_quantity,
+                card_orientation=self.card_orientation  # 새로 추가
             )
             
             # 시그널 연결
@@ -855,7 +891,8 @@ class HanaStudio(QMainWindow):
             
             self.current_printer_thread.start()
             
-            self.log(f"📄 {self.print_quantity}장 인쇄 시작!")
+            orientation_text = "세로형" if self.card_orientation == "portrait" else "가로형"
+            self.log(f"📄 {orientation_text} {self.print_quantity}장 인쇄 시작!")
             
         except Exception as e:
             self.ui.components['progress_panel'].hide_progress()
@@ -863,7 +900,7 @@ class HanaStudio(QMainWindow):
             error_msg = f"인쇄 시작 실패: {e}"
             self.log(f"❌ {error_msg}")
             QMessageBox.critical(self, "인쇄 오류", error_msg)
-    
+            
     def on_printer_progress(self, message):
         """프린터 진행상황 업데이트"""
         self.ui.components['progress_panel'].update_status(message)

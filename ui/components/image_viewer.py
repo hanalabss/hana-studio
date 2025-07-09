@@ -564,7 +564,7 @@ class ImageViewer(QWidget):
             QTimer.singleShot(50, self.update_display)
 
 class UnifiedMaskViewer(QWidget):
-    """통합 마스킹 미리보기 뷰어 - 자동/수동 마스킹 중 최신것만 표시"""
+    """통합 마스킹 미리보기 뷰어 - 자동/수동 마스킹 중 최신것만 표시, 카드 방향 지원"""
     
     def __init__(self, title=""):
         super().__init__()
@@ -573,6 +573,7 @@ class UnifiedMaskViewer(QWidget):
         self.auto_mask_array = None
         self.manual_mask_array = None
         self.original_pixmap = None
+        self.card_orientation = "portrait"  # 기본값
         
         self.setMinimumSize(280, 200)
         self._setup_ui()
@@ -619,6 +620,47 @@ class UnifiedMaskViewer(QWidget):
         placeholder = f"{self.title}\n\n배경제거 또는 수동 업로드 필요" if self.title else "배경제거 또는 수동 업로드 필요"
         self.image_label.setText(placeholder)
         self.type_label.setText("")
+    
+    def set_card_orientation(self, orientation: str):
+        """카드 방향 설정 - 미리보기 업데이트"""
+        self.card_orientation = orientation
+        self._update_display()
+        self._update_border_style()
+    
+    def _update_border_style(self):
+        """카드 방향에 따라 테두리 색상 변경"""
+        if self.card_orientation == "portrait":
+            border_color = "#28A745"  # 초록색 (세로)
+        else:
+            border_color = "#FF6B35"  # 주황색 (가로)
+        
+        self.image_label.setStyleSheet(f"""
+            QLabel {{
+                background: #FFFFFF;
+                border: 2px dashed {border_color};
+                border-radius: 12px;
+                color: #666;
+                font-size: 14px;
+            }}
+        """)
+    
+    def _get_display_size(self):
+        """카드 방향에 따른 표시 크기 계산"""
+        widget_width = 280
+        widget_height = 200
+        
+        if self.card_orientation == "portrait":
+            # 세로형: 53.98 × 85.6 비율
+            aspect_ratio = 53.98 / 85.6  # 약 0.63
+            display_height = min(widget_height - 20, 160)
+            display_width = int(display_height * aspect_ratio)
+        else:
+            # 가로형: 85.6 × 53.98 비율
+            aspect_ratio = 85.6 / 53.98  # 약 1.59
+            display_width = min(widget_width - 20, 200)
+            display_height = int(display_width / aspect_ratio)
+        
+        return display_width, display_height
     
     def set_auto_mask(self, mask_array):
         """자동 배경제거 마스크 설정"""
@@ -667,7 +709,7 @@ class UnifiedMaskViewer(QWidget):
         return self.current_mask_type
     
     def _update_display(self):
-        """디스플레이 업데이트"""
+        """디스플레이 업데이트 - 내부용 메서드"""
         current_mask = self.get_current_mask()
         if current_mask is not None:
             pixmap = self._numpy_to_pixmap(current_mask)
@@ -718,26 +760,16 @@ class UnifiedMaskViewer(QWidget):
             return QPixmap()
     
     def update_display(self):
-        """디스플레이 업데이트 (크기에 맞게 조정)"""
+        """카드 방향을 고려한 디스플레이 업데이트 (public 메서드)"""
         if self.original_pixmap is None or self.original_pixmap.isNull():
             return
             
         try:
-            label_size = self.image_label.size()
-            
-            if label_size.width() <= 0 or label_size.height() <= 0:
-                QTimer.singleShot(50, self.update_display)
-                return
-            
-            available_height = label_size.height() - 10
-            available_width = label_size.width() - 10
-            
-            if available_height <= 0 or available_width <= 0:
-                return
+            display_width, display_height = self._get_display_size()
             
             scaled_pixmap = self.original_pixmap.scaled(
-                available_width, 
-                available_height,
+                display_width, 
+                display_height,
                 Qt.AspectRatioMode.KeepAspectRatio, 
                 Qt.TransformationMode.SmoothTransformation
             )
