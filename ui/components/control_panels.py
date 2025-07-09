@@ -241,20 +241,23 @@ class PrintQuantityPanel(QGroupBox):
         # 매수 선택 영역
         quantity_layout = QHBoxLayout()
         quantity_layout.setSpacing(6)
-        
         quantity_label = QLabel("매수:")
         quantity_label.setStyleSheet("""
-            font-weight: 600; 
-            color: #495057; 
-            font-size: 16px;
+            QLabel {
+                background: transparent;
+                border: none;
+                padding: 0px;
+                font-size: 14px;
+                color: #495057;
+            }
         """)
-        
+
         self.quantity_spinbox = QSpinBox()
         self.quantity_spinbox.setMinimum(1)
-        self.quantity_spinbox.setMaximum(100)
+        self.quantity_spinbox.setMaximum(99999)
         self.quantity_spinbox.setValue(1)
         self.quantity_spinbox.setSuffix(" 장")
-        self.quantity_spinbox.setFixedSize(80, 35)
+        self.quantity_spinbox.setFixedSize(100, 35)
         self.quantity_spinbox.setStyleSheet("""
             QSpinBox {
                 background-color: #FFFFFF;

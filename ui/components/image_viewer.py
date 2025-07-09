@@ -1,11 +1,13 @@
 """
 ui/components/image_viewer.py 수정
-이미지 뷰어 컴포넌트 - 개별 배경제거 버튼 추가
+컴팩트한 임계값 슬라이더가 포함된 이미지 뷰어 컴포넌트
+원본 이미지 박스 WIDTH(280px) 내에서 모든 컨트롤 배치
 """
 
 import numpy as np
 from PySide6.QtWidgets import (
-    QLabel, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QFileDialog
+    QLabel, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QFileDialog,
+    QSlider, QFrame
 )
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QPixmap, QImage, QTransform, QFont
@@ -19,8 +21,8 @@ class RotateButton(QPushButton):
     def __init__(self, text, direction="left"):
         super().__init__(text)
         self.direction = direction
-        self.setFixedSize(30, 30)
-        self.setFont(QFont("Arial", 12))
+        self.setFixedSize(25, 32)  # 세로 높이 증가 (25 → 32)
+        self.setFont(QFont("Arial", 11))  # 폰트 크기 약간 증가
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         
         # 스타일 적용
@@ -28,7 +30,7 @@ class RotateButton(QPushButton):
             QPushButton {
                 background-color: #F8F9FA;
                 border: 1px solid #DEE2E6;
-                border-radius: 4px;
+                border-radius: 3px;
                 color: #495057;
                 font-weight: 600;
             }
@@ -52,8 +54,8 @@ class ProcessButton(QPushButton):
     
     def __init__(self, text):
         super().__init__(text)
-        self.setFixedSize(100, 30)
-        self.setFont(QFont("Segoe UI", 9, QFont.Weight.Medium))
+        self.setFixedSize(80, 32)  # 세로 높이 증가 (25 → 32)
+        self.setFont(QFont("Segoe UI", 9, QFont.Weight.Medium))  # 폰트 크기 증가
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         
         # 스타일 적용
@@ -63,8 +65,8 @@ class ProcessButton(QPushButton):
                                            stop: 0 #4A90E2, stop: 1 #357ABD);
                 color: white;
                 border: none;
-                border-radius: 6px;
-                padding: 0 8px;
+                border-radius: 4px;
+                padding: 0 6px;
                 font-weight: 600;
             }
             QPushButton:hover {
@@ -82,6 +84,91 @@ class ProcessButton(QPushButton):
         """)
 
 
+class CompactThresholdSlider(QWidget):
+    """컴팩트한 임계값 슬라이더"""
+    threshold_changed = Signal(int)
+    
+    def __init__(self, initial_value=45):
+        super().__init__()
+        self.setFixedSize(120, 32)  # 세로 높이 증가 (25 → 32)
+        self._setup_ui(initial_value)
+    
+    def _setup_ui(self, initial_value):
+        """UI 구성"""
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        
+        # 라벨 (매우 짧게)
+        label = QLabel("T:")
+        label.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))  # 폰트 크기 증가
+        label.setStyleSheet("color: #6C757D; background: transparent;")
+        label.setFixedWidth(12)
+        
+        # 슬라이더 (컴팩트)
+        self.slider = QSlider(Qt.Orientation.Horizontal)
+        self.slider.setRange(0, 255)
+        self.slider.setValue(initial_value)
+        self.slider.setFixedWidth(70)  # 슬라이더 너비
+        self.slider.setFixedHeight(28)  # 슬라이더 높이 증가 (20 → 28)
+        self.slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                border: 1px solid #DEE2E6;
+                height: 6px;
+                background: #F8F9FA;
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                background: #4A90E2;
+                border: 1px solid #357ABD;
+                width: 16px;
+                height: 16px;
+                border-radius: 8px;
+                margin: -5px 0;
+            }
+            QSlider::handle:horizontal:hover {
+                background: #5BA0F2;
+            }
+            QSlider::sub-page:horizontal {
+                background: #4A90E2;
+                border-radius: 3px;
+            }
+        """)
+        
+        # 값 표시 라벨 (숫자만)
+        self.value_label = QLabel(str(initial_value))
+        self.value_label.setFont(QFont("Segoe UI", 9))  # 폰트 크기 증가
+        self.value_label.setStyleSheet("""
+            color: #495057; 
+            background: transparent;
+            border: 1px solid #DEE2E6;
+            border-radius: 3px;
+            padding: 3px 4px;
+        """)
+        self.value_label.setFixedSize(28, 28)  # 크기 증가 (28x28)
+        self.value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        layout.addWidget(label)
+        layout.addWidget(self.slider)
+        layout.addWidget(self.value_label)
+        
+        # 시그널 연결
+        self.slider.valueChanged.connect(self._on_value_changed)
+    
+    def _on_value_changed(self, value):
+        """값 변경"""
+        self.value_label.setText(str(value))
+        self.threshold_changed.emit(value)
+    
+    def get_value(self):
+        """현재 값 반환"""
+        return self.slider.value()
+    
+    def set_value(self, value):
+        """값 설정"""
+        self.slider.setValue(value)
+
+
 class ImageViewer(QWidget):
     """클릭 업로드, 회전 및 개별 배경제거 기능이 있는 이미지 뷰어 위젯"""
     
@@ -89,7 +176,8 @@ class ImageViewer(QWidget):
     image_rotated = Signal()
     image_clicked = Signal()
     file_uploaded = Signal(str)
-    process_requested = Signal()  # 새로 추가: 개별 배경제거 요청
+    process_requested = Signal(int)  # 임계값 포함
+    threshold_changed = Signal(int)  # 임계값 변경 시그널 추가
     
     def __init__(self, title="", enable_click_upload=False, enable_process_button=False):
         super().__init__()
@@ -102,7 +190,7 @@ class ImageViewer(QWidget):
         self.original_image_array = None
         self.image_path = None
         
-        self.setMinimumSize(280, 240)  # 높이 증가 (버튼 공간)
+        self.setMinimumSize(280, 250)  # 높이 증가 (240 → 250) - 버튼 높이 증가에 맞춤
         self._setup_ui()
         self._set_placeholder_text()
         
@@ -144,12 +232,12 @@ class ImageViewer(QWidget):
                 }
             """)
         
-        # 버튼 영역
+        # 버튼 영역 - 280px 내에서 모든 컨트롤 배치
         button_layout = QHBoxLayout()
         button_layout.setContentsMargins(0, 0, 0, 0)
-        button_layout.setSpacing(5)
+        button_layout.setSpacing(3)  # 간격 줄임
         
-        # 회전 버튼들
+        # 회전 버튼들 (25px x 2 = 50px)
         self.rotate_left_btn = RotateButton("↶", "left")
         self.rotate_right_btn = RotateButton("↷", "right")
         
@@ -160,25 +248,50 @@ class ImageViewer(QWidget):
         self.rotate_left_btn.setEnabled(False)
         self.rotate_right_btn.setEnabled(False)
         
-        # 배경제거 버튼 (원본 이미지 뷰어에만)
+        # 배경제거 버튼 + 임계값 슬라이더 (원본 이미지에만)
         if self.enable_process_button:
+            # 배경제거 버튼 (80px)
             self.process_btn = ProcessButton("배경제거")
-            self.process_btn.clicked.connect(self.process_requested.emit)
+            self.process_btn.clicked.connect(self._on_process_clicked)
             self.process_btn.setEnabled(False)
+            
+            # 임계값 슬라이더 (120px)
+            self.threshold_slider = CompactThresholdSlider(45)
+            self.threshold_slider.threshold_changed.connect(self.threshold_changed.emit)
         
-        # 버튼 배치
-        button_layout.addStretch()
+        # 버튼 배치 - 총 280px 내에서
+        # 회전버튼(50) + 간격(3x4=12) + 배경제거(80) + 슬라이더(120) = 262px < 280px ✓
+        button_layout.addStretch()  # 중앙 정렬을 위한 여백
         button_layout.addWidget(self.rotate_left_btn)
         button_layout.addWidget(self.rotate_right_btn)
         
         if self.enable_process_button:
-            button_layout.addSpacing(10)
             button_layout.addWidget(self.process_btn)
+            button_layout.addWidget(self.threshold_slider)
         
-        button_layout.addStretch()
+        button_layout.addStretch()  # 중앙 정렬을 위한 여백
         
         layout.addWidget(self.image_label)
         layout.addLayout(button_layout)
+    
+    def _on_process_clicked(self):
+        """배경제거 버튼 클릭 - 현재 임계값과 함께 시그널 전송"""
+        if hasattr(self, 'threshold_slider'):
+            threshold = self.threshold_slider.get_value()
+            self.process_requested.emit(threshold)
+        else:
+            self.process_requested.emit(200)  # 기본값
+    
+    def get_threshold_value(self):
+        """현재 임계값 반환"""
+        if hasattr(self, 'threshold_slider'):
+            return self.threshold_slider.get_value()
+        return 200
+    
+    def set_threshold_value(self, value):
+        """임계값 설정"""
+        if hasattr(self, 'threshold_slider'):
+            self.threshold_slider.set_value(value)
     
     def _set_placeholder_text(self):
         """플레이스홀더 텍스트 설정"""
@@ -449,7 +562,6 @@ class ImageViewer(QWidget):
         super().showEvent(event)
         if self.original_pixmap:
             QTimer.singleShot(50, self.update_display)
-
 
 class UnifiedMaskViewer(QWidget):
     """통합 마스킹 미리보기 뷰어 - 자동/수동 마스킹 중 최신것만 표시"""

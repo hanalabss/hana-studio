@@ -147,32 +147,33 @@ class HanaStudio(QMainWindow):
         self.setStyleSheet(get_app_style())
     
     def _connect_signals(self):
-        """시그널 연결 - 개별 배경제거 버튼 포함"""
+        """시그널 연결 - 임계값 포함 개별 배경제거 버튼"""
         components = self.ui.components
         
         # 파일 선택
         components['file_panel'].front_btn.clicked.connect(self.select_front_image)
         components['file_panel'].back_btn.clicked.connect(self.select_back_image)
         
-        # 개별 배경제거 (새로 추가)
+        # 개별 배경제거 (임계값 포함) - 시그널 수정
         components['front_original_viewer'].process_requested.connect(
-            lambda: self.process_single_image(is_front=True)
+            lambda threshold: self.process_single_image(is_front=True, threshold=threshold)
         )
         components['back_original_viewer'].process_requested.connect(
-            lambda: self.process_single_image(is_front=False)
+            lambda threshold: self.process_single_image(is_front=False, threshold=threshold)
         )
         
-        # 결과 저장 (배경제거 버튼 제거됨)
-        # components['processing_panel'].export_requested.connect(self.export_results)
+        # 임계값 변경 시그널 (선택사항 - 실시간 미리보기가 필요한 경우)
+        components['front_original_viewer'].threshold_changed.connect(
+            lambda value: self.log(f"앞면 임계값 변경: {value}")
+        )
+        components['back_original_viewer'].threshold_changed.connect(
+            lambda value: self.log(f"뒷면 임계값 변경: {value}")
+        )
         
-        # 인쇄 모드 - 양면인쇄 시그널 추가
+        # 나머지 시그널들...
         components['print_mode_panel'].mode_changed.connect(self.on_print_mode_changed)
         components['print_mode_panel'].dual_side_changed.connect(self.on_dual_side_toggled)
-        
-        # 인쇄 매수
         components['print_quantity_panel'].quantity_changed.connect(self.on_print_quantity_changed)
-        
-        # 프린터
         components['printer_panel'].test_requested.connect(self.test_printer_connection)
         components['printer_panel'].print_requested.connect(self.print_card)
     
@@ -282,8 +283,8 @@ class HanaStudio(QMainWindow):
         self._update_ui_state()
         self._reset_back_processing_results()
 
-    def process_single_image(self, is_front: bool):
-        """개별 이미지 배경제거 처리 - 한글 경로 문제 해결"""
+    def process_single_image(self, is_front: bool, threshold: int = 200):
+        """개별 이미지 배경제거 처리 - 임계값 지원"""
         if is_front:
             if not self.front_image_path:
                 return
@@ -316,7 +317,12 @@ class HanaStudio(QMainWindow):
                 if not success:
                     raise Exception("이미지 저장 실패")
                 
-                self.log(f"{side_text} 이미지 배경 제거 시작... (회전 적용됨)")
+                self.log(f"{side_text} 이미지 배경 제거 시작... (회전 적용됨, 임계값: {threshold})")
+                # 임계값을 config에 임시 설정
+                from config import config
+                original_threshold = config.get('alpha_threshold', 200)
+                config.set('alpha_threshold', threshold)
+                
                 self.processing_thread = ProcessingThread(temp_path, self.image_processor)
             except Exception as e:
                 self.log(f"❌ {side_text} 임시 파일 생성 실패: {e}")
@@ -324,21 +330,30 @@ class HanaStudio(QMainWindow):
                 self.ui.components['progress_panel'].hide_progress()
                 return
         else:
-            self.log(f"{side_text} 이미지 배경 제거 시작...")
+            self.log(f"{side_text} 이미지 배경 제거 시작... (임계값: {threshold})")
+            # 임계값을 config에 임시 설정
+            from config import config
+            original_threshold = config.get('alpha_threshold', 200)
+            config.set('alpha_threshold', threshold)
+            
             self.processing_thread = ProcessingThread(image_path, self.image_processor)
         
         # 시그널 연결 (어느 쪽인지 구분)
         if is_front:
-            self.processing_thread.finished.connect(self.on_front_processing_finished)
+            self.processing_thread.finished.connect(
+                lambda mask: self.on_front_processing_finished(mask, threshold, original_threshold)
+            )
         else:
-            self.processing_thread.finished.connect(self.on_back_processing_finished)
+            self.processing_thread.finished.connect(
+                lambda mask: self.on_back_processing_finished(mask, threshold, original_threshold)
+            )
         
         self.processing_thread.error.connect(
-            lambda error: self.on_processing_error(error, is_front)
+            lambda error: self.on_processing_error(error, is_front, original_threshold)
         )
         self.processing_thread.progress.connect(self.on_processing_progress)
         self.processing_thread.start()
-    
+        
     def on_dual_side_toggled(self, checked):
         """양면 인쇄 토글 - 인쇄모드 패널에서 이동"""
         self.is_dual_side = checked
@@ -488,14 +503,19 @@ class HanaStudio(QMainWindow):
         self.ui.components['progress_panel'].update_status(message)
         self.log(message)
     
-    def on_front_processing_finished(self, mask_array):
-        """앞면 자동 배경제거 완료"""
+    # 처리 완료 메서드들 수정
+    def on_front_processing_finished(self, mask_array, used_threshold, original_threshold):
+        """앞면 자동 배경제거 완료 - 임계값 복원"""
+        # 임계값 복원
+        from config import config
+        config.set('alpha_threshold', original_threshold)
+        
         self.front_auto_mask_image = mask_array
         
         # 통합 마스킹 뷰어에 자동 마스킹 설정
         self.ui.components['front_unified_mask_viewer'].set_auto_mask(mask_array)
         
-        self.log("✅ 앞면 자동 배경 제거 완료!")
+        self.log(f"✅ 앞면 자동 배경 제거 완료! (임계값: {used_threshold})")
         self.log("   앞면 통합 미리보기가 자동 마스킹으로 업데이트되었습니다.")
         
         # UI 정리
@@ -504,15 +524,19 @@ class HanaStudio(QMainWindow):
         
         self._update_ui_state()
         self._update_print_button_state()
-    
-    def on_back_processing_finished(self, mask_array):
-        """뒷면 자동 배경제거 완료"""
+        
+    def on_back_processing_finished(self, mask_array, used_threshold, original_threshold):
+        """뒷면 자동 배경제거 완료 - 임계값 복원"""
+        # 임계값 복원
+        from config import config
+        config.set('alpha_threshold', original_threshold)
+        
         self.back_auto_mask_image = mask_array
         
         # 통합 마스킹 뷰어에 자동 마스킹 설정
         self.ui.components['back_unified_mask_viewer'].set_auto_mask(mask_array)
         
-        self.log("✅ 뒷면 자동 배경 제거 완료!")
+        self.log(f"✅ 뒷면 자동 배경 제거 완료! (임계값: {used_threshold})")
         self.log("   뒷면 통합 미리보기가 자동 마스킹으로 업데이트되었습니다.")
         
         # UI 정리
@@ -521,9 +545,13 @@ class HanaStudio(QMainWindow):
         
         self._update_ui_state()
         self._update_print_button_state()
-    
-    def on_processing_error(self, error_message, is_front: bool):
-        """처리 오류"""
+        
+    def on_processing_error(self, error_message, is_front: bool, original_threshold):
+        """처리 오류 - 임계값 복원"""
+        # 임계값 복원
+        from config import config
+        config.set('alpha_threshold', original_threshold)
+        
         side_text = "앞면" if is_front else "뒷면"
         viewer = self.ui.components['front_original_viewer'] if is_front else self.ui.components['back_original_viewer']
         
@@ -534,8 +562,42 @@ class HanaStudio(QMainWindow):
         self.ui.components['status_text'].setText(f"{side_text} 오류 발생 | 다시 시도해주세요")
         
         QMessageBox.critical(self, "처리 오류", f"{side_text} 이미지 처리 중 오류가 발생했습니다:\n\n{error_message}")
-    
-    # export_results 메서드 완전 삭제
+        
+    # 추가: 임계값 설정 도우미 메서드들
+    def get_front_threshold(self):
+        """앞면 임계값 반환"""
+        return self.ui.components['front_original_viewer'].get_threshold_value()
+
+    def get_back_threshold(self):
+        """뒷면 임계값 반환"""
+        return self.ui.components['back_original_viewer'].get_threshold_value()
+
+    def set_front_threshold(self, value):
+        """앞면 임계값 설정"""
+        self.ui.components['front_original_viewer'].set_threshold_value(value)
+        self.log(f"앞면 임계값 설정: {value}")
+
+    def set_back_threshold(self, value):
+        """뒷면 임계값 설정"""
+        self.ui.components['back_original_viewer'].set_threshold_value(value)
+        self.log(f"뒷면 임계값 설정: {value}")
+
+    # 추가: 임계값 프리셋 메서드 (선택사항)
+    def apply_threshold_preset(self, preset_name):
+        """임계값 프리셋 적용"""
+        presets = {
+            'sensitive': 100,    # 민감한 감지 (더 많이 제거)
+            'balanced': 200,     # 균형잡힌 (기본값)
+            'conservative': 250  # 보수적 (덜 제거)
+        }
+        
+        if preset_name in presets:
+            threshold = presets[preset_name]
+            self.set_front_threshold(threshold)
+            self.set_back_threshold(threshold)
+            self.log(f"임계값 프리셋 적용: {preset_name} ({threshold})")
+        else:
+            self.log(f"❌ 알 수 없는 프리셋: {preset_name}")
     
     def _update_print_button_state(self):
         """인쇄 버튼 상태 업데이트"""

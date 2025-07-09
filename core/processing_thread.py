@@ -1,5 +1,6 @@
 """
-이미지 처리 스레드
+core/processing_thread.py 수정
+임계값을 지원하는 이미지 처리 스레드
 """
 
 import numpy as np
@@ -8,15 +9,16 @@ from .image_processor import ImageProcessor
 
 
 class ProcessingThread(QThread):
-    """이미지 처리를 백그라운드에서 실행하는 스레드"""
+    """이미지 처리를 백그라운드에서 실행하는 스레드 - 임계값 지원"""
     finished = Signal(np.ndarray)
     error = Signal(str)
     progress = Signal(str)
     
-    def __init__(self, image_path: str, processor: ImageProcessor):
+    def __init__(self, image_path: str, processor: ImageProcessor, alpha_threshold: int = None):
         super().__init__()
         self.image_path = image_path
         self.processor = processor
+        self.alpha_threshold = alpha_threshold
         
     def run(self):
         """스레드 실행"""
@@ -28,10 +30,17 @@ class ProcessingThread(QThread):
                 self.error.emit("AI 모델이 준비되지 않았습니다.")
                 return
             
-            self.progress.emit("배경 제거 처리 중...")
+            # 임계값 정보 포함하여 진행상황 표시
+            if self.alpha_threshold is not None:
+                self.progress.emit(f"배경 제거 처리 중... (임계값: {self.alpha_threshold})")
+            else:
+                self.progress.emit("배경 제거 처리 중...")
             
-            # 배경 제거 실행
-            mask_result = self.processor.remove_background(self.image_path)
+            # 배경 제거 실행 - 임계값 전달
+            mask_result = self.processor.remove_background(
+                self.image_path, 
+                alpha_threshold=self.alpha_threshold
+            )
             
             self.progress.emit("마스크 생성 완료!")
             self.finished.emit(mask_result)
