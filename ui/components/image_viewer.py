@@ -1,50 +1,53 @@
 """
 ui/components/image_viewer.py 수정
-컴팩트한 임계값 슬라이더가 포함된 이미지 뷰어 컴포넌트
-원본 이미지 박스 WIDTH(280px) 내에서 모든 컨트롤 배치
+회전 기능 제거, 각 면별 출력 방향 선택 기능 추가
 """
 
 import numpy as np
 from PySide6.QtWidgets import (
     QLabel, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QFileDialog,
-    QSlider, QFrame
+    QSlider, QFrame, QButtonGroup, QRadioButton
 )
 from PySide6.QtCore import Qt, Signal, QTimer
-from PySide6.QtGui import QPixmap, QImage, QTransform, QFont
+from PySide6.QtGui import QPixmap, QImage, QFont
 import cv2
 import os
 
 
-class RotateButton(QPushButton):
-    """회전 버튼 컴포넌트"""
+class OrientationButton(QRadioButton):
+    """방향 선택 라디오 버튼"""
     
-    def __init__(self, text, direction="left"):
+    def __init__(self, text, orientation="portrait"):
         super().__init__(text)
-        self.direction = direction
-        self.setFixedSize(25, 32)  # 세로 높이 증가 (25 → 32)
-        self.setFont(QFont("Arial", 11))  # 폰트 크기 약간 증가
+        self.orientation = orientation
+        self.setFixedSize(65, 28)  # 높이 줄임 (32 → 28)
+        self.setFont(QFont("Segoe UI", 9))
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         
         # 스타일 적용
         self.setStyleSheet("""
-            QPushButton {
+            QRadioButton {
                 background-color: #F8F9FA;
                 border: 1px solid #DEE2E6;
-                border-radius: 3px;
+                border-radius: 4px;
                 color: #495057;
-                font-weight: 600;
+                font-weight: 500;
+                padding: 6px 8px;
+                spacing: 4px;
             }
-            QPushButton:hover {
+            QRadioButton:hover {
                 background-color: #E9ECEF;
                 border-color: #ADB5BD;
             }
-            QPushButton:pressed {
-                background-color: #DEE2E6;
+            QRadioButton:checked {
+                background-color: #4A90E2;
+                border-color: #357ABD;
+                color: white;
+                font-weight: 600;
             }
-            QPushButton:disabled {
-                background-color: #F8F9FA;
-                color: #CED4DA;
-                border-color: #E9ECEF;
+            QRadioButton::indicator {
+                width: 0px;
+                height: 0px;
             }
         """)
 
@@ -54,11 +57,10 @@ class ProcessButton(QPushButton):
     
     def __init__(self, text):
         super().__init__(text)
-        self.setFixedSize(80, 32)  # 세로 높이 증가 (25 → 32)
-        self.setFont(QFont("Segoe UI", 9, QFont.Weight.Medium))  # 폰트 크기 증가
+        self.setFixedSize(80, 28)  # 높이 줄임 (32 → 28)
+        self.setFont(QFont("Segoe UI", 9, QFont.Weight.Medium))
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         
-        # 스타일 적용
         self.setStyleSheet("""
             QPushButton {
                 background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
@@ -90,7 +92,7 @@ class CompactThresholdSlider(QWidget):
     
     def __init__(self, initial_value=45):
         super().__init__()
-        self.setFixedSize(120, 32)  # 세로 높이 증가 (25 → 32)
+        self.setFixedSize(120, 28)  # 높이 동일하게 (32 → 28)
         self._setup_ui(initial_value)
     
     def _setup_ui(self, initial_value):
@@ -99,18 +101,18 @@ class CompactThresholdSlider(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
         
-        # 라벨 (매우 짧게)
+        # 라벨
         label = QLabel("T:")
-        label.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))  # 폰트 크기 증가
+        label.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
         label.setStyleSheet("color: #6C757D; background: transparent;")
         label.setFixedWidth(12)
         
-        # 슬라이더 (컴팩트)
+        # 슬라이더
         self.slider = QSlider(Qt.Orientation.Horizontal)
         self.slider.setRange(0, 255)
         self.slider.setValue(initial_value)
-        self.slider.setFixedWidth(70)  # 슬라이더 너비
-        self.slider.setFixedHeight(28)  # 슬라이더 높이 증가 (20 → 28)
+        self.slider.setFixedWidth(70)
+        self.slider.setFixedHeight(24)  # 높이 줄임 (28 → 24)
         self.slider.setStyleSheet("""
             QSlider::groove:horizontal {
                 border: 1px solid #DEE2E6;
@@ -135,9 +137,9 @@ class CompactThresholdSlider(QWidget):
             }
         """)
         
-        # 값 표시 라벨 (숫자만)
+        # 값 표시 라벨
         self.value_label = QLabel(str(initial_value))
-        self.value_label.setFont(QFont("Segoe UI", 9))  # 폰트 크기 증가
+        self.value_label.setFont(QFont("Segoe UI", 9))
         self.value_label.setStyleSheet("""
             color: #495057; 
             background: transparent;
@@ -145,7 +147,7 @@ class CompactThresholdSlider(QWidget):
             border-radius: 3px;
             padding: 3px 4px;
         """)
-        self.value_label.setFixedSize(28, 28)  # 크기 증가 (28x28)
+        self.value_label.setFixedSize(28, 24)  # 높이 맞춤 (28 → 24)
         self.value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         layout.addWidget(label)
@@ -170,14 +172,14 @@ class CompactThresholdSlider(QWidget):
 
 
 class ImageViewer(QWidget):
-    """클릭 업로드, 회전 및 개별 배경제거 기능이 있는 이미지 뷰어 위젯"""
+    """각 면별 출력 방향 선택이 가능한 이미지 뷰어 위젯"""
     
     # 시그널들
-    image_rotated = Signal()
     image_clicked = Signal()
     file_uploaded = Signal(str)
     process_requested = Signal(int)  # 임계값 포함
-    threshold_changed = Signal(int)  # 임계값 변경 시그널 추가
+    threshold_changed = Signal(int)
+    orientation_changed = Signal(str)  # "portrait" 또는 "landscape"
     
     def __init__(self, title="", enable_click_upload=False, enable_process_button=False):
         super().__init__()
@@ -185,12 +187,12 @@ class ImageViewer(QWidget):
         self.enable_click_upload = enable_click_upload
         self.enable_process_button = enable_process_button
         self.original_pixmap = None
-        self.current_rotation = 0
         self.current_image_array = None
         self.original_image_array = None
         self.image_path = None
+        self.current_orientation = "portrait"  # 현재 출력 방향
         
-        self.setMinimumSize(280, 250)  # 높이 증가 (240 → 250) - 버튼 높이 증가에 맞춤
+        self.setMinimumSize(280, 280)  # 높이 감소 (280 → 260, 이미지 미리보기 공간 축소)
         self._setup_ui()
         self._set_placeholder_text()
         
@@ -198,7 +200,7 @@ class ImageViewer(QWidget):
         """UI 구성"""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(5)
+        layout.setSpacing(3)  # 간격 줄임 (5 → 3)
         
         # 이미지 표시 라벨
         self.image_label = QLabel()
@@ -232,55 +234,85 @@ class ImageViewer(QWidget):
                 }
             """)
         
-        # 버튼 영역 - 280px 내에서 모든 컨트롤 배치
-        button_layout = QHBoxLayout()
-        button_layout.setContentsMargins(0, 0, 0, 0)
-        button_layout.setSpacing(3)  # 간격 줄임
+        # 방향 선택 영역
+        orientation_layout = QHBoxLayout()
+        orientation_layout.setContentsMargins(0, 0, 0, 0)
+        orientation_layout.setSpacing(2)  # 간격 줄임 (3 → 2)
         
-        # 회전 버튼들 (25px x 2 = 50px)
-        self.rotate_left_btn = RotateButton("↶", "left")
-        self.rotate_right_btn = RotateButton("↷", "right")
+        # 방향 버튼들
+        self.portrait_btn = OrientationButton("📱 세로", "portrait")
+        self.landscape_btn = OrientationButton("📺 가로", "landscape")
         
-        self.rotate_left_btn.clicked.connect(self.rotate_left)
-        self.rotate_right_btn.clicked.connect(self.rotate_right)
+        # 기본값 설정
+        self.portrait_btn.setChecked(True)
         
-        # 초기에는 버튼 비활성화
-        self.rotate_left_btn.setEnabled(False)
-        self.rotate_right_btn.setEnabled(False)
+        # 버튼 그룹
+        self.orientation_group = QButtonGroup()
+        self.orientation_group.addButton(self.portrait_btn, 0)
+        self.orientation_group.addButton(self.landscape_btn, 1)
         
-        # 배경제거 버튼 + 임계값 슬라이더 (원본 이미지에만)
+        # 방향 버튼 배치
+        orientation_layout.addStretch()
+        orientation_layout.addWidget(self.portrait_btn)
+        orientation_layout.addWidget(self.landscape_btn)
+        orientation_layout.addStretch()
+        
+        # 배경제거 컨트롤 영역 (원본 이미지에만)
+        control_layout = QHBoxLayout()
+        control_layout.setContentsMargins(0, 0, 0, 0)
+        control_layout.setSpacing(2)  # 간격 줄임 (3 → 2)
+        
         if self.enable_process_button:
-            # 배경제거 버튼 (80px)
+            # 배경제거 버튼
             self.process_btn = ProcessButton("배경제거")
             self.process_btn.clicked.connect(self._on_process_clicked)
             self.process_btn.setEnabled(False)
             
-            # 임계값 슬라이더 (120px)
+            # 임계값 슬라이더
             self.threshold_slider = CompactThresholdSlider(45)
             self.threshold_slider.threshold_changed.connect(self.threshold_changed.emit)
+            
+            # 배경제거 관련 컨트롤 배치
+            control_layout.addStretch()
+            control_layout.addWidget(self.process_btn)
+            control_layout.addWidget(self.threshold_slider)
+            control_layout.addStretch()
         
-        # 버튼 배치 - 총 280px 내에서
-        # 회전버튼(50) + 간격(3x4=12) + 배경제거(80) + 슬라이더(120) = 262px < 280px ✓
-        button_layout.addStretch()  # 중앙 정렬을 위한 여백
-        button_layout.addWidget(self.rotate_left_btn)
-        button_layout.addWidget(self.rotate_right_btn)
+        # 초기에는 버튼 비활성화
+        self.portrait_btn.setEnabled(False)
+        self.landscape_btn.setEnabled(False)
         
-        if self.enable_process_button:
-            button_layout.addWidget(self.process_btn)
-            button_layout.addWidget(self.threshold_slider)
-        
-        button_layout.addStretch()  # 중앙 정렬을 위한 여백
+        # 시그널 연결
+        self.portrait_btn.toggled.connect(self._on_orientation_changed)
+        self.landscape_btn.toggled.connect(self._on_orientation_changed)
         
         layout.addWidget(self.image_label)
-        layout.addLayout(button_layout)
+        layout.addLayout(orientation_layout)
+        if self.enable_process_button:
+            layout.addLayout(control_layout)
+    
+    def _on_orientation_changed(self):
+        """방향 변경 처리"""
+        if self.portrait_btn.isChecked():
+            new_orientation = "portrait"
+        else:
+            new_orientation = "landscape"
+        
+        if new_orientation != self.current_orientation:
+            old_orientation = self.current_orientation
+            self.current_orientation = new_orientation
+            
+            # 방향 변경 시그널 발송
+            self.orientation_changed.emit(new_orientation)
+            print(f"[DEBUG] 출력 방향 변경: {old_orientation} → {new_orientation}")
     
     def _on_process_clicked(self):
-        """배경제거 버튼 클릭 - 현재 임계값과 함께 시그널 전송"""
+        """배경제거 버튼 클릭"""
         if hasattr(self, 'threshold_slider'):
             threshold = self.threshold_slider.get_value()
             self.process_requested.emit(threshold)
         else:
-            self.process_requested.emit(200)  # 기본값
+            self.process_requested.emit(200)
     
     def get_threshold_value(self):
         """현재 임계값 반환"""
@@ -292,6 +324,17 @@ class ImageViewer(QWidget):
         """임계값 설정"""
         if hasattr(self, 'threshold_slider'):
             self.threshold_slider.set_value(value)
+    
+    def get_current_orientation(self):
+        """현재 출력 방향 반환"""
+        return self.current_orientation
+    
+    def set_orientation(self, orientation):
+        """출력 방향 설정"""
+        if orientation == "portrait":
+            self.portrait_btn.setChecked(True)
+        else:
+            self.landscape_btn.setChecked(True)
     
     def _set_placeholder_text(self):
         """플레이스홀더 텍스트 설정"""
@@ -357,7 +400,6 @@ class ImageViewer(QWidget):
     def set_image(self, image_path_or_array):
         """이미지 설정 (파일 경로 또는 numpy 배열)"""
         try:
-            self.current_rotation = 0
             print(f"[DEBUG] set_image 호출됨: {type(image_path_or_array)}")
             
             if isinstance(image_path_or_array, str):
@@ -393,8 +435,8 @@ class ImageViewer(QWidget):
             self.original_pixmap = pixmap
             
             # 이미지가 로드되면 버튼들 활성화
-            self.rotate_left_btn.setEnabled(True)
-            self.rotate_right_btn.setEnabled(True)
+            self.portrait_btn.setEnabled(True)
+            self.landscape_btn.setEnabled(True)
             
             if self.enable_process_button:
                 self.process_btn.setEnabled(True)
@@ -410,8 +452,8 @@ class ImageViewer(QWidget):
             import traceback
             traceback.print_exc()
             self._set_placeholder_text()
-            self.rotate_left_btn.setEnabled(False)
-            self.rotate_right_btn.setEnabled(False)
+            self.portrait_btn.setEnabled(False)
+            self.landscape_btn.setEnabled(False)
             if self.enable_process_button:
                 self.process_btn.setEnabled(False)
     
@@ -468,35 +510,9 @@ class ImageViewer(QWidget):
             print(f"[DEBUG] numpy to pixmap 변환 오류: {e}")
             return QPixmap()
     
-    def rotate_left(self):
-        """왼쪽으로 90도 회전"""
-        if self.current_image_array is not None:
-            print("[DEBUG] 왼쪽 회전 시작")
-            self.current_rotation = (self.current_rotation - 90) % 360
-            self.current_image_array = cv2.rotate(self.current_image_array, cv2.ROTATE_90_COUNTERCLOCKWISE)
-            self.original_pixmap = self._numpy_to_pixmap(self.current_image_array)
-            self.update_display()
-            self.image_rotated.emit()
-            print(f"[DEBUG] 왼쪽 회전 완료: {self.current_rotation}도")
-    
-    def rotate_right(self):
-        """오른쪽으로 90도 회전"""
-        if self.current_image_array is not None:
-            print("[DEBUG] 오른쪽 회전 시작")
-            self.current_rotation = (self.current_rotation + 90) % 360
-            self.current_image_array = cv2.rotate(self.current_image_array, cv2.ROTATE_90_CLOCKWISE)
-            self.original_pixmap = self._numpy_to_pixmap(self.current_image_array)
-            self.update_display()
-            self.image_rotated.emit()
-            print(f"[DEBUG] 오른쪽 회전 완료: {self.current_rotation}도")
-    
     def get_current_image_array(self):
-        """현재 표시되고 있는 이미지를 numpy 배열로 반환"""
+        """현재 표시되고 있는 이미지를 numpy 배열로 반환 (원본 그대로)"""
         return self.current_image_array.copy() if self.current_image_array is not None else None
-    
-    def get_rotation_angle(self):
-        """현재 회전 각도 반환"""
-        return self.current_rotation
     
     def set_process_enabled(self, enabled: bool):
         """배경제거 버튼 활성화/비활성화"""
@@ -541,13 +557,12 @@ class ImageViewer(QWidget):
         self.original_pixmap = None
         self.current_image_array = None
         self.original_image_array = None
-        self.current_rotation = 0
         self.image_path = None
         self.image_label.clear()
         self._set_placeholder_text()
         
-        self.rotate_left_btn.setEnabled(False)
-        self.rotate_right_btn.setEnabled(False)
+        self.portrait_btn.setEnabled(False)
+        self.landscape_btn.setEnabled(False)
         if self.enable_process_button:
             self.process_btn.setEnabled(False)
     
@@ -562,6 +577,7 @@ class ImageViewer(QWidget):
         super().showEvent(event)
         if self.original_pixmap:
             QTimer.singleShot(50, self.update_display)
+
 
 class UnifiedMaskViewer(QWidget):
     """통합 마스킹 미리보기 뷰어 - 자동/수동 마스킹 중 최신것만 표시, 카드 방향 지원"""

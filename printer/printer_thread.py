@@ -1,5 +1,6 @@
 """
-프린터 작업 스레드 - 양면 인쇄 및 여러장 인쇄 지원
+printer/printer_thread.py 수정
+개별 면 방향 지원 - 앞면과 뒷면이 서로 다른 방향을 가질 수 있음
 """
 
 import time
@@ -11,7 +12,7 @@ from .exceptions import R600PrinterError
 
 
 class PrinterThread(QThread):
-    """양면 인쇄 및 여러장 인쇄 지원 프린터 작업 스레드 - 카드 방향 지원"""
+    """개별 면 방향을 지원하는 프린터 작업 스레드"""
     progress = Signal(str)
     finished = Signal(bool)
     error = Signal(str)
@@ -26,7 +27,8 @@ class PrinterThread(QThread):
                  print_mode: str = "normal",
                  is_dual_side: bool = True,
                  quantity: int = 1,
-                 card_orientation: str = "portrait"):  # 새로 추가
+                 front_orientation: str = "portrait",  # 개별 면 방향 추가
+                 back_orientation: str = "portrait"):   # 개별 면 방향 추가
         super().__init__()
         self.dll_path = dll_path
         self.front_image_path = front_image_path
@@ -36,7 +38,8 @@ class PrinterThread(QThread):
         self.print_mode = print_mode
         self.is_dual_side = is_dual_side
         self.quantity = quantity
-        self.card_orientation = card_orientation  # 새로 추가
+        self.front_orientation = front_orientation  # 개별 면 방향
+        self.back_orientation = back_orientation    # 개별 면 방향
         self.should_stop = False
 
     
@@ -45,7 +48,7 @@ class PrinterThread(QThread):
         self.should_stop = True
     
     def run(self):
-        """스레드 실행 - 카드 방향에 따른 크기 계산 추가"""
+        """스레드 실행 - 개별 면 방향에 따른 크기 계산"""
         printer = None
         successful_prints = 0
         
@@ -66,17 +69,15 @@ class PrinterThread(QThread):
             # 타임아웃 설정
             printer.set_timeout(15000)  # 15초로 증가
             
-            # 카드 크기 설정 - 방향에 따라 결정
-            if self.card_orientation == "portrait":
-                card_width = config.get('printer.card_width', 53.98)
-                card_height = config.get('printer.card_height', 85.6)
-            else:  # landscape
-                card_width = config.get('printer.card_height', 85.6)  # 가로/세로 바뀜
-                card_height = config.get('printer.card_width', 53.98)
+            # 개별 면 방향 정보 표시
+            front_orientation_text = "세로형" if self.front_orientation == "portrait" else "가로형"
+            back_orientation_text = "세로형" if self.back_orientation == "portrait" else "가로형"
             
             # 여러장 인쇄 시작
-            orientation_text = "세로형" if self.card_orientation == "portrait" else "가로형"
-            self.progress.emit(f"📄 총 {self.quantity}장 {orientation_text} 인쇄 시작...")
+            if self.is_dual_side:
+                self.progress.emit(f"📄 총 {self.quantity}장 양면 인쇄 시작 (앞면:{front_orientation_text}, 뒷면:{back_orientation_text})")
+            else:
+                self.progress.emit(f"📄 총 {self.quantity}장 단면 인쇄 시작 (앞면:{front_orientation_text})")
             
             for card_num in range(1, self.quantity + 1):
                 # 중단 요청 확인
@@ -88,8 +89,8 @@ class PrinterThread(QThread):
                     # 진행상황 시그널 발송
                     self.print_progress.emit(card_num - 1, self.quantity)
                     
-                    # 카드별 인쇄 실행
-                    self._print_single_card(printer, card_num, card_width, card_height)
+                    # 카드별 인쇄 실행 - 개별 면 방향 전달
+                    self._print_single_card(printer, card_num)
                     
                     successful_prints += 1
                     self.card_completed.emit(card_num)
@@ -124,26 +125,28 @@ class PrinterThread(QThread):
                 except Exception as cleanup_error:
                     print(f"리소스 정리 중 오류: {cleanup_error}")
                     
-    def _print_single_card(self, printer: R600Printer, card_num: int, 
-                          card_width: float, card_height: float):
-        """단일 카드 인쇄 - 카드 방향 정보 포함"""
-        orientation_text = "세로형" if self.card_orientation == "portrait" else "가로형"
+    def _print_single_card(self, printer: R600Printer, card_num: int):
+        """단일 카드 인쇄 - 개별 면 방향 정보 포함"""
+        front_orientation_text = "세로형" if self.front_orientation == "portrait" else "가로형"
+        back_orientation_text = "세로형" if self.back_orientation == "portrait" else "가로형"
         side_text = "양면" if self.is_dual_side else "단면"
         mode_text = "레이어" if self.print_mode == "layered" else "일반"
         
-        self.progress.emit(f"📄 {card_num}번째 {orientation_text} {side_text} {mode_text} 카드 인쇄 중...")
+        if self.is_dual_side:
+            self.progress.emit(f"📄 {card_num}번째 {side_text} {mode_text} 카드 인쇄 중 (앞면:{front_orientation_text}, 뒷면:{back_orientation_text})")
+        else:
+            self.progress.emit(f"📄 {card_num}번째 {side_text} {mode_text} 카드 인쇄 중 (앞면:{front_orientation_text})")
         
         if self.is_dual_side:
-            # 양면 인쇄
+            # 양면 인쇄 - 개별 면 방향 전달
             if self.print_mode == "layered":
                 printer.print_dual_side_card(
                     front_image_path=self.front_image_path,
                     back_image_path=self.back_image_path,
                     front_watermark_path=self.front_mask_path,
                     back_watermark_path=self.back_mask_path,
-                    card_width=card_width,
-                    card_height=card_height,
-                    card_orientation=self.card_orientation,  # 새로 추가
+                    front_orientation=self.front_orientation,  # 개별 면 방향
+                    back_orientation=self.back_orientation,    # 개별 면 방향
                     print_mode="layered"
                 )
             else:
@@ -152,13 +155,12 @@ class PrinterThread(QThread):
                     back_image_path=self.back_image_path,
                     front_watermark_path=None,
                     back_watermark_path=None,
-                    card_width=card_width,
-                    card_height=card_height,
-                    card_orientation=self.card_orientation,  # 새로 추가
+                    front_orientation=self.front_orientation,  # 개별 면 방향
+                    back_orientation=self.back_orientation,    # 개별 면 방향
                     print_mode="normal"
                 )
         else:
-            # 단면 인쇄
+            # 단면 인쇄 - 앞면 방향만 전달
             if self.print_mode == "layered":
                 if not self.front_mask_path:
                     raise R600PrinterError("레이어 인쇄를 위해서는 마스크 이미지가 필요합니다.")
@@ -166,18 +168,14 @@ class PrinterThread(QThread):
                 printer.print_single_side_card(
                     image_path=self.front_image_path,
                     watermark_path=self.front_mask_path,
-                    card_width=card_width,
-                    card_height=card_height,
-                    card_orientation=self.card_orientation,  # 새로 추가
+                    card_orientation=self.front_orientation,  # 앞면 방향
                     print_mode="layered"
                 )
             else:
                 printer.print_single_side_card(
                     image_path=self.front_image_path,
                     watermark_path=None,
-                    card_width=card_width,
-                    card_height=card_height,
-                    card_orientation=self.card_orientation,  # 새로 추가
+                    card_orientation=self.front_orientation,  # 앞면 방향
                     print_mode="normal"
                 )
                 
@@ -190,8 +188,9 @@ class PrinterThread(QThread):
         return True
     
     def _handle_final_result(self, successful_prints: int):
-        """최종 결과 처리 - 카드 방향 정보 포함"""
-        orientation_text = "세로형" if self.card_orientation == "portrait" else "가로형"
+        """최종 결과 처리 - 개별 면 방향 정보 포함"""
+        front_orientation_text = "세로형" if self.front_orientation == "portrait" else "가로형"
+        back_orientation_text = "세로형" if self.back_orientation == "portrait" else "가로형"
         
         if self.should_stop:
             self.progress.emit(f"🛑 인쇄 중단됨 - 완료: {successful_prints}/{self.quantity}장")
@@ -200,7 +199,12 @@ class PrinterThread(QThread):
             # 모든 카드 성공
             side_text = "양면" if self.is_dual_side else "단면"
             mode_text = "레이어" if self.print_mode == "layered" else "일반"
-            self.progress.emit(f"🎉 모든 카드 인쇄 완료! ({self.quantity}장 {orientation_text} {side_text} {mode_text} 인쇄)")
+            
+            if self.is_dual_side:
+                self.progress.emit(f"🎉 모든 카드 인쇄 완료! ({self.quantity}장 {side_text} {mode_text} 인쇄, 앞면:{front_orientation_text}, 뒷면:{back_orientation_text})")
+            else:
+                self.progress.emit(f"🎉 모든 카드 인쇄 완료! ({self.quantity}장 {side_text} {mode_text} 인쇄, 앞면:{front_orientation_text})")
+            
             self.finished.emit(True)
         elif successful_prints > 0:
             # 일부 성공
@@ -211,19 +215,29 @@ class PrinterThread(QThread):
             self.progress.emit("❌ 모든 카드 인쇄 실패")
             self.finished.emit(False)
 
+
 class MultiCardPrintManager:
-    """여러장 인쇄 관리 클래스"""
+    """여러장 인쇄 관리 클래스 - 개별 면 방향 지원"""
     
     def __init__(self):
         self.current_thread = None
         self.is_printing = False
     
     def start_multi_print(self, **kwargs) -> PrinterThread:
-        """여러장 인쇄 시작 - 카드 방향 정보 포함"""
+        """여러장 인쇄 시작 - 개별 면 방향 정보 포함"""
         if self.is_printing:
             raise RuntimeError("이미 인쇄가 진행 중입니다.")
         
-        self.current_thread = PrinterThread(**kwargs)  # card_orientation 매개변수 포함
+        # 하위 호환성을 위해 card_orientation이 있으면 변환
+        if 'card_orientation' in kwargs:
+            card_orientation = kwargs.pop('card_orientation')
+            # 기존 전역 방향을 개별 면 방향으로 변환
+            if 'front_orientation' not in kwargs:
+                kwargs['front_orientation'] = card_orientation
+            if 'back_orientation' not in kwargs:
+                kwargs['back_orientation'] = card_orientation
+        
+        self.current_thread = PrinterThread(**kwargs)  # 개별 면 방향 매개변수 포함
         self.is_printing = True
         
         # 완료 시 상태 초기화

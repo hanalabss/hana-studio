@@ -1,5 +1,6 @@
 """
-R600 프린터 제어 클래스 - 양면 인쇄 지원 및 선택된 프린터 정보 활용
+printer/r600_printer.py 수정
+개별 면 방향 지원 - 앞면과 뒷면이 서로 다른 방향을 가질 수 있음
 """
 
 import ctypes
@@ -11,7 +12,7 @@ from .printer_discovery import PrinterInfo
 
 
 class R600Printer:
-    """R600 프린터 제어 클래스 - 양면 인쇄 지원 및 선택된 프린터 활용"""
+    """R600 프린터 제어 클래스 - 개별 면 방향 지원"""
     
     def __init__(self, dll_path: str = './libDSRetransfer600App.dll', selected_printer: Optional[PrinterInfo] = None):
         """R600 프린터 초기화"""
@@ -415,13 +416,14 @@ class R600Printer:
     def print_dual_side_card(self, front_image_path: str, back_image_path: Optional[str] = None,
                            front_watermark_path: Optional[str] = None,
                            back_watermark_path: Optional[str] = None,
-                           card_width: float = 53.98, card_height: float = 85.6,
-                           card_orientation: str = "portrait",  # 새로 추가
+                           front_orientation: str = "portrait",  # 개별 면 방향 추가
+                           back_orientation: str = "portrait",   # 개별 면 방향 추가
                            print_mode: str = "normal"):
-        """양면 카드 인쇄 - 카드 방향 지원"""
+        """양면 카드 인쇄 - 개별 면 방향 지원"""
         try:
-            orientation_text = "세로형" if card_orientation == "portrait" else "가로형"
-            print(f"=== {orientation_text} 양면 카드 인쇄 시작 ===")
+            front_orientation_text = "세로형" if front_orientation == "portrait" else "가로형"
+            back_orientation_text = "세로형" if back_orientation == "portrait" else "가로형"
+            print(f"=== 양면 카드 인쇄 시작: 앞면({front_orientation_text}), 뒷면({back_orientation_text}) ===")
             
             # 1. 카드 삽입
             self.inject_card()
@@ -429,33 +431,35 @@ class R600Printer:
             # 2. 리본 옵션 설정
             self.set_ribbon_option(ribbon_type=1, key=0, value="2")
             
-            # 3. 앞면 캔버스 준비 (카드 방향 적용)
+            # 3. 앞면 캔버스 준비 - 개별 방향 적용
+            front_width, front_height = self.get_card_dimensions(front_orientation)
             if print_mode == "layered":
                 front_img_info = self.prepare_front_canvas(
-                    front_image_path, front_watermark_path, card_width, card_height, card_orientation
+                    front_image_path, front_watermark_path, front_width, front_height, front_orientation
                 )
             else:
                 front_img_info = self.prepare_front_canvas(
-                    front_image_path, None, card_width, card_height, card_orientation
+                    front_image_path, None, front_width, front_height, front_orientation
                 )
             
-            # 4. 뒷면 캔버스 준비 (카드 방향 적용)
+            # 4. 뒷면 캔버스 준비 - 개별 방향 적용
+            back_width, back_height = self.get_card_dimensions(back_orientation)
             if print_mode == "layered":
                 back_img_info = self.prepare_back_canvas(
-                    back_image_path, back_watermark_path, card_width, card_height, card_orientation
+                    back_image_path, back_watermark_path, back_width, back_height, back_orientation
                 )
             else:
                 back_img_info = self.prepare_back_canvas(
-                    back_image_path, None, card_width, card_height, card_orientation
+                    back_image_path, None, back_width, back_height, back_orientation
                 )
             
             # 5. 양면 인쇄 실행
-            print(f"{orientation_text} 양면 인쇄 실행 중...")
+            print(f"양면 인쇄 실행 중: 앞면({front_orientation_text}), 뒷면({back_orientation_text})")
             ret = self.lib.R600PrintDraw(
                 front_img_info.encode('cp949') if front_img_info else ctypes.c_char_p(None),
                 back_img_info.encode('cp949') if back_img_info else ctypes.c_char_p(None)
             )
-            self._check_result(ret, f"{orientation_text} 양면 인쇄 실행")
+            self._check_result(ret, f"양면 인쇄 실행")
             
             # 6. 인쇄 완료 대기
             time.sleep(1)
@@ -466,10 +470,10 @@ class R600Printer:
             # 8. 배출 완료 대기
             time.sleep(1)
             
-            print(f"=== {orientation_text} 양면 카드 인쇄 완료 ===")
+            print(f"=== 양면 카드 인쇄 완료: 앞면({front_orientation_text}), 뒷면({back_orientation_text}) ===")
             
         except R600PrinterError as e:
-            print(f"{orientation_text} 양면 카드 인쇄 중 오류 발생: {e}")
+            print(f"양면 카드 인쇄 중 오류 발생: {e}")
             # 오류 발생 시에도 카드 배출 시도
             try:
                 self.eject_card()
@@ -478,10 +482,9 @@ class R600Printer:
             raise
         
     def print_single_side_card(self, image_path: str, watermark_path: Optional[str] = None,
-                             card_width: float = 53.98, card_height: float = 85.6,
-                             card_orientation: str = "portrait",  # 새로 추가
+                             card_orientation: str = "portrait",  # 개별 면 방향 추가
                              print_mode: str = "normal"):
-        """단면 카드 인쇄 - 카드 방향 지원"""
+        """단면 카드 인쇄 - 개별 면 방향 지원"""
         try:
             orientation_text = "세로형" if card_orientation == "portrait" else "가로형"
             print(f"=== {orientation_text} 단면 카드 인쇄 시작 ===")
@@ -492,7 +495,8 @@ class R600Printer:
             # 2. 리본 옵션 설정
             self.set_ribbon_option(ribbon_type=1, key=0, value="2")
             
-            # 3. 캔버스 준비 (카드 방향 적용)
+            # 3. 캔버스 준비 - 개별 방향 적용
+            card_width, card_height = self.get_card_dimensions(card_orientation)
             if print_mode == "layered":
                 img_info = self.prepare_front_canvas(
                     image_path, watermark_path, card_width, card_height, card_orientation
@@ -529,17 +533,15 @@ class R600Printer:
                 pass
             raise
         
-    # 하위 호환성을 위한 기존 메서드들
-    def print_normal_card(self, image_path: str, card_width: float = 53.98, card_height: float = 85.6,
-                         card_orientation: str = "portrait"):
-        """일반 카드 인쇄 (하위 호환성) - 카드 방향 지원"""
-        self.print_single_side_card(image_path, None, card_width, card_height, card_orientation, "normal")
+    # 하위 호환성을 위한 기존 메서드들 - 개별 면 방향 지원
+    def print_normal_card(self, image_path: str, card_orientation: str = "portrait"):
+        """일반 카드 인쇄 (하위 호환성) - 개별 면 방향 지원"""
+        self.print_single_side_card(image_path, None, card_orientation, "normal")
 
     def print_layered_card(self, watermark_path: str, image_path: Optional[str] = None,
-                          card_width: float = 53.98, card_height: float = 85.6,
                           card_orientation: str = "portrait"):
-        """레이어 카드 인쇄 (하위 호환성) - 카드 방향 지원"""
-        self.print_single_side_card(image_path or "", watermark_path, card_width, card_height, card_orientation, "layered")
+        """레이어 카드 인쇄 (하위 호환성) - 개별 면 방향 지원"""
+        self.print_single_side_card(image_path or "", watermark_path, card_orientation, "layered")
 
     def cleanup_and_close(self):
         """강화된 리소스 정리"""
@@ -577,11 +579,8 @@ class R600Printer:
             if self.lib:
                 ret = self.lib.R600LibClear()
                 print(f"[DEBUG] 라이브러리 정리 결과: {ret}")
-                
-                # 4. 잠깐 대기 (중요!)
-                # time.sleep(2)
-                
-            # 5. 상태 초기화
+            
+            # 4. 상태 초기화
             self.selected_printer_name = None
             self.front_img_info = None
             self.back_img_info = None

@@ -1,6 +1,6 @@
 """
 ui/main_window.py 수정
-메인 윈도우 UI 구성 - 통합 마스킹 미리보기 및 개별 배경제거 버튼
+이미지 뷰어 높이 조정 (방향 버튼 공간 확보)
 """
 
 from PySide6.QtWidgets import (
@@ -19,7 +19,7 @@ from .styles import get_header_style, get_status_bar_style
 
 
 class HanaStudioMainWindow:
-    """메인 윈도우 UI 구성을 담당하는 클래스 - 통합 마스킹 미리보기"""
+    """메인 윈도우 UI 구성 - 개별 면 방향 제어 지원"""
     
     def __init__(self, parent_widget):
         self.parent = parent_widget
@@ -40,14 +40,14 @@ class HanaStudioMainWindow:
         # 1. 헤더
         self.create_header(main_layout)
         
-        # 2. 컨트롤 패널 영역 (가로 배치) - 배경제거 버튼 제거
+        # 2. 컨트롤 패널 영역 (가로 배치)
         self.create_simplified_control_area(main_layout)
         
-        # 3. 메인 컨텐츠 영역 (통합 마스킹 미리보기)
+        # 3. 메인 컨텐츠 영역 (개별 면 방향 제어) - 더 많은 공간 할당
         self.create_unified_image_area(main_layout)
         
-        # 4. 하단 상태바
-        self.create_status_bar(main_layout)
+        # 4. 하단 상태바 제거 - 공간을 이미지 영역에 할당
+        # self.create_status_bar(main_layout)
     
     def create_header(self, parent_layout):
         """헤더 생성"""
@@ -80,7 +80,7 @@ class HanaStudioMainWindow:
         parent_layout.addWidget(header_frame)
     
     def create_simplified_control_area(self, parent_layout):
-        """간소화된 컨트롤 패널 영역 - 결과 저장 패널 제거"""
+        """간소화된 컨트롤 패널 영역"""
         control_container = QFrame()
         control_container.setFixedHeight(240)
         control_container.setStyleSheet("""
@@ -93,10 +93,10 @@ class HanaStudioMainWindow:
         
         # 가로 레이아웃
         control_layout = QHBoxLayout(control_container)
-        control_layout.setSpacing(20)  # 간격 늘림
+        control_layout.setSpacing(20)
         control_layout.setContentsMargins(15, 8, 15, 8)
         
-        # 각 패널들 생성 (ProcessingOptionsPanel 제거)
+        # 각 패널들 생성
         self.file_panel = FileSelectionPanel()
         self.print_mode_panel = PrintModePanel()
         self.print_quantity_panel = PrintQuantityPanel()
@@ -114,7 +114,7 @@ class HanaStudioMainWindow:
             self.log_panel
         ]
         
-        # 각 패널별로 개별 너비 설정 (더 넓게 조정)
+        # 각 패널별로 개별 너비 설정
         panel_widths = {
             self.file_panel: 260,
             self.print_mode_panel: 220,
@@ -132,7 +132,7 @@ class HanaStudioMainWindow:
         parent_layout.addWidget(control_container)
     
     def create_unified_image_area(self, parent_layout):
-        """통합 마스킹 이미지 뷰어 영역"""
+        """개별 면 방향 제어가 포함된 이미지 뷰어 영역"""
         image_widget = QWidget()
         image_widget.setStyleSheet("background-color: #F8F9FA;")
         image_layout = QVBoxLayout(image_widget)
@@ -152,7 +152,7 @@ class HanaStudioMainWindow:
         parent_layout.addWidget(image_widget, 1)
     
     def create_unified_image_row(self, title: str, is_front: bool) -> QFrame:
-        """통합 마스킹이 포함된 이미지 행 생성 - [원본+배경제거버튼] → [통합 마스킹] → [수동 업로드]"""
+        """개별 면 방향 제어가 포함된 이미지 행 생성"""
         group = QFrame()
         group.setStyleSheet("""
             QFrame {
@@ -165,8 +165,8 @@ class HanaStudioMainWindow:
         
         # 행 레이아웃 (가로)
         row_layout = QHBoxLayout(group)
-        row_layout.setSpacing(15)
-        row_layout.setContentsMargins(15, 15, 15, 15)
+        row_layout.setSpacing(12)  # 간격 줄임 (15 → 12)
+        row_layout.setContentsMargins(12, 12, 12, 12)  # 여백 줄임 (15 → 12)
         
         # === 중앙 정렬을 위한 여백 ===
         row_layout.addStretch(1)
@@ -183,7 +183,7 @@ class HanaStudioMainWindow:
         title_label.setFixedWidth(120)
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        # === 원본 이미지 뷰어 (배경제거 버튼 포함) ===
+        # === 원본 이미지 뷰어 (방향 선택 + 배경제거 버튼 포함) ===
         if is_front:
             self.front_original_viewer = ImageViewer("원본", enable_process_button=True)
             original_viewer = self.front_original_viewer
@@ -191,7 +191,7 @@ class HanaStudioMainWindow:
             self.back_original_viewer = ImageViewer("원본", enable_process_button=True)
             original_viewer = self.back_original_viewer
         
-        original_viewer.setFixedSize(280, 240)  # 높이 증가 (버튼 공간)
+        original_viewer.setFixedSize(280, 320)  # 높이 증가 (300 → 320, 더 많은 공간)
         
         # === 화살표 1 ===
         arrow1 = QLabel("→")
@@ -213,7 +213,7 @@ class HanaStudioMainWindow:
             self.back_unified_mask_viewer = UnifiedMaskViewer("마스킹 미리보기")
             unified_mask_viewer = self.back_unified_mask_viewer
         
-        unified_mask_viewer.setFixedSize(280, 200)
+        unified_mask_viewer.setFixedSize(280, 220)  # 높이 증가 (200 → 220)
         
         # === 화살표 2 ===
         arrow2 = QLabel("→")
@@ -235,7 +235,7 @@ class HanaStudioMainWindow:
             self.back_manual_mask_viewer = ImageViewer("수동 마스킹\n(클릭하여 업로드)", enable_click_upload=True)
             manual_mask_viewer = self.back_manual_mask_viewer
         
-        manual_mask_viewer.setFixedSize(280, 200)
+        manual_mask_viewer.setFixedSize(280, 220)  # 높이 증가 (200 → 220)
         
         # === 컴포넌트 배치 ===
         row_layout.addWidget(title_label)
@@ -250,37 +250,37 @@ class HanaStudioMainWindow:
         
         return group
     
-    def create_status_bar(self, parent_layout):
-        """하단 상태바 생성"""
-        status_frame = QFrame()
-        status_frame.setFixedHeight(32)
-        status_frame.setStyleSheet("""
-            QFrame {
-                background-color: #FFFFFF;
-                border: none;
-                border-radius: 8px;
-            }
-        """)
-        
-        status_layout = QHBoxLayout(status_frame)
-        status_layout.setContentsMargins(20, 6, 20, 6)
-        
-        self.status_text = QLabel("준비 완료 | AI 모델 초기화 중...")
-        self.status_text.setStyleSheet("color: #6C757D; font-size: 10px; background: transparent;")
-        
-        status_layout.addWidget(self.status_text)
-        status_layout.addStretch()
-        
-        version_label = QLabel("Hana Studio v1.0 - 통합 마스킹 지원")
-        version_label.setStyleSheet("color: #ADB5BD; font-size: 9px; background: transparent;")
-        status_layout.addWidget(version_label)
-        
-        parent_layout.addWidget(status_frame)
+    # def create_status_bar(self, parent_layout):
+    #     """하단 상태바 생성 - 제거됨"""
+    #     status_frame = QFrame()
+    #     status_frame.setFixedHeight(32)
+    #     status_frame.setStyleSheet("""
+    #         QFrame {
+    #             background-color: #FFFFFF;
+    #             border: none;
+    #             border-radius: 8px;
+    #         }
+    #     """)
+    #     
+    #     status_layout = QHBoxLayout(status_frame)
+    #     status_layout.setContentsMargins(20, 6, 20, 6)
+    #     
+    #     self.status_text = QLabel("준비 완료 | AI 모델 초기화 중...")
+    #     self.status_text.setStyleSheet("color: #6C757D; font-size: 10px; background: transparent;")
+    #     
+    #     status_layout.addWidget(self.status_text)
+    #     status_layout.addStretch()
+    #     
+    #     version_label = QLabel("Hana Studio v1.0")
+    #     version_label.setStyleSheet("color: #ADB5BD; font-size: 9px; background: transparent;")
+    #     status_layout.addWidget(version_label)
+    #     
+    #     parent_layout.addWidget(status_frame)
     
     # 컴포넌트 접근을 위한 속성들
     @property
     def components(self):
-        """모든 UI 컴포넌트에 대한 접근 - 결과 저장 패널 제거"""
+        """모든 UI 컴포넌트에 대한 접근"""
         return {
             'file_panel': self.file_panel,
             'print_mode_panel': self.print_mode_panel,
@@ -289,7 +289,7 @@ class HanaStudioMainWindow:
             'progress_panel': self.progress_panel,
             'log_panel': self.log_panel,
             
-            # 원본 이미지 뷰어들 (배경제거 버튼 포함)
+            # 원본 이미지 뷰어들 (방향 선택 + 배경제거 버튼 포함)
             'front_original_viewer': self.front_original_viewer,
             'back_original_viewer': self.back_original_viewer,
             
@@ -307,8 +307,8 @@ class HanaStudioMainWindow:
             'front_auto_result_viewer': self.front_unified_mask_viewer,
             'back_auto_result_viewer': self.back_unified_mask_viewer,
             
-            # 기타
-            'status_text': self.status_text,
+            # 기타 - 상태 텍스트는 컨트롤 패널의 진행상황에서 대체
+            # 'status_text': self.status_text,  # 제거됨
             'progress_bar': self.progress_panel.progress_bar,
             'status_label': self.progress_panel.status_label,
             'log_text': self.log_panel.log_text

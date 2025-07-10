@@ -1,14 +1,14 @@
 """
 ui/components/control_panels.py 수정
-처리 옵션 패널에서 배경제거 버튼 제거 (이제 개별 이미지 뷰어에 있음)
+전역 카드 방향 선택 제거, 기존 요소들 재배치
 """
 
 from PySide6.QtWidgets import (
     QSizePolicy, QVBoxLayout, QHBoxLayout, QGroupBox, 
     QLabel, QRadioButton, QButtonGroup, QProgressBar, QTextEdit, QCheckBox,
-    QSpinBox
+    QSpinBox,QFrame
 )
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal
 from .modern_button import ModernButton
 
 
@@ -20,7 +20,7 @@ def truncate_text(text: str, max_length: int = 30) -> str:
 
 
 class FileSelectionPanel(QGroupBox):
-    """파일 선택 패널 - 양면인쇄 체크박스 제거"""
+    """파일 선택 패널"""
     file_selected = Signal(str)  # 파일 경로 시그널
     
     def __init__(self):
@@ -31,12 +31,12 @@ class FileSelectionPanel(QGroupBox):
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(5)  # 간격 늘림 (3 → 5)
+        layout.setSpacing(5)
         layout.setContentsMargins(6, 6, 6, 6)
         
         # 앞면 이미지 선택
         self.front_btn = ModernButton("앞면 이미지 선택", primary=True)
-        self.front_btn.setFixedHeight(35)  # 높이 증가 (30 → 35)
+        self.front_btn.setFixedHeight(35)
         
         self.front_label = QLabel("앞면: 선택된 파일이 없습니다")
         self.front_label.setStyleSheet("""
@@ -48,11 +48,11 @@ class FileSelectionPanel(QGroupBox):
                 padding: 4px;
         """)
         self.front_label.setWordWrap(True)
-        self.front_label.setMaximumHeight(30)  # 높이 증가 (26 → 30)
+        self.front_label.setMaximumHeight(30)
         
         # 뒷면 이미지 선택
         self.back_btn = ModernButton("뒷면 이미지 선택", primary=False)
-        self.back_btn.setFixedHeight(35)  # 높이 증가 (30 → 35)
+        self.back_btn.setFixedHeight(35)
         
         self.back_label = QLabel("뒷면: 선택된 파일이 없습니다")
         self.back_label.setStyleSheet("""
@@ -64,7 +64,7 @@ class FileSelectionPanel(QGroupBox):
                 padding: 4px;
             """)
         self.back_label.setWordWrap(True)
-        self.back_label.setMaximumHeight(30)  # 높이 증가 (26 → 30)
+        self.back_label.setMaximumHeight(30)
         
         layout.addWidget(self.front_btn)
         layout.addWidget(self.front_label)
@@ -98,20 +98,15 @@ class FileSelectionPanel(QGroupBox):
         self.back_label.setText(f"뒷면: 📁 {filename}")
 
 
-# ProcessingOptionsPanel 클래스 완전 삭제 - 더 이상 필요없음
-
-
 class PrintModePanel(QGroupBox):
-    """인쇄 모드 패널 - 카드 방향 선택 추가"""
+    """인쇄 모드 패널 - 전역 카드 방향 제거"""
     mode_changed = Signal(str)
     dual_side_changed = Signal(bool)
-    card_orientation_changed = Signal(str)  # 새로 추가
     
     def __init__(self):
         super().__init__("📋 인쇄 설정")
         self.print_mode = "normal"
         self.is_dual_side = False
-        self.card_orientation = "portrait"  # "portrait" 또는 "landscape"
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         self._setup_ui()
     
@@ -122,89 +117,129 @@ class PrintModePanel(QGroupBox):
         
         # 양면 인쇄 체크박스
         self.dual_side_check = QCheckBox("양면 인쇄 사용")
-        self.dual_side_check.toggled.connect(self._on_dual_side_toggled)
-        
-        # 카드 방향 선택 추가
-        orientation_label = QLabel("카드 방향:")
-        orientation_label.setStyleSheet("""
-            QLabel {
-                font-size: 14px;
+        self.dual_side_check.setStyleSheet("""
+            QCheckBox {
+                font-size: 13px;
                 font-weight: 600;
                 color: #495057;
-                margin-top: 8px;
+                padding: 8px;
+                spacing: 8px;
+                background-color: #F8F9FA;
+                border: 1px solid #E9ECEF;
+                border-radius: 6px;
+            }
+            QCheckBox:hover {
+                background-color: #E9ECEF;
+                border-color: #4A90E2;
+                color: #4A90E2;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+            }
+            QCheckBox::indicator:unchecked {
+                border: 2px solid #6C757D;
+                border-radius: 3px;
+                background-color: white;
+            }
+            QCheckBox::indicator:checked {
+                border: 2px solid #4A90E2;
+                border-radius: 3px;
+                background-color: #4A90E2;
+                image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iMTIiIHZpZXdCb3g9IjAgMCAxMiAxMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEwIDNMNC41IDguNUwyIDYiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+Cjwvc3ZnPgo=);
             }
         """)
+        self.dual_side_check.toggled.connect(self._on_dual_side_toggled)
         
-        self.portrait_radio = QRadioButton("📱 세로형 (53×86mm)")
-        self.landscape_radio = QRadioButton("📺 가로형 (86×53mm)")
-        self.portrait_radio.setChecked(True)  # 기본값
+        # 인쇄 모드 섹션
+        mode_frame = QFrame()
+        mode_frame.setStyleSheet("""
+            QFrame {
+                background-color: #F8F9FA;
+                border: 1px solid #E9ECEF;
+                border-radius: 6px;
+                padding: 6px;
+            }
+        """)
+        mode_layout = QVBoxLayout(mode_frame)
+        mode_layout.setSpacing(8)  # 간격 더 증가
+        mode_layout.setContentsMargins(8, 8, 8, 8)  # 여백 더 증가
         
-        # 카드 방향 버튼 그룹
-        self.orientation_group = QButtonGroup()
-        self.orientation_group.addButton(self.portrait_radio, 0)
-        self.orientation_group.addButton(self.landscape_radio, 1)
-        
-        # 인쇄 모드 라디오 버튼
+        # 모드 라벨
         mode_label = QLabel("인쇄 모드:")
         mode_label.setStyleSheet("""
             QLabel {
-                font-size: 14px;
+                background: transparent;
+                border: none;
+                padding: 0px;
+                font-size: 12px;
                 font-weight: 600;
                 color: #495057;
-                margin-top: 8px;
+                margin-bottom: 4px;
             }
         """)
         
-        self.normal_radio = QRadioButton("일반 인쇄")
-        self.layered_radio = QRadioButton("레이어 인쇄 (YMCW)")
+        # 라디오 버튼들
+        self.normal_radio = QRadioButton("🖨️ 일반")
+        self.layered_radio = QRadioButton("🎭 레이어(YMCW)")
         self.normal_radio.setChecked(True)
+        
+        # 라디오 버튼 스타일 - 크기 증가
+        radio_style = """
+            QRadioButton {
+                font-size: 12px;
+                font-weight: 500;
+                color: #495057;
+                padding: 5px 8px;
+                spacing: 8px;
+                background: transparent;
+                border-radius: 4px;
+            }
+            QRadioButton:hover {
+                background-color: rgba(74, 144, 226, 0.1);
+                color: #4A90E2;
+            }
+            QRadioButton::indicator {
+                width: 14px;
+                height: 14px;
+            }
+            QRadioButton::indicator:unchecked {
+                border: 2px solid #6C757D;
+                border-radius: 7px;
+                background-color: white;
+            }
+            QRadioButton::indicator:checked {
+                border: 2px solid #4A90E2;
+                border-radius: 7px;
+                background-color: #4A90E2;
+            }
+        """
+        
+        self.normal_radio.setStyleSheet(radio_style)
+        self.layered_radio.setStyleSheet(radio_style)
         
         # 인쇄 모드 버튼 그룹
         self.mode_group = QButtonGroup()
         self.mode_group.addButton(self.normal_radio, 0)
         self.mode_group.addButton(self.layered_radio, 1)
         
-        # 설명 라벨
-        self.description_label = QLabel("📖 세로형 카드에 원본 이미지를 단면 인쇄합니다")
-        self.description_label.setStyleSheet("""
-            color: #6C757D; 
-            font-size: 13px;
-            padding: 8px;
-            background-color: #F8F9FA;
-            border-left: 3px solid #4A90E2;
-            border-radius: 4px;
-            margin-top: 8px;
-        """)
-        self.description_label.setWordWrap(True)
+        # 모드 프레임에 위젯 추가
+        mode_layout.addWidget(mode_label)
+        mode_layout.addWidget(self.normal_radio)
+        mode_layout.addWidget(self.layered_radio)
         
-        # 위젯 추가
+        # 메인 레이아웃에 위젯 추가
         layout.addWidget(self.dual_side_check)
-        layout.addWidget(orientation_label)
-        layout.addWidget(self.portrait_radio)
-        layout.addWidget(self.landscape_radio)
-        layout.addWidget(mode_label)
-        layout.addWidget(self.normal_radio)
-        layout.addWidget(self.layered_radio)
-        layout.addWidget(self.description_label)
+        layout.addWidget(mode_frame, 2)  # 더 많은 공간 할당
+        layout.addStretch()  # 남은 공간을 아래쪽으로 밀어냄
         
         # 신호 연결
-        self.portrait_radio.toggled.connect(self._on_orientation_changed)
         self.normal_radio.toggled.connect(self._on_mode_changed)
-    
-    def _on_orientation_changed(self):
-        """카드 방향 변경"""
-        if self.portrait_radio.isChecked():
-            self.card_orientation = "portrait"
-        else:
-            self.card_orientation = "landscape"
-        
-        self._update_description()
-        self.card_orientation_changed.emit(self.card_orientation)
     
     def _on_dual_side_toggled(self, checked):
         """양면 인쇄 토글"""
         self.is_dual_side = checked
-        self._update_description()
+        # self._update_description()  # 주석 처리
         self.dual_side_changed.emit(checked)
     
     def _on_mode_changed(self):
@@ -214,25 +249,20 @@ class PrintModePanel(QGroupBox):
         else:
             self.print_mode = "layered"
         
-        self._update_description()
+        # self._update_description()  # 주석 처리
         self.mode_changed.emit(self.print_mode)
     
-    def _update_description(self):
-        """설명 업데이트"""
-        orientation_text = "세로형" if self.card_orientation == "portrait" else "가로형"
-        side_text = "양면" if self.is_dual_side else "단면"
-        mode_text = "레이어" if self.print_mode == "layered" else "일반"
-        
-        if self.print_mode == "normal":
-            description = f"📖 {orientation_text} 카드에 원본 이미지를 {side_text} {mode_text} 인쇄합니다"
-        else:
-            description = f"📖 {orientation_text} 카드에 마스크 워터마크를 포함하여 {side_text} {mode_text} 인쇄합니다"
-        
-        self.description_label.setText(description)
-    
-    def get_card_orientation(self) -> str:
-        """현재 카드 방향 반환"""
-        return self.card_orientation
+    # def _update_description(self):
+    #     """설명 업데이트 - 주석 처리됨"""
+    #     side_text = "양면" if self.is_dual_side else "단면"
+    #     mode_text = "레이어" if self.print_mode == "layered" else "일반"
+    #     
+    #     if self.print_mode == "normal":
+    #         description = f"📖 원본 이미지를 {side_text} {mode_text} 인쇄합니다"
+    #     else:
+    #         description = f"📖 마스크 워터마크를 포함하여 {side_text} {mode_text} 인쇄합니다"
+    #     
+    #     self.description_label.setText(description)
 
 
 class PrintQuantityPanel(QGroupBox):
@@ -341,7 +371,7 @@ class PrintQuantityPanel(QGroupBox):
 
 
 class PrinterPanel(QGroupBox):
-    """프린터 연동 패널 - 카드 방향 지원"""
+    """프린터 연동 패널 - 개별 면 방향 지원"""
     test_requested = Signal()
     print_requested = Signal()
     
@@ -370,8 +400,8 @@ class PrinterPanel(QGroupBox):
         self.test_printer_btn = ModernButton("프린터 연결 테스트")
         self.test_printer_btn.setFixedHeight(45)
         
-        # 초기 버튼 텍스트를 "세로형 단면 일반 인쇄"로 설정
-        self.print_card_btn = ModernButton("세로형 단면 일반 인쇄", primary=True)
+        # 기본 버튼 텍스트 단순화
+        self.print_card_btn = ModernButton("카드 인쇄", primary=True)
         self.print_card_btn.setEnabled(False)
         self.print_card_btn.setFixedHeight(50)
         
@@ -396,16 +426,13 @@ class PrinterPanel(QGroupBox):
         """인쇄 버튼 활성화/비활성화"""
         self.print_card_btn.setEnabled(enabled)
     
-    def update_print_button_text(self, mode: str, is_dual: bool = False, quantity: int = 1, card_orientation: str = "portrait"):
-        """인쇄 버튼 텍스트 업데이트 - 카드 방향 지원"""
-        # 카드 방향 텍스트
-        orientation_text = "세로형" if card_orientation == "portrait" else "가로형"
-        
+    def update_print_button_text(self, mode: str, is_dual: bool = False, quantity: int = 1, orientation: str = "portrait"):
+        """인쇄 버튼 텍스트 업데이트 - 개별 면 방향이므로 단순화"""
         # 인쇄 모드 텍스트
         if mode == "normal":
-            base_text = f"{orientation_text} 양면 일반 인쇄" if is_dual else f"{orientation_text} 단면 일반 인쇄"
+            base_text = "양면 일반 인쇄" if is_dual else "단면 일반 인쇄"
         else:
-            base_text = f"{orientation_text} 양면 레이어 인쇄" if is_dual else f"{orientation_text} 단면 레이어 인쇄"
+            base_text = "양면 레이어 인쇄" if is_dual else "단면 레이어 인쇄"
         
         # 매수 추가
         if quantity > 1:
@@ -414,8 +441,9 @@ class PrinterPanel(QGroupBox):
             text = base_text
         
         # 텍스트 길이 제한
-        text = truncate_text(text, 25)  # 카드 방향 추가로 길이 늘림 (20 → 25)
+        text = truncate_text(text, 20)
         self.print_card_btn.setText(text)
+
 
 class ProgressPanel(QGroupBox):
     """진행 상황 패널"""
