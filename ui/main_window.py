@@ -166,7 +166,7 @@ class HanaStudioMainWindow:
         # 행 레이아웃 (가로)
         row_layout = QHBoxLayout(group)
         row_layout.setSpacing(12)  # 간격 줄임 (15 → 12)
-        row_layout.setContentsMargins(12, 12, 12, 12)  # 여백 줄임 (15 → 12)
+        row_layout.setContentsMargins(12, 2, 12, 12)  # 여백 줄임 (15 → 12)
         
         # === 중앙 정렬을 위한 여백 ===
         row_layout.addStretch(1)
@@ -213,10 +213,10 @@ class HanaStudioMainWindow:
             self.back_unified_mask_viewer = UnifiedMaskViewer("마스킹 미리보기")
             unified_mask_viewer = self.back_unified_mask_viewer
         
-        unified_mask_viewer.setFixedSize(280, 220)  # 높이 증가 (200 → 220)
+        unified_mask_viewer.setFixedSize(280, 120)  # 높이 증가 (200 → 220)
         
         # === 화살표 2 ===
-        arrow2 = QLabel("→")
+        arrow2 = QLabel("←")
         arrow2.setFont(QFont("Segoe UI", 20, QFont.Weight.Bold))
         arrow2.setStyleSheet("""
             color: #28A745; 
@@ -229,13 +229,13 @@ class HanaStudioMainWindow:
         
         # === 수동 마스킹 업로드 뷰어 ===
         if is_front:
-            self.front_manual_mask_viewer = ImageViewer("수동 마스킹\n(클릭하여 업로드)", enable_click_upload=True)
+            self.front_manual_mask_viewer = ImageViewer("수동 마스킹\n(클릭하여 업로드)", enable_click_upload=True, show_orientation_buttons=False)
             manual_mask_viewer = self.front_manual_mask_viewer
         else:
-            self.back_manual_mask_viewer = ImageViewer("수동 마스킹\n(클릭하여 업로드)", enable_click_upload=True)
+            self.back_manual_mask_viewer = ImageViewer("수동 마스킹\n(클릭하여 업로드)", enable_click_upload=True, show_orientation_buttons=False)
             manual_mask_viewer = self.back_manual_mask_viewer
         
-        manual_mask_viewer.setFixedSize(280, 220)  # 높이 증가 (200 → 220)
+        manual_mask_viewer.setFixedSize(280, 210)  # 높이 증가 (200 → 220)
         
         # === 컴포넌트 배치 ===
         row_layout.addWidget(title_label)

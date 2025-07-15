@@ -515,10 +515,12 @@ class HanaStudio(QMainWindow):
                     status = f"앞면:{front_orientation_text} 양면 인쇄 준비 (뒷면 선택사항)"
             else:
                 status = f"앞면:{front_orientation_text} 단면 인쇄 준비"
-            self.ui.components['status_text'].setText(status)
+            
+            # status_text 대신 progress_panel 사용
+            self.ui.components['progress_panel'].update_status(status)
         else:
             self.ui.components['progress_panel'].update_status("앞면 이미지를 선택해주세요")
-    
+            
     def _reset_front_processing_results(self):
         """앞면 처리 결과 초기화"""
         self.front_auto_mask_image = None

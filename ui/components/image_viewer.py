@@ -6,7 +6,7 @@ ui/components/image_viewer.py 수정
 import numpy as np
 from PySide6.QtWidgets import (
     QLabel, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QFileDialog,
-    QSlider, QFrame, QButtonGroup, QRadioButton
+    QSlider, QSizePolicy, QButtonGroup, QRadioButton,QSpacerItem
 )
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QPixmap, QImage, QFont
@@ -89,86 +89,51 @@ class ProcessButton(QPushButton):
 class CompactThresholdSlider(QWidget):
     """컴팩트한 임계값 슬라이더"""
     threshold_changed = Signal(int)
-    
+
     def __init__(self, initial_value=45):
         super().__init__()
-        self.setFixedSize(120, 28)  # 높이 동일하게 (32 → 28)
+        self.setFixedSize(120, 28)
         self._setup_ui(initial_value)
-    
+
     def _setup_ui(self, initial_value):
-        """UI 구성"""
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
-        
-        # 라벨
+
         label = QLabel("T:")
         label.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
         label.setStyleSheet("color: #6C757D; background: transparent;")
         label.setFixedWidth(12)
-        
-        # 슬라이더
+
         self.slider = QSlider(Qt.Orientation.Horizontal)
         self.slider.setRange(0, 255)
         self.slider.setValue(initial_value)
         self.slider.setFixedWidth(70)
-        self.slider.setFixedHeight(24)  # 높이 줄임 (28 → 24)
-        self.slider.setStyleSheet("""
-            QSlider::groove:horizontal {
-                border: 1px solid #DEE2E6;
-                height: 6px;
-                background: #F8F9FA;
-                border-radius: 3px;
-            }
-            QSlider::handle:horizontal {
-                background: #4A90E2;
-                border: 1px solid #357ABD;
-                width: 16px;
-                height: 16px;
-                border-radius: 8px;
-                margin: -5px 0;
-            }
-            QSlider::handle:horizontal:hover {
-                background: #5BA0F2;
-            }
-            QSlider::sub-page:horizontal {
-                background: #4A90E2;
-                border-radius: 3px;
-            }
-        """)
-        
-        # 값 표시 라벨
+        self.slider.setFixedHeight(24)
+        self.slider.setStyleSheet("""<슬라이더 스타일 생략>""")
+
         self.value_label = QLabel(str(initial_value))
         self.value_label.setFont(QFont("Segoe UI", 9))
-        self.value_label.setStyleSheet("""
-            color: #495057; 
-            background: transparent;
-            border: 1px solid #DEE2E6;
-            border-radius: 3px;
-            padding: 3px 4px;
-        """)
-        self.value_label.setFixedSize(28, 24)  # 높이 맞춤 (28 → 24)
+        self.value_label.setStyleSheet("""<라벨 스타일 생략>""")
+        self.value_label.setFixedSize(28, 24)
         self.value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
+
         layout.addWidget(label)
         layout.addWidget(self.slider)
         layout.addWidget(self.value_label)
-        
-        # 시그널 연결
+
         self.slider.valueChanged.connect(self._on_value_changed)
-    
+
     def _on_value_changed(self, value):
-        """값 변경"""
         self.value_label.setText(str(value))
         self.threshold_changed.emit(value)
-    
+
     def get_value(self):
-        """현재 값 반환"""
         return self.slider.value()
-    
+
     def set_value(self, value):
-        """값 설정"""
         self.slider.setValue(value)
+
 
 
 class ImageViewer(QWidget):
@@ -181,32 +146,56 @@ class ImageViewer(QWidget):
     threshold_changed = Signal(int)
     orientation_changed = Signal(str)  # "portrait" 또는 "landscape"
     
-    def __init__(self, title="", enable_click_upload=False, enable_process_button=False):
+    def __init__(self, title="", enable_click_upload=False, enable_process_button=False, show_orientation_buttons=True):
         super().__init__()
         self.title = title
         self.enable_click_upload = enable_click_upload
         self.enable_process_button = enable_process_button
+        self.show_orientation_buttons = show_orientation_buttons  # 추가
         self.original_pixmap = None
         self.current_image_array = None
         self.original_image_array = None
         self.image_path = None
         self.current_orientation = "portrait"  # 현재 출력 방향
         
-        self.setMinimumSize(280, 280)  # 높이 감소 (280 → 260, 이미지 미리보기 공간 축소)
+        self.setMinimumSize(160, 0)  # 높이 감소 (280 → 260, 이미지 미리보기 공간 축소)
         self._setup_ui()
         self._set_placeholder_text()
-        
+
     def _setup_ui(self):
-        """UI 구성"""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(3)  # 간격 줄임 (5 → 3)
-        
-        # 이미지 표시 라벨
+        # layout.setContentsMargins(0, 2, 6, 2)  # 위/아래 여백 최소화
+        layout.setSpacing(0)
+
+        # 배경제거 컨트롤
+        if self.enable_process_button:
+            control_layout = QHBoxLayout()
+            control_layout.setSpacing(2)
+
+            self.process_btn = ProcessButton("배경제거")
+            self.process_btn.setFixedHeight(26)  # 버튼 높이 축소
+            self.process_btn.clicked.connect(self._on_process_clicked)
+            self.process_btn.setEnabled(False)
+
+            self.threshold_slider = CompactThresholdSlider(45)
+            self.threshold_slider.setFixedHeight(26)  # 슬라이더 높이 축소
+            self.threshold_slider.threshold_changed.connect(self.threshold_changed.emit)
+
+            control_layout.addStretch()
+            control_layout.addWidget(self.process_btn)
+            control_layout.addWidget(self.threshold_slider)
+            control_layout.addStretch()
+
+            layout.addLayout(control_layout)
+
+        # 이미지 라벨
         self.image_label = QLabel()
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        # 클릭 업로드가 활성화된 경우 스타일 다르게 적용
+
+        # ✅ 고정 높이로 설정해 너무 커지지 않도록 하면서 충분히 크게 유지
+        self.image_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        self.image_label.setMaximumHeight(200)  # 이미지 높이 조정 포인트 (220~260 권장)
+
         if self.enable_click_upload:
             self.image_label.setStyleSheet("""
                 QLabel {
@@ -233,64 +222,37 @@ class ImageViewer(QWidget):
                     font-size: 14px;
                 }
             """)
-        
-        # 방향 선택 영역
-        orientation_layout = QHBoxLayout()
-        orientation_layout.setContentsMargins(0, 0, 0, 0)
-        orientation_layout.setSpacing(2)  # 간격 줄임 (3 → 2)
-        
-        # 방향 버튼들
-        self.portrait_btn = OrientationButton("📱 세로", "portrait")
-        self.landscape_btn = OrientationButton("📺 가로", "landscape")
-        
-        # 기본값 설정
-        self.portrait_btn.setChecked(True)
-        
-        # 버튼 그룹
-        self.orientation_group = QButtonGroup()
-        self.orientation_group.addButton(self.portrait_btn, 0)
-        self.orientation_group.addButton(self.landscape_btn, 1)
-        
-        # 방향 버튼 배치
-        orientation_layout.addStretch()
-        orientation_layout.addWidget(self.portrait_btn)
-        orientation_layout.addWidget(self.landscape_btn)
-        orientation_layout.addStretch()
-        
-        # 배경제거 컨트롤 영역 (원본 이미지에만)
-        control_layout = QHBoxLayout()
-        control_layout.setContentsMargins(0, 0, 0, 0)
-        control_layout.setSpacing(2)  # 간격 줄임 (3 → 2)
-        
-        if self.enable_process_button:
-            # 배경제거 버튼
-            self.process_btn = ProcessButton("배경제거")
-            self.process_btn.clicked.connect(self._on_process_clicked)
-            self.process_btn.setEnabled(False)
-            
-            # 임계값 슬라이더
-            self.threshold_slider = CompactThresholdSlider(45)
-            self.threshold_slider.threshold_changed.connect(self.threshold_changed.emit)
-            
-            # 배경제거 관련 컨트롤 배치
-            control_layout.addStretch()
-            control_layout.addWidget(self.process_btn)
-            control_layout.addWidget(self.threshold_slider)
-            control_layout.addStretch()
-        
-        # 초기에는 버튼 비활성화
-        self.portrait_btn.setEnabled(False)
-        self.landscape_btn.setEnabled(False)
-        
-        # 시그널 연결
-        self.portrait_btn.toggled.connect(self._on_orientation_changed)
-        self.landscape_btn.toggled.connect(self._on_orientation_changed)
-        
-        layout.addWidget(self.image_label)
-        layout.addLayout(orientation_layout)
-        if self.enable_process_button:
-            layout.addLayout(control_layout)
-    
+
+        layout.addWidget(self.image_label)  # ✅ stretch=1 제거 → 아래 버튼이 밀리지 않음
+
+        # 방향 버튼 (맨 아래 고정)
+        if self.show_orientation_buttons:
+            orientation_layout = QHBoxLayout()
+            orientation_layout.setSpacing(2)
+
+            self.portrait_btn = OrientationButton("📱 세로", "portrait")
+            self.landscape_btn = OrientationButton("📺 가로", "landscape")
+            self.portrait_btn.setChecked(True)
+
+            self.orientation_group = QButtonGroup()
+            self.orientation_group.addButton(self.portrait_btn, 0)
+            self.orientation_group.addButton(self.landscape_btn, 1)
+
+            orientation_layout.addStretch()
+            orientation_layout.addWidget(self.portrait_btn)
+            orientation_layout.addWidget(self.landscape_btn)
+            orientation_layout.addStretch()
+
+            self.portrait_btn.setEnabled(False)
+            self.landscape_btn.setEnabled(False)
+
+            self.portrait_btn.toggled.connect(self._on_orientation_changed)
+            self.landscape_btn.toggled.connect(self._on_orientation_changed)
+
+            layout.addLayout(orientation_layout)
+
+
+
     def _on_orientation_changed(self):
         """방향 변경 처리"""
         if self.portrait_btn.isChecked():
@@ -397,6 +359,23 @@ class ImageViewer(QWidget):
             print(f"[DEBUG] 이미지 읽기 실패: {image_path}, 오류: {e}")
             return None
     
+    def clear_image(self):
+        """이미지 클리어"""
+        print("[DEBUG] 이미지 클리어")
+        self.original_pixmap = None
+        self.current_image_array = None
+        self.original_image_array = None
+        self.image_path = None
+        self.image_label.clear()
+        self._set_placeholder_text()
+        
+        # 버튼들 비활성화 - 조건부 처리
+        if self.show_orientation_buttons:
+            self.portrait_btn.setEnabled(False)
+            self.landscape_btn.setEnabled(False)
+        if self.enable_process_button:
+            self.process_btn.setEnabled(False)
+
     def set_image(self, image_path_or_array):
         """이미지 설정 (파일 경로 또는 numpy 배열)"""
         try:
@@ -434,9 +413,10 @@ class ImageViewer(QWidget):
                 
             self.original_pixmap = pixmap
             
-            # 이미지가 로드되면 버튼들 활성화
-            self.portrait_btn.setEnabled(True)
-            self.landscape_btn.setEnabled(True)
+            # 이미지가 로드되면 버튼들 활성화 - 조건부 처리
+            if self.show_orientation_buttons:
+                self.portrait_btn.setEnabled(True)
+                self.landscape_btn.setEnabled(True)
             
             if self.enable_process_button:
                 self.process_btn.setEnabled(True)
@@ -452,11 +432,14 @@ class ImageViewer(QWidget):
             import traceback
             traceback.print_exc()
             self._set_placeholder_text()
-            self.portrait_btn.setEnabled(False)
-            self.landscape_btn.setEnabled(False)
+            
+            # 오류 발생 시 버튼들 비활성화 - 조건부 처리
+            if self.show_orientation_buttons:
+                self.portrait_btn.setEnabled(False)
+                self.landscape_btn.setEnabled(False)
             if self.enable_process_button:
                 self.process_btn.setEnabled(False)
-    
+                
     def _numpy_to_pixmap(self, array):
         """numpy 배열을 QPixmap으로 변환"""
         try:
@@ -551,21 +534,6 @@ class ImageViewer(QWidget):
         except Exception as e:
             print(f"[DEBUG] update_display 오류: {e}")
     
-    def clear_image(self):
-        """이미지 클리어"""
-        print("[DEBUG] 이미지 클리어")
-        self.original_pixmap = None
-        self.current_image_array = None
-        self.original_image_array = None
-        self.image_path = None
-        self.image_label.clear()
-        self._set_placeholder_text()
-        
-        self.portrait_btn.setEnabled(False)
-        self.landscape_btn.setEnabled(False)
-        if self.enable_process_button:
-            self.process_btn.setEnabled(False)
-    
     def resizeEvent(self, event):
         """리사이즈 이벤트 처리"""
         super().resizeEvent(event)
@@ -591,7 +559,7 @@ class UnifiedMaskViewer(QWidget):
         self.original_pixmap = None
         self.card_orientation = "portrait"  # 기본값
         
-        self.setMinimumSize(280, 200)
+        self.setMinimumSize(260, 320)
         self._setup_ui()
         self._set_placeholder_text()
     
