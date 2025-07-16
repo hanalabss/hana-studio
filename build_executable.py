@@ -38,7 +38,8 @@ class HanaStudioBuilder:
             "config.py",
             "libDSRetransfer600App.dll",
             "Retransfer600_SDKCfg.xml",
-            "requirements.txt"
+            "requirements.txt",
+            "hana.ico"
         ]
         
         missing_files = []
@@ -64,7 +65,8 @@ class HanaStudioBuilder:
         data_files = [
             "libDSRetransfer600App.dll",
             "Retransfer600_SDKCfg.xml",
-            "config.json"
+            "config.json",
+            "hana.ico"
         ]
         
         for file_name in data_files:
@@ -141,7 +143,7 @@ exe = EXE(
     upx=True,
     console=False,
     disable_windowed_traceback=False,
-    icon='icon.ico' if os.path.exists('icon.ico') else None,
+    icon='hana.ico' if os.path.exists('hana.ico') else None,
 )
 
 coll = COLLECT(
@@ -168,8 +170,9 @@ coll = COLLECT(
         cmd = [
             sys.executable, "-m", "PyInstaller",
             "--onedir",
-            "--windowed",  # console 대신 windowed로 변경
+            "--windowed",
             "--name", "HanaStudio",
+            "--icon", "hana.ico",
             "--collect-all", "rembg",
             "--collect-all", "scipy", 
             "--collect-all", "numpy",
@@ -183,6 +186,7 @@ coll = COLLECT(
             ("libDSRetransfer600App.dll", "."),
             ("Retransfer600_SDKCfg.xml", "."),
             ("config.json", "."),
+            ("hana.ico", "."),
             ("ui", "ui"),
             ("core", "core"),
             ("printer", "printer")
@@ -238,6 +242,12 @@ if not exist "Retransfer600_SDKCfg.xml" (
     echo ❌ Retransfer600_SDKCfg.xml 없음  
 ) else (
     echo ✅ Retransfer600_SDKCfg.xml 있음
+)
+
+if not exist "hana.ico" (
+    echo ❌ hana.ico 없음  
+) else (
+    echo ✅ hana.ico 있음
 )
 
 echo.

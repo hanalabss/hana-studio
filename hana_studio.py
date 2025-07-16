@@ -8,6 +8,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QMainWindow, QFileDialog, QMessageBox
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon
 
 # 분리된 모듈들 import
 from ui import HanaStudioMainWindow, get_app_style
@@ -16,7 +17,7 @@ from printer import PrinterThread, find_printer_dll, test_printer_connection
 from printer.printer_thread import print_manager
 from printer.printer_discovery import PrinterInfo
 from ui.components.printer_selection_dialog import show_printer_selection_dialog
-from config import config, AppConstants
+from config import config, AppConstants, get_resource_path
 
 
 class HanaStudio(QMainWindow):
@@ -24,6 +25,9 @@ class HanaStudio(QMainWindow):
     
     def __init__(self):
         super().__init__()
+        
+        # 🎯 윈도우 아이콘 설정
+        self._setup_window_icon()
         
         # 데이터 속성들
         self.front_image_path = None
@@ -76,6 +80,18 @@ class HanaStudio(QMainWindow):
         
         self._check_printer_availability()
         self._setup_manual_mask_viewers()
+    
+    def _setup_window_icon(self):
+        """윈도우 아이콘 설정"""
+        try:
+            icon_path = get_resource_path("hana.ico")
+            if os.path.exists(icon_path):
+                self.setWindowIcon(QIcon(icon_path))
+                print(f"✅ 윈도우 아이콘 설정: {icon_path}")
+            else:
+                print(f"⚠️ 아이콘 파일 없음: {icon_path}")
+        except Exception as e:
+            print(f"⚠️ 윈도우 아이콘 설정 실패: {e}")
         
     def _setup_manual_mask_viewers(self):
         """수동 마스킹 뷰어 설정"""
@@ -96,7 +112,6 @@ class HanaStudio(QMainWindow):
         try:
             self.printer_dll_path = find_printer_dll()
             if not self.printer_dll_path:
-                from PySide6.QtWidgets import QMessageBox
                 QMessageBox.critical(
                     None,
                     "DLL 파일 없음",
@@ -120,7 +135,6 @@ class HanaStudio(QMainWindow):
             return True
             
         except Exception as e:
-            from PySide6.QtWidgets import QMessageBox
             QMessageBox.critical(
                 None,
                 "프린터 선택 오류",

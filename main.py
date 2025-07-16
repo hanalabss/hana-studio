@@ -6,11 +6,11 @@ import sys
 import os
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QGuiApplication, QIcon
 
 from hana_studio import HanaStudio
 from ui.styles import get_light_palette
-from config import config, AppConstants
+from config import config, AppConstants, get_resource_path
 
 
 def setup_environment():
@@ -43,6 +43,17 @@ def setup_application() -> QApplication:
     app.setApplicationName(AppConstants.APP_NAME)
     app.setApplicationVersion(AppConstants.APP_VERSION)
     app.setOrganizationName(AppConstants.APP_AUTHOR)
+    
+    # 🎯 앱 아이콘 설정
+    try:
+        icon_path = get_resource_path("hana.ico")
+        if os.path.exists(icon_path):
+            app.setWindowIcon(QIcon(icon_path))
+            print(f"✅ 앱 아이콘 설정: {icon_path}")
+        else:
+            print(f"⚠️ 아이콘 파일 없음: {icon_path}")
+    except Exception as e:
+        print(f"⚠️ 아이콘 설정 실패: {e}")
     
     # 라이트 테마 팔레트 설정
     app.setPalette(get_light_palette())
