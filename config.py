@@ -4,11 +4,27 @@ Hana Studio 설정 파일
 """
 
 import os
+import sys
 import json
 from pathlib import Path
 from typing import Dict, Any, Optional
 
+def get_resource_path(relative_path: str) -> str:
+    """PyInstaller 호환 리소스 경로"""
+    try:
+        base_path = sys._MEIPASS
+    except AttributeError:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
 
+
+def get_executable_dir() -> str:
+    """실행파일 디렉토리"""
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    else:
+        return os.path.dirname(os.path.abspath(__file__))
+    
 class Config:
     """애플리케이션 설정 관리 클래스"""
     
@@ -83,13 +99,15 @@ class Config:
     }
     
     def __init__(self, config_file: str = 'config.json'):
-        """
-        설정 관리자 초기화
-        
-        Args:
-            config_file: 설정 파일 경로
-        """
-        self.config_file = Path(config_file)
+        """설정 관리자 초기화"""
+        # PyInstaller 호환 경로 처리
+        if getattr(sys, 'frozen', False):
+            # 실행파일과 같은 위치에서 config 파일 찾기
+            exe_dir = get_executable_dir()
+            self.config_file = Path(exe_dir) / config_file
+        else:
+            self.config_file = Path(config_file)
+            
         self.settings = self.DEFAULT_SETTINGS.copy()
         self.load_settings()
         self.ensure_directories()
@@ -128,9 +146,15 @@ class Config:
                     default[key] = value
     
     def ensure_directories(self) -> None:
-        """필요한 디렉토리들을 생성합니다."""
+        """필요한 디렉토리들을 생성 - PyInstaller 호환"""
         for dir_key, dir_path in self.settings['directories'].items():
-            Path(dir_path).mkdir(exist_ok=True)
+            if getattr(sys, 'frozen', False):
+                # 실행파일과 같은 위치에 생성
+                exe_dir = get_executable_dir()
+                full_path = Path(exe_dir) / dir_path
+            else:
+                full_path = Path(dir_path)
+            full_path.mkdir(exist_ok=True)
     
     def get(self, key: str, default: Any = None) -> Any:
         """

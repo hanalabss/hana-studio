@@ -3,6 +3,7 @@
 """
 
 import os
+import sys
 from typing import List, Optional
 from config import config
 from .exceptions import DLLNotFoundError
@@ -12,17 +13,22 @@ def check_printer_dll(dll_path: str) -> bool:
     """DLL 파일 존재 여부 확인"""
     return os.path.exists(dll_path)
 
-
+def get_executable_dir() -> str:
+    """실행파일 디렉토리"""
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    else:
+        return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
 def get_default_dll_paths() -> List[str]:
-    """기본 DLL 경로 목록 반환"""
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    """기본 DLL 경로 목록 반환 - PyInstaller 호환"""
+    base_dir = get_executable_dir()
     return [
         os.path.join(base_dir, 'libDSRetransfer600App.dll'),
         os.path.join(base_dir, 'dll', 'libDSRetransfer600App.dll'),
         os.path.join(base_dir, 'lib', 'libDSRetransfer600App.dll'),
         config.get('printer.dll_path', os.path.join(base_dir, 'libDSRetransfer600App.dll'))
     ]
-
 
 def find_printer_dll() -> Optional[str]:
     """사용 가능한 프린터 DLL 찾기"""

@@ -57,26 +57,27 @@ def validate_config():
         print("⚠️ 설정 검증 실패, 기본값으로 복원합니다.")
         config.reset_to_defaults()
 
-
 def main():
     """메인 실행 함수"""
-    print("🎨 Hana Studio 시작 중...")
-    
     # 환경 설정
     setup_environment()
-    
-    # 설정 검증
     validate_config()
     
     # 애플리케이션 생성
     app = setup_application()
     
     try:
+        # AI 모델 로딩 다이얼로그 표시
+        from ui.loading_dialog import LoadingDialog
+        loading = LoadingDialog()
+        
+        if loading.exec() != LoadingDialog.DialogCode.Accepted:
+            print("AI 모델 로드 실패")
+            sys.exit(1)
+        
         # 메인 윈도우 생성 및 표시
         window = HanaStudio()
         window.show()
-        
-        print("✅ Hana Studio 시작 완료!")
         
         # 애플리케이션 실행
         sys.exit(app.exec())
