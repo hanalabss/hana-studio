@@ -56,9 +56,42 @@ def validate_config():
     if not config.validate_settings():
         print("⚠️ 설정 검증 실패, 기본값으로 복원합니다.")
         config.reset_to_defaults()
+        
+def debug_environment():
+    """PyInstaller 환경 디버깅"""
+    import sys
+    import os
+    
+    print("=== Hana Studio 실행 환경 ===")
+    print(f"Python 버전: {sys.version}")
+    print(f"현재 작업 디렉토리: {os.getcwd()}")
+    
+    if getattr(sys, 'frozen', False):
+        print("✅ PyInstaller 환경에서 실행 중")
+        print(f"실행파일 위치: {sys.executable}")
+        print(f"실행파일 디렉토리: {os.path.dirname(sys.executable)}")
+        if hasattr(sys, '_MEIPASS'):
+            print(f"임시 디렉토리: {sys._MEIPASS}")
+        
+        # 실행파일 디렉토리의 파일 목록
+        exe_dir = os.path.dirname(sys.executable)
+        print(f"실행파일 디렉토리 내용:")
+        try:
+            for item in os.listdir(exe_dir)[:10]:  # 처음 10개만
+                print(f"  - {item}")
+        except Exception as e:
+            print(f"  디렉토리 읽기 실패: {e}")
+    else:
+        print("🔧 개발 환경에서 실행 중")
+    
+    print("=" * 40)
+
 
 def main():
-    """메인 실행 함수"""
+    """메인 실행 함수 - PyInstaller 디버깅 추가"""
+    # 환경 정보 출력
+    debug_environment()
+    
     # 환경 설정
     setup_environment()
     validate_config()
@@ -87,6 +120,8 @@ def main():
         sys.exit(0)
     except Exception as e:
         print(f"❌ 시작 중 오류 발생: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 

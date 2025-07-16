@@ -27,26 +27,86 @@ class FileManager:
         os.makedirs(self.output_dir, exist_ok=True)
     
     def _safe_imread(self, image_path: str) -> Optional[np.ndarray]:
-        """한글 경로를 지원하는 안전한 이미지 읽기"""
+        """PyInstaller 호환 안전한 이미지 읽기"""
         try:
-            # OpenCV가 한글 경로를 읽지 못하는 문제 해결
-            with open(image_path, 'rb') as f:
-                image_data = f.read()
+            print(f"[DEBUG] 이미지 읽기 시도: {image_path}")
             
-            # numpy array로 변환 후 OpenCV로 디코딩
-            nparr = np.frombuffer(image_data, np.uint8)
-            image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            
-            if image is None:
-                print(f"❌ 이미지 디코딩 실패: {image_path}")
+            # 파일 존재 확인
+            if not os.path.exists(image_path):
+                print(f"[ERROR] 파일이 존재하지 않음: {image_path}")
                 return None
+            
+            # 파일 크기 확인
+            try:
+                file_size = os.path.getsize(image_path)
+                if file_size == 0:
+                    print(f"[ERROR] 빈 파일: {image_path}")
+                    return None
+                print(f"[DEBUG] 파일 크기: {file_size} bytes")
+            except Exception as e:
+                print(f"[ERROR] 파일 크기 확인 실패: {e}")
+                return None
+            
+            # 방법 1: OpenCV 직접 시도 (영문 경로인 경우)
+            try:
+                # 경로에 한글이 없는 경우 직접 시도
+                image_path.encode('ascii')
+                image = cv2.imread(image_path, cv2.IMREAD_COLOR)
+                if image is not None:
+                    print(f"[DEBUG] OpenCV 직접 읽기 성공: {image.shape}")
+                    return image
+            except UnicodeEncodeError:
+                print("[DEBUG] 한글 경로 감지, 바이트 방식 사용")
+            except Exception as e:
+                print(f"[DEBUG] OpenCV 직접 읽기 실패: {e}")
+            
+            # 방법 2: 바이트 읽기 방식 (한글 경로 대응)
+            try:
+                with open(image_path, 'rb') as f:
+                    image_data = f.read()
                 
-            return image
+                if len(image_data) == 0:
+                    print("[ERROR] 읽은 데이터가 비어있음")
+                    return None
+                
+                print(f"[DEBUG] 바이트 데이터 크기: {len(image_data)}")
+                
+                # numpy 배열로 변환
+                nparr = np.frombuffer(image_data, np.uint8)
+                image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                
+                if image is None:
+                    print("[ERROR] OpenCV 디코딩 실패")
+                    return None
+                    
+                print(f"[DEBUG] 바이트 방식 읽기 성공: {image.shape}")
+                return image
+                
+            except Exception as e:
+                print(f"[ERROR] 바이트 읽기 실패: {e}")
+            
+            # 방법 3: PIL 백업 (최후의 수단)
+            try:
+                from PIL import Image
+                pil_image = Image.open(image_path)
+                # PIL RGB를 OpenCV BGR로 변환
+                if pil_image.mode == 'RGBA':
+                    pil_image = pil_image.convert('RGB')
+                opencv_image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+                print(f"[DEBUG] PIL 백업 읽기 성공: {opencv_image.shape}")
+                return opencv_image
+            except Exception as e:
+                print(f"[ERROR] PIL 백업도 실패: {e}")
+            
+            return None
             
         except Exception as e:
-            print(f"❌ 이미지 읽기 실패: {image_path}, 오류: {e}")
+            print(f"[ERROR] 전체 이미지 읽기 실패: {image_path}, 오류: {e}")
+            import traceback
+            traceback.print_exc()
             return None
-    
+
+
     def _safe_imwrite(self, image_path: str, image: np.ndarray, quality: int = 95) -> bool:
         """한글 경로를 지원하는 안전한 이미지 저장"""
         try:

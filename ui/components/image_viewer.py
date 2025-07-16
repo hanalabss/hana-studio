@@ -57,7 +57,7 @@ class ProcessButton(QPushButton):
     
     def __init__(self, text):
         super().__init__(text)
-        self.setFixedSize(80, 28)  # 높이 줄임 (32 → 28)
+        self.setFixedSize(80, 32)  # 높이 줄임 (32 → 28)
         self.setFont(QFont("Segoe UI", 9, QFont.Weight.Medium))
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         
@@ -92,33 +92,61 @@ class CompactThresholdSlider(QWidget):
 
     def __init__(self, initial_value=45):
         super().__init__()
-        self.setFixedSize(120, 28)
+        self.setFixedSize(160, 32)  # 140 → 155로 증가
         self._setup_ui(initial_value)
 
     def _setup_ui(self, initial_value):
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(2, 2, 2, 2)
         layout.setSpacing(4)
+        layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
-        label = QLabel("T:")
-        label.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-        label.setStyleSheet("color: #6C757D; background: transparent;")
-        label.setFixedWidth(12)
+        # label = QLabel("T:")
+        # label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        # label.setStyleSheet("color: #212529; background: transparent;")
+        # label.setFixedSize(25, 28)  # width와 height 모두 명시
+        # label.setAlignment(Qt.AlignmentFlag.AlignCenter)  # 중앙 정렬 추가
 
         self.slider = QSlider(Qt.Orientation.Horizontal)
         self.slider.setRange(0, 255)
         self.slider.setValue(initial_value)
-        self.slider.setFixedWidth(70)
-        self.slider.setFixedHeight(24)
-        self.slider.setStyleSheet("""<슬라이더 스타일 생략>""")
+        self.slider.setFixedWidth(105)  # 80 → 85로 증가
+        self.slider.setFixedHeight(28)  # 26 → 28로 증가
+        self.slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                border: 1px solid #DEE2E6;
+                height: 5px;
+                background: #F8F9FA;
+                border-radius: 2px;
+            }
+            QSlider::handle:horizontal {
+                background: #4A90E2;
+                border: 1px solid #357ABD;
+                width: 14px;
+                margin: -5px 0;
+                border-radius: 7px;
+            }
+            QSlider::handle:horizontal:hover {
+                background: #5BA0F2;
+            }
+        """)
 
         self.value_label = QLabel(str(initial_value))
         self.value_label.setFont(QFont("Segoe UI", 9))
-        self.value_label.setStyleSheet("""<라벨 스타일 생략>""")
-        self.value_label.setFixedSize(28, 24)
+        self.value_label.setStyleSheet("""
+            QLabel {
+                background-color: #F8F9FA;
+                border: 1px solid #DEE2E6;
+                border-radius: 3px;
+                color: #495057;
+                font-weight: 600;
+                padding: 2px;
+            }
+        """)
+        self.value_label.setFixedSize(45, 25)  # 요청대로 45x32
         self.value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        layout.addWidget(label)
+        # layout.addWidget(label)
         layout.addWidget(self.slider)
         layout.addWidget(self.value_label)
 
@@ -173,12 +201,12 @@ class ImageViewer(QWidget):
             control_layout.setSpacing(2)
 
             self.process_btn = ProcessButton("배경제거")
-            self.process_btn.setFixedHeight(26)  # 버튼 높이 축소
+            self.process_btn.setFixedHeight(45)  # 버튼 높이 축소
             self.process_btn.clicked.connect(self._on_process_clicked)
             self.process_btn.setEnabled(False)
 
             self.threshold_slider = CompactThresholdSlider(45)
-            self.threshold_slider.setFixedHeight(26)  # 슬라이더 높이 축소
+            self.threshold_slider.setFixedHeight(45)  # 슬라이더 높이 축소
             self.threshold_slider.threshold_changed.connect(self.threshold_changed.emit)
 
             control_layout.addStretch()
@@ -321,20 +349,40 @@ class ImageViewer(QWidget):
         super().mousePressEvent(event)
     
     def _open_file_dialog(self):
-        """파일 선택 다이얼로그 열기"""
+        """PyInstaller 호환 파일 선택 다이얼로그"""
         from config import config
+        import sys
+        
+        # PyInstaller 호환 초기 디렉토리
+        if getattr(sys, 'frozen', False):
+            initial_dir = os.path.dirname(sys.executable)
+            print(f"[DEBUG] PyInstaller 환경, 초기 디렉토리: {initial_dir}")
+        else:
+            initial_dir = os.getcwd()
+            print(f"[DEBUG] 개발 환경, 초기 디렉토리: {initial_dir}")
         
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             f"{self.title} 이미지 선택",
-            "",
+            initial_dir,
             config.get_image_filter()
         )
         
         if file_path:
-            self.set_image(file_path)
-            self.file_uploaded.emit(file_path)
-    
+            # 절대 경로로 변환 및 검증
+            file_path = os.path.abspath(file_path)
+            print(f"[DEBUG] 선택된 파일: {file_path}")
+            print(f"[DEBUG] 파일 존재: {os.path.exists(file_path)}")
+            
+            if os.path.exists(file_path):
+                self.set_image(file_path)
+                self.file_uploaded.emit(file_path)
+            else:
+                print(f"[ERROR] 파일이 존재하지 않음: {file_path}")
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.warning(self, "오류", f"선택한 파일을 찾을 수 없습니다:\n{file_path}")
+
+
     def _safe_imread_unicode(self, image_path: str) -> np.ndarray:
         """한글 경로를 지원하는 안전한 이미지 읽기"""
         try:

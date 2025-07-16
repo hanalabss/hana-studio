@@ -151,6 +151,8 @@ class HanaStudioMainWindow:
         
         parent_layout.addWidget(image_widget, 1)
     
+    # ui/main_window.py의 create_unified_image_row() 함수에서 수정
+
     def create_unified_image_row(self, title: str, is_front: bool) -> QFrame:
         """개별 면 방향 제어가 포함된 이미지 행 생성"""
         group = QFrame()
@@ -165,8 +167,8 @@ class HanaStudioMainWindow:
         
         # 행 레이아웃 (가로)
         row_layout = QHBoxLayout(group)
-        row_layout.setSpacing(12)  # 간격 줄임 (15 → 12)
-        row_layout.setContentsMargins(12, 2, 12, 12)  # 여백 줄임 (15 → 12)
+        row_layout.setSpacing(12)
+        row_layout.setContentsMargins(12, 2, 12, 12)
         
         # === 중앙 정렬을 위한 여백 ===
         row_layout.addStretch(1)
@@ -191,7 +193,8 @@ class HanaStudioMainWindow:
             self.back_original_viewer = ImageViewer("원본", enable_process_button=True)
             original_viewer = self.back_original_viewer
         
-        original_viewer.setFixedSize(280, 320)  # 높이 증가 (300 → 320, 더 많은 공간)
+        # 크기 통일: 모두 280x320으로 설정
+        original_viewer.setFixedSize(280, 320)
         
         # === 화살표 1 ===
         arrow1 = QLabel("→")
@@ -213,7 +216,8 @@ class HanaStudioMainWindow:
             self.back_unified_mask_viewer = UnifiedMaskViewer("마스킹 미리보기")
             unified_mask_viewer = self.back_unified_mask_viewer
         
-        unified_mask_viewer.setFixedSize(280, 120)  # 높이 증가 (200 → 220)
+        # 크기 통일: 280x320으로 증가
+        unified_mask_viewer.setFixedSize(280, 300)
         
         # === 화살표 2 ===
         arrow2 = QLabel("←")
@@ -235,7 +239,8 @@ class HanaStudioMainWindow:
             self.back_manual_mask_viewer = ImageViewer("수동 마스킹\n(클릭하여 업로드)", enable_click_upload=True, show_orientation_buttons=False)
             manual_mask_viewer = self.back_manual_mask_viewer
         
-        manual_mask_viewer.setFixedSize(280, 210)  # 높이 증가 (200 → 220)
+        # 크기 통일: 280x320으로 증가
+        manual_mask_viewer.setFixedSize(280, 300)
         
         # === 컴포넌트 배치 ===
         row_layout.addWidget(title_label)
@@ -249,7 +254,7 @@ class HanaStudioMainWindow:
         row_layout.addStretch(1)
         
         return group
-    
+
     # def create_status_bar(self, parent_layout):
     #     """하단 상태바 생성 - 제거됨"""
     #     status_frame = QFrame()

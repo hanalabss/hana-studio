@@ -144,18 +144,44 @@ class Config:
                     self._merge_settings(default[key], value)
                 else:
                     default[key] = value
-    
+
     def ensure_directories(self) -> None:
-        """필요한 디렉토리들을 생성 - PyInstaller 호환"""
+        """PyInstaller 호환 디렉토리 생성"""
+        import sys
+        
         for dir_key, dir_path in self.settings['directories'].items():
             if getattr(sys, 'frozen', False):
-                # 실행파일과 같은 위치에 생성
+                # PyInstaller 환경에서는 실행파일과 같은 위치에 생성
                 exe_dir = get_executable_dir()
                 full_path = Path(exe_dir) / dir_path
             else:
                 full_path = Path(dir_path)
-            full_path.mkdir(exist_ok=True)
-    
+            
+            try:
+                full_path.mkdir(parents=True, exist_ok=True)
+                print(f"[DEBUG] 디렉토리 생성/확인: {full_path}")
+                
+                # 쓰기 권한 테스트
+                test_file = full_path / "write_test.tmp"
+                try:
+                    with open(test_file, 'w') as f:
+                        f.write("test")
+                    test_file.unlink()
+                    print(f"[DEBUG] 쓰기 권한 확인: {full_path}")
+                except Exception as e:
+                    print(f"[WARNING] 쓰기 권한 없음: {full_path}, {e}")
+                    # Windows에서 관리자 권한이 필요한 경우 사용자 디렉토리 사용
+                    if getattr(sys, 'frozen', False):
+                        import tempfile
+                        user_dir = Path(tempfile.gettempdir()) / "HanaStudio" / dir_path
+                        user_dir.mkdir(parents=True, exist_ok=True)
+                        print(f"[INFO] 대체 디렉토리 사용: {user_dir}")
+                        self.settings['directories'][dir_key] = str(user_dir)
+                    
+            except Exception as e:
+                print(f"[ERROR] 디렉토리 생성 실패: {full_path}, {e}")
+
+
     def get(self, key: str, default: Any = None) -> Any:
         """
         설정값을 가져옵니다.

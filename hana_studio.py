@@ -234,15 +234,34 @@ class HanaStudio(QMainWindow):
         threading.Thread(target=check, daemon=True).start()
 
     def select_front_image(self):
-        """앞면 이미지 선택"""
+        """앞면 이미지 선택 - PyInstaller 호환"""
+        import sys
+        
+        # PyInstaller 호환 초기 디렉토리 설정
+        if getattr(sys, 'frozen', False):
+            # 실행파일과 같은 디렉토리에서 시작
+            initial_dir = os.path.dirname(sys.executable)
+        else:
+            initial_dir = os.getcwd()
+        
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "앞면 이미지 선택",
-            "",
+            initial_dir,  # 초기 디렉토리 지정
             config.get_image_filter()
         )
         
         if not file_path:
+            return
+        
+        # 절대 경로로 변환
+        file_path = os.path.abspath(file_path)
+        print(f"[DEBUG] 선택된 앞면 파일: {file_path}")
+        print(f"[DEBUG] 파일 존재 여부: {os.path.exists(file_path)}")
+        
+        # 파일 존재 확인
+        if not os.path.exists(file_path):
+            QMessageBox.warning(self, "오류", f"파일을 찾을 수 없습니다:\n{file_path}")
             return
         
         # 이미지 유효성 검사
@@ -264,32 +283,48 @@ class HanaStudio(QMainWindow):
         
         # OpenCV로 읽기 (기존 로직 유지)
         try:
-            self.front_original_image = cv2.imread(file_path)
+            self.front_original_image = self.file_manager._safe_imread(file_path)
             if self.front_original_image is None:
-                with open(file_path, 'rb') as f:
-                    image_data = f.read()
-                nparr = np.frombuffer(image_data, np.uint8)
-                self.front_original_image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                print(f"[WARNING] OpenCV 이미지 로드 실패: {file_path}")
         except Exception as e:
             print(f"[DEBUG] OpenCV 이미지 로드 실패: {e}")
             self.front_original_image = None
         
         self._update_ui_state()
         self._reset_front_processing_results()
-        
+
+
     def select_back_image(self):
-        """뒷면 이미지 선택"""
+        """뒷면 이미지 선택 - PyInstaller 호환"""
         if not self.is_dual_side:
             return
+        
+        import sys
+        
+        # PyInstaller 호환 초기 디렉토리 설정
+        if getattr(sys, 'frozen', False):
+            initial_dir = os.path.dirname(sys.executable)
+        else:
+            initial_dir = os.getcwd()
             
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "뒷면 이미지 선택",
-            "",
+            initial_dir,
             config.get_image_filter()
         )
         
         if not file_path:
+            return
+        
+        # 절대 경로로 변환
+        file_path = os.path.abspath(file_path)
+        print(f"[DEBUG] 선택된 뒷면 파일: {file_path}")
+        print(f"[DEBUG] 파일 존재 여부: {os.path.exists(file_path)}")
+        
+        # 파일 존재 확인
+        if not os.path.exists(file_path):
+            QMessageBox.warning(self, "오류", f"파일을 찾을 수 없습니다:\n{file_path}")
             return
         
         # 이미지 유효성 검사
@@ -311,18 +346,16 @@ class HanaStudio(QMainWindow):
         
         # OpenCV로 읽기
         try:
-            self.back_original_image = cv2.imread(file_path)
+            self.back_original_image = self.file_manager._safe_imread(file_path)
             if self.back_original_image is None:
-                with open(file_path, 'rb') as f:
-                    image_data = f.read()
-                nparr = np.frombuffer(image_data, np.uint8)
-                self.back_original_image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                print(f"[WARNING] 뒷면 OpenCV 이미지 로드 실패: {file_path}")
         except Exception as e:
             print(f"[DEBUG] 뒷면 OpenCV 이미지 로드 실패: {e}")
             self.back_original_image = None
         
         self._update_ui_state()
         self._reset_back_processing_results()
+
 
     def process_single_image(self, is_front: bool, threshold: int = 200):
         """개별 이미지 배경제거 처리 - 항상 원본 이미지로 처리"""
