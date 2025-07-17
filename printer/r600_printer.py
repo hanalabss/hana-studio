@@ -320,8 +320,11 @@ class R600Printer:
                 print(f"임시 파일 생성: {temp_path}")
         else:
             path_encoded = b""
-            
-        ret = self.lib.R600DrawWaterMark(x, y, width, height, path_encoded)
+
+        adjusted_x = x - 0.29  # 왼쪽으로 2mm 이동
+        adjusted_y = y - 0.25  # 위쪽으로 1.5mm 이동
+    
+        ret = self.lib.R600DrawWaterMark(adjusted_x, adjusted_y, width, height, path_encoded)
         self._check_result(ret, f"워터마크 그리기 ({image_path})")
     
     def draw_image(self, x: float, y: float, width: float, height: float, 
@@ -346,8 +349,10 @@ class R600Printer:
             shutil.copy2(image_path, temp_path)
             path_encoded = temp_path.encode('cp949')
             print(f"임시 파일 생성: {temp_path}")
-        
-        ret = self.lib.R600DrawImage(x, y, width, height, path_encoded, mode)
+
+        adjusted_x = x - 0.29  # 왼쪽으로 2mm 이동
+        adjusted_y = y - 0.25  # 위쪽으로 1.5mm 이동
+        ret = self.lib.R600DrawImage(adjusted_x, adjusted_y, width, height, path_encoded, mode)
         self._check_result(ret, f"이미지 그리기 ({image_path})")
     
     def commit_canvas(self) -> str:
