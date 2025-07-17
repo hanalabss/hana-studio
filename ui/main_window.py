@@ -1,6 +1,6 @@
 """
 ui/main_window.py 수정
-탭 기반 이미지 뷰어로 변경 - 기존 함수명 및 디자인 유지
+탭 기반 이미지 뷰어로 변경 - 통일된 크기 사용
 """
 
 from PySide6.QtWidgets import (
@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 
-from .components.image_viewer import ImageViewer, UnifiedMaskViewer
+from .components.image_viewer import ImageViewer, UnifiedMaskViewer, UNIFIED_VIEWER_WIDTH, UNIFIED_VIEWER_HEIGHT
 from .components.control_panels import (
     FileSelectionPanel, PrintModePanel,
     PrinterPanel, ProgressPanel, LogPanel, PrintQuantityPanel
@@ -225,7 +225,7 @@ class HanaStudioMainWindow:
         return tab_widget
     
     def create_unified_image_row_large(self, is_front: bool) -> QFrame:
-        """확대된 이미지 뷰어 행 생성"""
+        """통일된 크기의 이미지 뷰어 행 생성"""
         row_frame = QFrame()
         row_frame.setStyleSheet("""
             QFrame {
@@ -242,7 +242,7 @@ class HanaStudioMainWindow:
         # === 중앙 정렬을 위한 여백 ===
         row_layout.addStretch(1)
         
-        # === 원본 이미지 뷰어 (확대된 크기) ===
+        # === 원본 이미지 뷰어 (통일된 크기) ===
         if is_front:
             self.front_original_viewer = ImageViewer("원본 이미지", enable_process_button=True)
             original_viewer = self.front_original_viewer
@@ -250,8 +250,7 @@ class HanaStudioMainWindow:
             self.back_original_viewer = ImageViewer("원본 이미지", enable_process_button=True)
             original_viewer = self.back_original_viewer
         
-        # 확대된 크기: 380x480
-        original_viewer.setFixedSize(380, 480)
+        # ✨ 통일된 크기 사용: ImageViewer가 자체적으로 크기 설정함
         original_viewer.setStyleSheet("""
             QWidget {
                 background-color: #FFFFFF;
@@ -263,7 +262,7 @@ class HanaStudioMainWindow:
         # === 프로페셔널한 화살표 1 ===
         arrow1 = self.create_professional_arrow("→", "#4A90E2")
         
-        # === 통합 마스킹 미리보기 뷰어 (확대된 크기) ===
+        # === 통합 마스킹 미리보기 뷰어 (통일된 크기) ===
         if is_front:
             self.front_unified_mask_viewer = UnifiedMaskViewer("마스킹 미리보기")
             unified_mask_viewer = self.front_unified_mask_viewer
@@ -271,8 +270,7 @@ class HanaStudioMainWindow:
             self.back_unified_mask_viewer = UnifiedMaskViewer("마스킹 미리보기")
             unified_mask_viewer = self.back_unified_mask_viewer
         
-        # 확대된 크기: 380x480
-        unified_mask_viewer.setFixedSize(380, 480)
+        # ✨ 통일된 크기 사용: UnifiedMaskViewer가 자체적으로 크기 설정함
         unified_mask_viewer.setStyleSheet("""
             QWidget {
                 background-color: #FFFFFF;
@@ -284,7 +282,7 @@ class HanaStudioMainWindow:
         # === 프로페셔널한 화살표 2 ===
         arrow2 = self.create_professional_arrow("←", "#28A745")
         
-        # === 수동 마스킹 업로드 뷰어 (확대된 크기) ===
+        # === 수동 마스킹 업로드 뷰어 (통일된 크기) ===
         if is_front:
             self.front_manual_mask_viewer = ImageViewer(
                 "수동 마스킹\n클릭하여 업로드", 
@@ -300,8 +298,7 @@ class HanaStudioMainWindow:
             )
             manual_mask_viewer = self.back_manual_mask_viewer
         
-        # 확대된 크기: 380x480
-        manual_mask_viewer.setFixedSize(380, 480)
+        # ✨ 통일된 크기 사용: ImageViewer가 자체적으로 크기 설정함
         manual_mask_viewer.setStyleSheet("""
             QWidget {
                 background-color: #FFFFFF;
