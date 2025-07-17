@@ -21,7 +21,7 @@ from config import config, AppConstants, get_resource_path
 
 
 class HanaStudio(QMainWindow):
-    """Hana Studio 메인 애플리케이션 클래스 - 개별 면 방향 제어"""
+    """Hana Studio 메인 애플리케이션 클래스 - 탭 기반 UI 지원"""
     
     def __init__(self):
         super().__init__()
@@ -161,7 +161,7 @@ class HanaStudio(QMainWindow):
         self.setStyleSheet(get_app_style())
     
     def _connect_signals(self):
-        """시그널 연결 - 개별 면 방향 시그널 추가"""
+        """시그널 연결 - 탭 관련 시그널 추가"""
         components = self.ui.components
         
         # 파일 선택
@@ -192,12 +192,21 @@ class HanaStudio(QMainWindow):
             lambda value: self.log(f"뒷면 임계값 변경: {value}")
         )
         
-        # 나머지 시그널들...
+        # 기존 시그널들
         components['print_mode_panel'].mode_changed.connect(self.on_print_mode_changed)
         components['print_mode_panel'].dual_side_changed.connect(self.on_dual_side_toggled)
         components['print_quantity_panel'].quantity_changed.connect(self.on_print_quantity_changed)
         components['printer_panel'].test_requested.connect(self.test_printer_connection)
         components['printer_panel'].print_requested.connect(self.print_card)
+
+        # ✨ 탭 변경 시그널 연결 (새로 추가)
+        if 'image_tab_widget' in components:
+            components['image_tab_widget'].tab_changed.connect(self.on_image_tab_changed)
+
+    def on_image_tab_changed(self, tab_index: int):
+        """이미지 탭 변경 시 처리"""
+        tab_name = "앞면" if tab_index == 0 else "뒷면"
+        self.log(f"📑 {tab_name} 탭으로 전환")
 
     def on_front_orientation_changed(self, orientation: str):
         """앞면 방향 변경 처리"""
@@ -295,6 +304,9 @@ class HanaStudio(QMainWindow):
         # ImageViewer에 이미지 설정
         self.ui.components['front_original_viewer'].set_image(file_path)
         
+        # ✨ 앞면 탭으로 자동 전환
+        self.ui.set_current_tab(0)
+        
         # OpenCV로 읽기 (기존 로직 유지)
         try:
             self.front_original_image = self.file_manager._safe_imread(file_path)
@@ -306,7 +318,6 @@ class HanaStudio(QMainWindow):
         
         self._update_ui_state()
         self._reset_front_processing_results()
-
 
     def select_back_image(self):
         """뒷면 이미지 선택 - PyInstaller 호환"""
@@ -358,6 +369,10 @@ class HanaStudio(QMainWindow):
         # ImageViewer에 이미지 설정
         self.ui.components['back_original_viewer'].set_image(file_path)
         
+        # ✨ 뒷면 탭으로 자동 전환
+        if self.is_dual_side:
+            self.ui.set_current_tab(1)
+        
         # OpenCV로 읽기
         try:
             self.back_original_image = self.file_manager._safe_imread(file_path)
@@ -369,7 +384,6 @@ class HanaStudio(QMainWindow):
         
         self._update_ui_state()
         self._reset_back_processing_results()
-
 
     def process_single_image(self, is_front: bool, threshold: int = 200):
         """개별 이미지 배경제거 처리 - 항상 원본 이미지로 처리"""
@@ -423,6 +437,9 @@ class HanaStudio(QMainWindow):
         # 파일선택 패널에 양면 상태 전달
         self.ui.components['file_panel'].set_dual_side_enabled(checked)
         
+        # ✨ 탭 위젯에 양면 상태 전달
+        self.ui.set_dual_side_enabled(checked)
+        
         if not checked:
             # 단면 모드로 변경 시 뒷면 데이터 초기화
             self.back_image_path = None
@@ -433,6 +450,9 @@ class HanaStudio(QMainWindow):
             self.ui.components['back_original_viewer'].clear_image()
             self.ui.components['back_unified_mask_viewer'].clear_mask()
             self.ui.components['back_manual_mask_viewer'].clear_image()
+            
+            # ✨ 앞면 탭으로 강제 이동
+            self.ui.set_current_tab(0)
         
         # 인쇄 버튼 텍스트 업데이트
         self.ui.components['printer_panel'].update_print_button_text(

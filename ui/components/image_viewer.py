@@ -1,6 +1,6 @@
 """
 ui/components/image_viewer.py 수정
-회전 기능 제거, 각 면별 출력 방향 선택 기능 추가
+원본과 마스킹 미리보기를 정확히 같은 크기로 표시
 """
 
 import numpy as np
@@ -20,7 +20,7 @@ class OrientationButton(QRadioButton):
     def __init__(self, text, orientation="portrait"):
         super().__init__(text)
         self.orientation = orientation
-        self.setFixedSize(65, 28)  # 높이 줄임 (32 → 28)
+        self.setFixedSize(70, 30)
         self.setFont(QFont("Segoe UI", 9))
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         
@@ -57,8 +57,8 @@ class ProcessButton(QPushButton):
     
     def __init__(self, text):
         super().__init__(text)
-        self.setFixedSize(80, 32)  # 높이 줄임 (32 → 28)
-        self.setFont(QFont("Segoe UI", 9, QFont.Weight.Medium))
+        self.setFixedSize(90, 36)
+        self.setFont(QFont("Segoe UI", 10, QFont.Weight.Medium))
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         
         self.setStyleSheet("""
@@ -68,7 +68,7 @@ class ProcessButton(QPushButton):
                 color: white;
                 border: none;
                 border-radius: 4px;
-                padding: 0 6px;
+                padding: 0 8px;
                 font-weight: 600;
             }
             QPushButton:hover {
@@ -92,39 +92,33 @@ class CompactThresholdSlider(QWidget):
 
     def __init__(self, initial_value=45):
         super().__init__()
-        self.setFixedSize(160, 32)  # 140 → 155로 증가
+        self.setFixedSize(180, 36)
         self._setup_ui(initial_value)
 
     def _setup_ui(self, initial_value):
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(2, 2, 2, 2)
-        layout.setSpacing(4)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(6)
         layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-
-        # label = QLabel("T:")
-        # label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
-        # label.setStyleSheet("color: #212529; background: transparent;")
-        # label.setFixedSize(25, 28)  # width와 height 모두 명시
-        # label.setAlignment(Qt.AlignmentFlag.AlignCenter)  # 중앙 정렬 추가
 
         self.slider = QSlider(Qt.Orientation.Horizontal)
         self.slider.setRange(0, 255)
         self.slider.setValue(initial_value)
-        self.slider.setFixedWidth(105)  # 80 → 85로 증가
-        self.slider.setFixedHeight(28)  # 26 → 28로 증가
+        self.slider.setFixedWidth(120)
+        self.slider.setFixedHeight(30)
         self.slider.setStyleSheet("""
             QSlider::groove:horizontal {
                 border: 1px solid #DEE2E6;
-                height: 5px;
+                height: 6px;
                 background: #F8F9FA;
-                border-radius: 2px;
+                border-radius: 3px;
             }
             QSlider::handle:horizontal {
                 background: #4A90E2;
                 border: 1px solid #357ABD;
-                width: 14px;
-                margin: -5px 0;
-                border-radius: 7px;
+                width: 16px;
+                margin: -6px 0;
+                border-radius: 8px;
             }
             QSlider::handle:horizontal:hover {
                 background: #5BA0F2;
@@ -132,21 +126,20 @@ class CompactThresholdSlider(QWidget):
         """)
 
         self.value_label = QLabel(str(initial_value))
-        self.value_label.setFont(QFont("Segoe UI", 9))
+        self.value_label.setFont(QFont("Segoe UI", 10))
         self.value_label.setStyleSheet("""
             QLabel {
                 background-color: #F8F9FA;
                 border: 1px solid #DEE2E6;
-                border-radius: 3px;
+                border-radius: 4px;
                 color: #495057;
                 font-weight: 600;
-                padding: 2px;
+                padding: 4px;
             }
         """)
-        self.value_label.setFixedSize(45, 25)  # 요청대로 45x32
+        self.value_label.setFixedSize(50, 28)
         self.value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # layout.addWidget(label)
         layout.addWidget(self.slider)
         layout.addWidget(self.value_label)
 
@@ -163,9 +156,8 @@ class CompactThresholdSlider(QWidget):
         self.slider.setValue(value)
 
 
-
 class ImageViewer(QWidget):
-    """각 면별 출력 방향 선택이 가능한 이미지 뷰어 위젯"""
+    """확대된 이미지 뷰어 위젯 - 통일된 크기"""
     
     # 시그널들
     image_clicked = Signal()
@@ -179,34 +171,33 @@ class ImageViewer(QWidget):
         self.title = title
         self.enable_click_upload = enable_click_upload
         self.enable_process_button = enable_process_button
-        self.show_orientation_buttons = show_orientation_buttons  # 추가
+        self.show_orientation_buttons = show_orientation_buttons
         self.original_pixmap = None
         self.current_image_array = None
         self.original_image_array = None
         self.image_path = None
         self.current_orientation = "portrait"  # 현재 출력 방향
         
-        self.setMinimumSize(160, 0)  # 높이 감소 (280 → 260, 이미지 미리보기 공간 축소)
+        self.setMinimumSize(200, 0)
         self._setup_ui()
         self._set_placeholder_text()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        # layout.setContentsMargins(0, 2, 6, 2)  # 위/아래 여백 최소화
-        layout.setSpacing(0)
+        layout.setSpacing(8)
 
         # 배경제거 컨트롤
         if self.enable_process_button:
             control_layout = QHBoxLayout()
-            control_layout.setSpacing(2)
+            control_layout.setSpacing(8)
 
             self.process_btn = ProcessButton("배경제거")
-            self.process_btn.setFixedHeight(45)  # 버튼 높이 축소
+            self.process_btn.setFixedHeight(50)
             self.process_btn.clicked.connect(self._on_process_clicked)
             self.process_btn.setEnabled(False)
 
             self.threshold_slider = CompactThresholdSlider(45)
-            self.threshold_slider.setFixedHeight(45)  # 슬라이더 높이 축소
+            self.threshold_slider.setFixedHeight(50)
             self.threshold_slider.threshold_changed.connect(self.threshold_changed.emit)
 
             control_layout.addStretch()
@@ -216,13 +207,14 @@ class ImageViewer(QWidget):
 
             layout.addLayout(control_layout)
 
-        # 이미지 라벨
+        # 🎯 이미지 라벨 - 통일된 표준 크기
         self.image_label = QLabel()
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # ✅ 고정 높이로 설정해 너무 커지지 않도록 하면서 충분히 크게 유지
+        # ✨ 모든 뷰어가 같은 크기를 사용하도록 표준화
         self.image_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-        self.image_label.setMaximumHeight(200)  # 이미지 높이 조정 포인트 (220~260 권장)
+        self.image_label.setFixedHeight(380)  # 고정 높이로 통일
+        self.image_label.setMinimumHeight(380)  # 최소/최대 동일
 
         if self.enable_click_upload:
             self.image_label.setStyleSheet("""
@@ -231,7 +223,7 @@ class ImageViewer(QWidget):
                     border: 2px dashed #4A90E2;
                     border-radius: 12px;
                     color: #4A90E2;
-                    font-size: 13px;
+                    font-size: 14px;
                     font-weight: 600;
                 }
                 QLabel:hover {
@@ -247,16 +239,16 @@ class ImageViewer(QWidget):
                     border: 2px dashed #DDD;
                     border-radius: 12px;
                     color: #666;
-                    font-size: 14px;
+                    font-size: 15px;
                 }
             """)
 
-        layout.addWidget(self.image_label)  # ✅ stretch=1 제거 → 아래 버튼이 밀리지 않음
+        layout.addWidget(self.image_label)
 
         # 방향 버튼 (맨 아래 고정)
         if self.show_orientation_buttons:
             orientation_layout = QHBoxLayout()
-            orientation_layout.setSpacing(2)
+            orientation_layout.setSpacing(4)
 
             self.portrait_btn = OrientationButton("📱 세로", "portrait")
             self.landscape_btn = OrientationButton("📺 가로", "landscape")
@@ -278,8 +270,6 @@ class ImageViewer(QWidget):
             self.landscape_btn.toggled.connect(self._on_orientation_changed)
 
             layout.addLayout(orientation_layout)
-
-
 
     def _on_orientation_changed(self):
         """방향 변경 처리"""
@@ -381,7 +371,6 @@ class ImageViewer(QWidget):
                 print(f"[ERROR] 파일이 존재하지 않음: {file_path}")
                 from PySide6.QtWidgets import QMessageBox
                 QMessageBox.warning(self, "오류", f"선택한 파일을 찾을 수 없습니다:\n{file_path}")
-
 
     def _safe_imread_unicode(self, image_path: str) -> np.ndarray:
         """한글 경로를 지원하는 안전한 이미지 읽기"""
@@ -551,23 +540,14 @@ class ImageViewer(QWidget):
             self.process_btn.setEnabled(enabled)
     
     def update_display(self):
-        """디스플레이 업데이트 (크기에 맞게 조정)"""
+        """디스플레이 업데이트 - 표준 크기로 통일"""
         if self.original_pixmap is None or self.original_pixmap.isNull():
             return
             
         try:
-            widget_size = self.size()
-            label_size = self.image_label.size()
-            
-            if label_size.width() <= 0 or label_size.height() <= 0:
-                QTimer.singleShot(50, self.update_display)
-                return
-            
-            available_height = label_size.height() - 10
-            available_width = label_size.width() - 10
-            
-            if available_height <= 0 or available_width <= 0:
-                return
+            # ✨ 모든 뷰어가 동일한 크기 사용
+            available_width = 360   # 고정 너비
+            available_height = 360  # 고정 높이 (여백 20px 제외)
             
             scaled_pixmap = self.original_pixmap.scaled(
                 available_width, 
@@ -596,7 +576,7 @@ class ImageViewer(QWidget):
 
 
 class UnifiedMaskViewer(QWidget):
-    """통합 마스킹 미리보기 뷰어 - 자동/수동 마스킹 중 최신것만 표시, 카드 방향 지원"""
+    """통일된 크기의 마스킹 미리보기 뷰어 - 원본과 정확히 같은 크기"""
     
     def __init__(self, title=""):
         super().__init__()
@@ -607,7 +587,8 @@ class UnifiedMaskViewer(QWidget):
         self.original_pixmap = None
         self.card_orientation = "portrait"  # 기본값
         
-        self.setMinimumSize(260, 320)
+        # ✨ 원본과 정확히 같은 크기
+        self.setMinimumSize(380, 480)  # ImageViewer와 동일
         self._setup_ui()
         self._set_placeholder_text()
     
@@ -615,32 +596,37 @@ class UnifiedMaskViewer(QWidget):
         """UI 구성"""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(5)
+        layout.setSpacing(8)
         
         # 이미지 표시 라벨
         self.image_label = QLabel()
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # ✨ 원본과 정확히 같은 크기로 설정
+        self.image_label.setFixedHeight(380)  # ImageViewer와 동일
+        self.image_label.setMinimumHeight(380)  # ImageViewer와 동일
+        
         self.image_label.setStyleSheet("""
             QLabel {
                 background: #FFFFFF;
                 border: 2px dashed #28A745;
                 border-radius: 12px;
                 color: #666;
-                font-size: 14px;
+                font-size: 15px;
             }
         """)
         
         # 마스킹 타입 표시 라벨
         self.type_label = QLabel()
         self.type_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.type_label.setFixedHeight(25)
+        self.type_label.setFixedHeight(30)
         self.type_label.setStyleSheet("""
             QLabel {
                 background: transparent;
                 color: #6C757D;
-                font-size: 11px;
+                font-size: 12px;
                 font-weight: 600;
-                padding: 2px;
+                padding: 4px;
             }
         """)
         
@@ -672,27 +658,9 @@ class UnifiedMaskViewer(QWidget):
                 border: 2px dashed {border_color};
                 border-radius: 12px;
                 color: #666;
-                font-size: 14px;
+                font-size: 15px;
             }}
         """)
-    
-    def _get_display_size(self):
-        """카드 방향에 따른 표시 크기 계산"""
-        widget_width = 280
-        widget_height = 200
-        
-        if self.card_orientation == "portrait":
-            # 세로형: 53.98 × 85.6 비율
-            aspect_ratio = 53.98 / 85.6  # 약 0.63
-            display_height = min(widget_height - 20, 160)
-            display_width = int(display_height * aspect_ratio)
-        else:
-            # 가로형: 85.6 × 53.98 비율
-            aspect_ratio = 85.6 / 53.98  # 약 1.59
-            display_width = min(widget_width - 20, 200)
-            display_height = int(display_width / aspect_ratio)
-        
-        return display_width, display_height
     
     def set_auto_mask(self, mask_array):
         """자동 배경제거 마스크 설정"""
@@ -704,9 +672,9 @@ class UnifiedMaskViewer(QWidget):
             QLabel {
                 background: rgba(74, 144, 226, 0.1);
                 color: #4A90E2;
-                font-size: 11px;
+                font-size: 12px;
                 font-weight: 600;
-                padding: 4px 8px;
+                padding: 6px 10px;
                 border-radius: 4px;
             }
         """)
@@ -721,9 +689,9 @@ class UnifiedMaskViewer(QWidget):
             QLabel {
                 background: rgba(40, 167, 69, 0.1);
                 color: #28A745;
-                font-size: 11px;
+                font-size: 12px;
                 font-weight: 600;
-                padding: 4px 8px;
+                padding: 6px 10px;
                 border-radius: 4px;
             }
         """)
@@ -792,16 +760,18 @@ class UnifiedMaskViewer(QWidget):
             return QPixmap()
     
     def update_display(self):
-        """카드 방향을 고려한 디스플레이 업데이트 (public 메서드)"""
+        """마스킹 미리보기 업데이트 - 원본과 정확히 같은 크기"""
         if self.original_pixmap is None or self.original_pixmap.isNull():
             return
             
         try:
-            display_width, display_height = self._get_display_size()
+            # ✨ 핵심: 원본 ImageViewer와 정확히 같은 크기 사용
+            available_width = 360   # ImageViewer와 동일
+            available_height = 360  # ImageViewer와 동일
             
             scaled_pixmap = self.original_pixmap.scaled(
-                display_width, 
-                display_height,
+                available_width, 
+                available_height,
                 Qt.AspectRatioMode.KeepAspectRatio, 
                 Qt.TransformationMode.SmoothTransformation
             )

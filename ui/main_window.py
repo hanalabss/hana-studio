@@ -1,13 +1,13 @@
 """
 ui/main_window.py 수정
-이미지 뷰어 높이 조정 (방향 버튼 공간 확보)
+탭 기반 이미지 뷰어로 변경 - 기존 함수명 및 디자인 유지
 """
 
 from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QProgressBar, QWidget, 
-    QFrame, QLabel, QSplitter, QScrollArea
+    QFrame, QLabel, QSplitter, QScrollArea, QTabWidget
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 
 from .components.image_viewer import ImageViewer, UnifiedMaskViewer
@@ -18,11 +18,73 @@ from .components.control_panels import (
 from .styles import get_header_style, get_status_bar_style
 
 
+class ImageTabWidget(QTabWidget):
+    """프로페셔널한 이미지 탭 위젯"""
+    tab_changed = Signal(int)  # 탭 변경 시그널
+    
+    def __init__(self):
+        super().__init__()
+        self.setTabPosition(QTabWidget.TabPosition.North)
+        self.setMovable(False)
+        self.setTabsClosable(False)
+        
+        # 프로페셔널한 탭 스타일
+        self.setStyleSheet("""
+            QTabWidget::pane {
+                border: 2px solid #DEE2E6;
+                border-radius: 12px;
+                background-color: #FFFFFF;
+                margin-top: -1px;
+            }
+            QTabWidget::tab-bar {
+                alignment: center;
+            }
+            QTabBar::tab {
+                background-color: #F8F9FA;
+                border: 2px solid #DEE2E6;
+                border-bottom: none;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+                padding: 12px 24px;
+                margin-right: 2px;
+                font-size: 13px;
+                font-weight: 600;
+                color: #6C757D;
+                min-width: 100px;
+            }
+            QTabBar::tab:hover {
+                background-color: #E9ECEF;
+                color: #495057;
+            }
+            QTabBar::tab:selected {
+                background-color: #FFFFFF;
+                color: #4A90E2;
+                border-color: #DEE2E6;
+                font-weight: bold;
+            }
+            QTabBar::tab:!selected {
+                margin-top: 2px;
+            }
+        """)
+        
+        # 탭 변경 시그널 연결
+        self.currentChanged.connect(self.tab_changed.emit)
+    
+    def set_dual_side_enabled(self, enabled: bool):
+        """양면 모드에 따른 탭 표시/숨김"""
+        if enabled:
+            self.setTabVisible(1, True)  # 뒷면 탭 표시
+        else:
+            self.setTabVisible(1, False)  # 뒷면 탭 숨김
+            self.setCurrentIndex(0)  # 앞면 탭으로 강제 이동
+
+
 class HanaStudioMainWindow:
-    """메인 윈도우 UI 구성 - 개별 면 방향 제어 지원"""
+    """메인 윈도우 UI 구성 - 탭 기반 이미지 뷰어"""
     
     def __init__(self, parent_widget):
         self.parent = parent_widget
+        self.current_tab_index = 0  # 현재 선택된 탭
         self.setup_ui()
     
     def setup_ui(self):
@@ -40,17 +102,14 @@ class HanaStudioMainWindow:
         # 1. 헤더
         self.create_header(main_layout)
         
-        # 2. 컨트롤 패널 영역 (가로 배치)
+        # 2. 컨트롤 패널 영역 (기존과 동일)
         self.create_simplified_control_area(main_layout)
         
-        # 3. 메인 컨텐츠 영역 (개별 면 방향 제어) - 더 많은 공간 할당
-        self.create_unified_image_area(main_layout)
-        
-        # 4. 하단 상태바 제거 - 공간을 이미지 영역에 할당
-        # self.create_status_bar(main_layout)
+        # 3. 탭 기반 이미지 영역 (확대된 공간)
+        self.create_tabbed_image_area(main_layout)
     
     def create_header(self, parent_layout):
-        """헤더 생성"""
+        """헤더 생성 - 기존과 동일"""
         header_frame = QFrame()
         header_frame.setFixedHeight(55)
         header_frame.setStyleSheet("""
@@ -80,7 +139,7 @@ class HanaStudioMainWindow:
         parent_layout.addWidget(header_frame)
     
     def create_simplified_control_area(self, parent_layout):
-        """간소화된 컨트롤 패널 영역"""
+        """간소화된 컨트롤 패널 영역 - 기존과 동일"""
         control_container = QFrame()
         control_container.setFixedHeight(240)
         control_container.setStyleSheet("""
@@ -131,84 +190,80 @@ class HanaStudioMainWindow:
         
         parent_layout.addWidget(control_container)
     
-    def create_unified_image_area(self, parent_layout):
-        """개별 면 방향 제어가 포함된 이미지 뷰어 영역"""
-        image_widget = QWidget()
-        image_widget.setStyleSheet("background-color: #F8F9FA;")
-        image_layout = QVBoxLayout(image_widget)
-        image_layout.setSpacing(12)
-        image_layout.setContentsMargins(15, 5, 15, 10)
+    def create_tabbed_image_area(self, parent_layout):
+        """탭 기반 이미지 뷰어 영역 - 확대된 공간"""
+        # 탭 위젯 생성
+        self.image_tab_widget = ImageTabWidget()
         
-        # === 앞면 이미지 영역 ===
-        front_group = self.create_unified_image_row("📄 앞면", is_front=True)
+        # 앞면 탭 생성
+        front_tab = self.create_image_tab_content(is_front=True)
+        self.image_tab_widget.addTab(front_tab, "📄 앞면")
         
-        # === 뒷면 이미지 영역 ===
-        back_group = self.create_unified_image_row("📄 뒷면", is_front=False)
+        # 뒷면 탭 생성
+        back_tab = self.create_image_tab_content(is_front=False)
+        self.image_tab_widget.addTab(back_tab, "📄 뒷면")
         
-        # 레이아웃에 추가
-        image_layout.addWidget(front_group, 1)
-        image_layout.addWidget(back_group, 1)
+        # 초기에는 뒷면 탭 숨김 (양면 모드가 활성화되면 표시)
+        self.image_tab_widget.set_dual_side_enabled(False)
         
-        parent_layout.addWidget(image_widget, 1)
+        # 탭 변경 시그널 연결
+        self.image_tab_widget.tab_changed.connect(self._on_tab_changed)
+        
+        parent_layout.addWidget(self.image_tab_widget, 1)
     
-    # ui/main_window.py의 create_unified_image_row() 함수에서 수정
-
-    def create_unified_image_row(self, title: str, is_front: bool) -> QFrame:
-        """개별 면 방향 제어가 포함된 이미지 행 생성"""
-        group = QFrame()
-        group.setStyleSheet("""
+    def create_image_tab_content(self, is_front: bool) -> QWidget:
+        """개별 탭 컨텐츠 생성 - 확대된 이미지 뷰어"""
+        tab_widget = QWidget()
+        tab_layout = QVBoxLayout(tab_widget)
+        tab_layout.setContentsMargins(20, 15, 20, 15)
+        tab_layout.setSpacing(0)
+        
+        # 이미지 뷰어 행 생성 (기존 함수 재사용, 크기만 확대)
+        image_row = self.create_unified_image_row_large(is_front)
+        tab_layout.addWidget(image_row)
+        
+        return tab_widget
+    
+    def create_unified_image_row_large(self, is_front: bool) -> QFrame:
+        """확대된 이미지 뷰어 행 생성"""
+        row_frame = QFrame()
+        row_frame.setStyleSheet("""
             QFrame {
-                background-color: #FFFFFF;
-                border: 2px solid #DEE2E6;
-                border-radius: 12px;
-                padding: 10px;
+                background-color: transparent;
+                border: none;
             }
         """)
         
         # 행 레이아웃 (가로)
-        row_layout = QHBoxLayout(group)
-        row_layout.setSpacing(12)
-        row_layout.setContentsMargins(12, 2, 12, 12)
+        row_layout = QHBoxLayout(row_frame)
+        row_layout.setSpacing(20)
+        row_layout.setContentsMargins(0, 0, 0, 0)
         
         # === 중앙 정렬을 위한 여백 ===
         row_layout.addStretch(1)
         
-        # === 제목 라벨 ===
-        title_label = QLabel(title)
-        title_label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        title_label.setStyleSheet("""
-            color: #495057; 
-            border: none; 
-            padding: 8px 12px;
-            background-color: transparent;
-        """)
-        title_label.setFixedWidth(120)
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        # === 원본 이미지 뷰어 (방향 선택 + 배경제거 버튼 포함) ===
+        # === 원본 이미지 뷰어 (확대된 크기) ===
         if is_front:
-            self.front_original_viewer = ImageViewer("원본", enable_process_button=True)
+            self.front_original_viewer = ImageViewer("원본 이미지", enable_process_button=True)
             original_viewer = self.front_original_viewer
         else:
-            self.back_original_viewer = ImageViewer("원본", enable_process_button=True)
+            self.back_original_viewer = ImageViewer("원본 이미지", enable_process_button=True)
             original_viewer = self.back_original_viewer
         
-        # 크기 통일: 모두 280x320으로 설정
-        original_viewer.setFixedSize(280, 320)
-        
-        # === 화살표 1 ===
-        arrow1 = QLabel("→")
-        arrow1.setFont(QFont("Segoe UI", 20, QFont.Weight.Bold))
-        arrow1.setStyleSheet("""
-            color: #4A90E2; 
-            border: none;
-            padding: 10px;
-            background-color: transparent;
+        # 확대된 크기: 380x480
+        original_viewer.setFixedSize(380, 480)
+        original_viewer.setStyleSheet("""
+            QWidget {
+                background-color: #FFFFFF;
+                border: 2px solid #DEE2E6;
+                border-radius: 12px;
+            }
         """)
-        arrow1.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        arrow1.setFixedSize(40, 40)
         
-        # === 통합 마스킹 미리보기 뷰어 ===
+        # === 프로페셔널한 화살표 1 ===
+        arrow1 = self.create_professional_arrow("→", "#4A90E2")
+        
+        # === 통합 마스킹 미리보기 뷰어 (확대된 크기) ===
         if is_front:
             self.front_unified_mask_viewer = UnifiedMaskViewer("마스킹 미리보기")
             unified_mask_viewer = self.front_unified_mask_viewer
@@ -216,34 +271,46 @@ class HanaStudioMainWindow:
             self.back_unified_mask_viewer = UnifiedMaskViewer("마스킹 미리보기")
             unified_mask_viewer = self.back_unified_mask_viewer
         
-        # 크기 통일: 280x320으로 증가
-        unified_mask_viewer.setFixedSize(280, 300)
-        
-        # === 화살표 2 ===
-        arrow2 = QLabel("←")
-        arrow2.setFont(QFont("Segoe UI", 20, QFont.Weight.Bold))
-        arrow2.setStyleSheet("""
-            color: #28A745; 
-            border: none;
-            padding: 10px;
-            background-color: transparent;
+        # 확대된 크기: 380x480
+        unified_mask_viewer.setFixedSize(380, 480)
+        unified_mask_viewer.setStyleSheet("""
+            QWidget {
+                background-color: #FFFFFF;
+                border: 2px solid #28A745;
+                border-radius: 12px;
+            }
         """)
-        arrow2.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        arrow2.setFixedSize(40, 40)
         
-        # === 수동 마스킹 업로드 뷰어 ===
+        # === 프로페셔널한 화살표 2 ===
+        arrow2 = self.create_professional_arrow("←", "#28A745")
+        
+        # === 수동 마스킹 업로드 뷰어 (확대된 크기) ===
         if is_front:
-            self.front_manual_mask_viewer = ImageViewer("수동 마스킹\n(클릭하여 업로드)", enable_click_upload=True, show_orientation_buttons=False)
+            self.front_manual_mask_viewer = ImageViewer(
+                "수동 마스킹\n클릭하여 업로드", 
+                enable_click_upload=True, 
+                show_orientation_buttons=False
+            )
             manual_mask_viewer = self.front_manual_mask_viewer
         else:
-            self.back_manual_mask_viewer = ImageViewer("수동 마스킹\n(클릭하여 업로드)", enable_click_upload=True, show_orientation_buttons=False)
+            self.back_manual_mask_viewer = ImageViewer(
+                "수동 마스킹\n클릭하여 업로드", 
+                enable_click_upload=True, 
+                show_orientation_buttons=False
+            )
             manual_mask_viewer = self.back_manual_mask_viewer
         
-        # 크기 통일: 280x320으로 증가
-        manual_mask_viewer.setFixedSize(280, 300)
+        # 확대된 크기: 380x480
+        manual_mask_viewer.setFixedSize(380, 480)
+        manual_mask_viewer.setStyleSheet("""
+            QWidget {
+                background-color: #FFFFFF;
+                border: 2px solid #6C757D;
+                border-radius: 12px;
+            }
+        """)
         
         # === 컴포넌트 배치 ===
-        row_layout.addWidget(title_label)
         row_layout.addWidget(original_viewer)
         row_layout.addWidget(arrow1)
         row_layout.addWidget(unified_mask_viewer)
@@ -253,39 +320,47 @@ class HanaStudioMainWindow:
         # === 중앙 정렬을 위한 여백 ===
         row_layout.addStretch(1)
         
-        return group
-
-    # def create_status_bar(self, parent_layout):
-    #     """하단 상태바 생성 - 제거됨"""
-    #     status_frame = QFrame()
-    #     status_frame.setFixedHeight(32)
-    #     status_frame.setStyleSheet("""
-    #         QFrame {
-    #             background-color: #FFFFFF;
-    #             border: none;
-    #             border-radius: 8px;
-    #         }
-    #     """)
-    #     
-    #     status_layout = QHBoxLayout(status_frame)
-    #     status_layout.setContentsMargins(20, 6, 20, 6)
-    #     
-    #     self.status_text = QLabel("준비 완료 | AI 모델 초기화 중...")
-    #     self.status_text.setStyleSheet("color: #6C757D; font-size: 10px; background: transparent;")
-    #     
-    #     status_layout.addWidget(self.status_text)
-    #     status_layout.addStretch()
-    #     
-    #     version_label = QLabel("Hana Studio v1.0")
-    #     version_label.setStyleSheet("color: #ADB5BD; font-size: 9px; background: transparent;")
-    #     status_layout.addWidget(version_label)
-    #     
-    #     parent_layout.addWidget(status_frame)
+        return row_frame
     
-    # 컴포넌트 접근을 위한 속성들
+    def create_professional_arrow(self, arrow_text: str, color: str) -> QLabel:
+        """프로페셔널한 화살표 생성"""
+        arrow = QLabel(arrow_text)
+        arrow.setFont(QFont("Segoe UI", 24, QFont.Weight.Bold))
+        arrow.setStyleSheet(f"""
+            QLabel {{
+                color: {color};
+                background-color: #F8F9FA;
+                border: 2px solid {color};
+                border-radius: 25px;
+                padding: 8px;
+            }}
+        """)
+        arrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        arrow.setFixedSize(50, 50)
+        return arrow
+    
+    def _on_tab_changed(self, index: int):
+        """탭 변경 시 처리"""
+        self.current_tab_index = index
+        # 필요시 추가 로직 구현 (예: 상태 업데이트)
+    
+    def set_dual_side_enabled(self, enabled: bool):
+        """양면 모드 활성화/비활성화"""
+        self.image_tab_widget.set_dual_side_enabled(enabled)
+    
+    def get_current_tab_index(self) -> int:
+        """현재 선택된 탭 인덱스 반환"""
+        return self.current_tab_index
+    
+    def set_current_tab(self, index: int):
+        """탭 선택"""
+        if index < self.image_tab_widget.count():
+            self.image_tab_widget.setCurrentIndex(index)
+    
+    # 컴포넌트 접근을 위한 속성들 - 기존과 동일
     @property
     def components(self):
-        """모든 UI 컴포넌트에 대한 접근"""
+        """모든 UI 컴포넌트에 대한 접근 - 기존 함수명 유지"""
         return {
             'file_panel': self.file_panel,
             'print_mode_panel': self.print_mode_panel,
@@ -306,14 +381,16 @@ class HanaStudioMainWindow:
             'front_manual_mask_viewer': self.front_manual_mask_viewer,
             'back_manual_mask_viewer': self.back_manual_mask_viewer,
             
-            # 하위 호환성을 위한 별칭들
+            # 하위 호환성을 위한 별칭들 - 기존 함수명 유지
             'front_result_viewer': self.front_unified_mask_viewer,
             'back_result_viewer': self.back_unified_mask_viewer,
             'front_auto_result_viewer': self.front_unified_mask_viewer,
             'back_auto_result_viewer': self.back_unified_mask_viewer,
             
-            # 기타 - 상태 텍스트는 컨트롤 패널의 진행상황에서 대체
-            # 'status_text': self.status_text,  # 제거됨
+            # 탭 관련 추가
+            'image_tab_widget': self.image_tab_widget,
+            
+            # 기타
             'progress_bar': self.progress_panel.progress_bar,
             'status_label': self.progress_panel.status_label,
             'log_text': self.log_panel.log_text
