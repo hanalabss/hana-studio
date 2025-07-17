@@ -15,27 +15,30 @@ UNIFIED_IMAGE_HEIGHT = 380
 UNIFIED_IMAGE_DISPLAY_SIZE = 360
 # 추가: 통일된 상단/하단 여백 상수
 UNIFIED_TOP_MARGIN = 50
-UNIFIED_BOTTOM_MARGIN = 40
+UNIFIED_BOTTOM_MARGIN = 30
 
+"""
+ui/components/image_viewer.py에서 수정해야 할 클래스들 - 큰 컨트롤 버전
+"""
 
 class OrientationButton(QRadioButton):
-    """방향 선택 라디오 버튼"""
+    """방향 선택 라디오 버튼 - 크기 증가"""
     def __init__(self, text, orientation="portrait"):
         super().__init__(text)
         self.orientation = orientation
-        self.setFixedSize(70, 30)
-        self.setFont(QFont("Segoe UI", 9))
+        self.setFixedSize(85, 36)  # 70x30 → 85x36으로 증가
+        self.setFont(QFont("Segoe UI", 10))  # 9 → 10으로 증가
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         # 스타일 적용
         self.setStyleSheet("""
             QRadioButton {
                 background-color: #F8F9FA;
                 border: 1px solid #DEE2E6;
-                border-radius: 4px;
+                border-radius: 5px;
                 color: #495057;
                 font-weight: 500;
-                padding: 6px 8px;
-                spacing: 4px;
+                padding: 8px 10px;
+                spacing: 5px;
             }
             QRadioButton:hover {
                 background-color: #E9ECEF;
@@ -55,11 +58,11 @@ class OrientationButton(QRadioButton):
 
 
 class ProcessButton(QPushButton):
-    """배경제거 버튼 컴포넌트"""
+    """배경제거 버튼 컴포넌트 - 크기 증가"""
     def __init__(self, text):
         super().__init__(text)
-        self.setFixedSize(90, 36)
-        self.setFont(QFont("Segoe UI", 10, QFont.Weight.Medium))
+        self.setFixedSize(110, 42)  # 90x36 → 110x42로 증가
+        self.setFont(QFont("Segoe UI", 11, QFont.Weight.Medium))  # 10 → 11로 증가
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setStyleSheet("""
             QPushButton {
@@ -67,8 +70,8 @@ class ProcessButton(QPushButton):
                                            stop: 0 #4A90E2, stop: 1 #357ABD);
                 color: white;
                 border: none;
-                border-radius: 4px;
-                padding: 0 8px;
+                border-radius: 5px;
+                padding: 0 10px;
                 font-weight: 600;
             }
             QPushButton:hover {
@@ -87,38 +90,38 @@ class ProcessButton(QPushButton):
 
 
 class CompactThresholdSlider(QWidget):
-    """컴팩트한 임계값 슬라이더"""
+    """컴팩트한 임계값 슬라이더 - 크기 증가"""
     threshold_changed = Signal(int)
 
     def __init__(self, initial_value=45):
         super().__init__()
-        self.setFixedSize(180, 36)
+        self.setFixedSize(210, 42)  # 180x36 → 210x42로 증가
         self._setup_ui(initial_value)
 
     def _setup_ui(self, initial_value):
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(6)
+        layout.setContentsMargins(5, 5, 5, 5)  # 여백 증가
+        layout.setSpacing(8)  # 간격 증가
         layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         self.slider = QSlider(Qt.Orientation.Horizontal)
         self.slider.setRange(0, 255)
         self.slider.setValue(initial_value)
-        self.slider.setFixedWidth(120)
-        self.slider.setFixedHeight(30)
+        self.slider.setFixedWidth(130)  # 120 → 140으로 증가
+        self.slider.setFixedHeight(35)  # 30 → 35로 증가
         self.slider.setStyleSheet("""
             QSlider::groove:horizontal {
                 border: 1px solid #DEE2E6;
-                height: 6px;
+                height: 8px;
                 background: #F8F9FA;
-                border-radius: 3px;
+                border-radius: 4px;
             }
             QSlider::handle:horizontal {
                 background: #4A90E2;
                 border: 1px solid #357ABD;
-                width: 16px;
-                margin: -6px 0;
-                border-radius: 8px;
+                width: 18px;
+                margin: -7px 0;
+                border-radius: 9px;
             }
             QSlider::handle:horizontal:hover {
                 background: #5BA0F2;
@@ -126,18 +129,18 @@ class CompactThresholdSlider(QWidget):
         """)
 
         self.value_label = QLabel(str(initial_value))
-        self.value_label.setFont(QFont("Segoe UI", 10))
+        self.value_label.setFont(QFont("Segoe UI", 11))  # 10 → 11로 증가
         self.value_label.setStyleSheet("""
             QLabel {
                 background-color: #F8F9FA;
                 border: 1px solid #DEE2E6;
-                border-radius: 4px;
+                border-radius: 5px;
                 color: #495057;
                 font-weight: 600;
-                padding: 4px;
+                padding: 5px;
             }
         """)
-        self.value_label.setFixedSize(50, 28)
+        self.value_label.setFixedSize(60, 32)  # 50x28 → 60x32로 증가
         self.value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         layout.addWidget(self.slider)
@@ -154,6 +157,10 @@ class CompactThresholdSlider(QWidget):
     def set_value(self, value):
         self.slider.setValue(value)
 
+
+# 상수도 조정 - 상단 여백 증가
+UNIFIED_TOP_MARGIN = 50  # 50 → 55로 증가
+UNIFIED_BOTTOM_MARGIN = 55
 
 class ImageViewer(QWidget):
     """통일된 크기의 이미지 뷰어 위젯"""
@@ -201,15 +208,17 @@ class ImageViewer(QWidget):
             control_layout.addWidget(self.process_btn)
             control_layout.addWidget(self.threshold_slider)
             control_layout.addStretch()
-            # 컨테이너에 넣어 상단 고정 높이 확보
+            # 컨테이너에 넣어 상단 고정 높이 확보 - 투명 배경
             control_container = QWidget()
             control_container.setFixedHeight(UNIFIED_TOP_MARGIN)
+            control_container.setStyleSheet("background: transparent; border: none;")
             control_container.setLayout(control_layout)
             layout.addWidget(control_container)
         else:
-            # 상단 빈 공간 확보
+            # 상단 빈 공간 확보 - 투명 배경
             spacer_top = QWidget()
             spacer_top.setFixedHeight(UNIFIED_TOP_MARGIN)
+            spacer_top.setStyleSheet("background: transparent; border: none;")
             layout.addWidget(spacer_top)
 
         # 이미지 표시 라벨 (고정 높이)
@@ -256,16 +265,17 @@ class ImageViewer(QWidget):
             self.orientation_group.addButton(self.landscape_btn, 1)
             # 가로/세로 버튼 배치 (수평 레이아웃)
             orientation_layout = QHBoxLayout()
-            orientation_layout.setSpacing(4)
+            orientation_layout.setSpacing(8)
             orientation_layout.addStretch()
             orientation_layout.addWidget(self.portrait_btn)
             orientation_layout.addWidget(self.landscape_btn)
             orientation_layout.addStretch()
-            # 컨테이너를 만들어 수직 중앙 정렬
+            # 컨테이너를 만들어 수직 중앙 정렬 - 투명 배경
             orientation_container = QWidget()
             orientation_container.setFixedHeight(UNIFIED_BOTTOM_MARGIN)
+            orientation_container.setStyleSheet("background: transparent; border: none;")
             orientation_vlayout = QVBoxLayout(orientation_container)
-            orientation_vlayout.setContentsMargins(0, 0, 0, 0)
+            orientation_vlayout.setContentsMargins(0, 18, 0, 0)
             orientation_vlayout.addStretch()
             orientation_vlayout.addLayout(orientation_layout)
             orientation_vlayout.addStretch()
@@ -278,11 +288,12 @@ class ImageViewer(QWidget):
         else:
             spacer_bottom = QWidget()
             spacer_bottom.setFixedHeight(UNIFIED_BOTTOM_MARGIN)
+            spacer_bottom.setStyleSheet("background: transparent; border: none;")
             layout.addWidget(spacer_bottom)
 
         # 남은 공간을 위로 밀어 올림
         layout.addStretch()
-
+        
     def _on_orientation_changed(self):
         """방향 변경 처리"""
         new_orientation = "portrait" if self.portrait_btn.isChecked() else "landscape"
@@ -550,9 +561,10 @@ class UnifiedMaskViewer(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
         
-        # 상단 빈 공간 확보 (원본 뷰어와 정렬)
+        # 상단 빈 공간 확보 (원본 뷰어와 정렬) - 투명 배경
         spacer_top = QWidget()
         spacer_top.setFixedHeight(UNIFIED_TOP_MARGIN)
+        spacer_top.setStyleSheet("background: transparent; border: none;")
         layout.addWidget(spacer_top)
         
         # 이미지 표시 라벨 (고정 높이)
@@ -571,13 +583,14 @@ class UnifiedMaskViewer(QWidget):
         """)
         layout.addWidget(self.image_label)
         
-        # 하단 마스킹 타입 라벨 (고정 높이)
+        # 하단 마스킹 타입 라벨 (고정 높이) - 투명 배경
         self.type_label = QLabel()
         self.type_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.type_label.setFixedHeight(UNIFIED_BOTTOM_MARGIN)
         self.type_label.setStyleSheet("""
             QLabel {
                 background: transparent;
+                border: none;
                 color: #6C757D;
                 font-size: 12px;
                 font-weight: 600;
@@ -588,7 +601,8 @@ class UnifiedMaskViewer(QWidget):
         
         # 남은 공간을 아래로 밀어내기
         layout.addStretch()
-    
+
+
     def _set_placeholder_text(self):
         """플레이스홀더 텍스트 설정"""
         placeholder = f"{self.title}\n\n배경제거 또는 수동 업로드 필요" if self.title else "배경제거 또는 수동 업로드 필요"
