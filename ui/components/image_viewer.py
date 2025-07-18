@@ -539,7 +539,6 @@ class ImageViewer(QWidget):
         if self.original_pixmap:
             QTimer.singleShot(50, self.update_display)
 
-
 class UnifiedMaskViewer(QWidget):
     """통일된 크기의 마스킹 미리보기 뷰어"""
     def __init__(self, title=""):
@@ -583,10 +582,10 @@ class UnifiedMaskViewer(QWidget):
         """)
         layout.addWidget(self.image_label)
         
-        # 하단 마스킹 타입 라벨 (고정 높이) - 투명 배경
+        # 하단 마스킹 타입 라벨 (고정 높이를 작게 설정) - 투명 배경
         self.type_label = QLabel()
         self.type_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.type_label.setFixedHeight(UNIFIED_BOTTOM_MARGIN)
+        self.type_label.setFixedHeight(32)  # UNIFIED_BOTTOM_MARGIN 대신 작은 고정값 사용
         self.type_label.setStyleSheet("""
             QLabel {
                 background: transparent;
@@ -601,7 +600,6 @@ class UnifiedMaskViewer(QWidget):
         
         # 남은 공간을 아래로 밀어내기
         layout.addStretch()
-
 
     def _set_placeholder_text(self):
         """플레이스홀더 텍스트 설정"""
@@ -643,8 +641,9 @@ class UnifiedMaskViewer(QWidget):
                 color: #4A90E2;
                 font-size: 12px;
                 font-weight: 600;
-                padding: 6px 10px;
+                padding: 4px 8px;
                 border-radius: 4px;
+                margin: 2px;
             }
         """)
     
@@ -660,8 +659,9 @@ class UnifiedMaskViewer(QWidget):
                 color: #28A745;
                 font-size: 12px;
                 font-weight: 600;
-                padding: 6px 10px;
+                padding: 4px 8px;
                 border-radius: 4px;
+                margin: 2px;
             }
         """)
     
