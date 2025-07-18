@@ -52,8 +52,8 @@ class Config:
         },
         'printer': {
             'dll_path': './libDSRetransfer600App.dll',
-            'card_width': 53.98,
-            'card_height': 85.6,
+            'card_width': 55,
+            'card_height': 86.6,
             'timeout_ms': 10000,
             'auto_detect': True
         }

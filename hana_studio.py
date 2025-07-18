@@ -81,8 +81,8 @@ class HanaStudio(QMainWindow):
         self._check_printer_availability()
         self._setup_manual_mask_viewers()
     
-        self.adjusted_x = -0.29  # 왼쪽으로 0.29mm 이동
-        self.adjusted_y = -0.25  # 위쪽으로 0.25mm 이동
+        self.adjusted_x = 0  # x 위치 조정값
+        self.adjusted_y = 0  # y 위치 조정값
         
     def _setup_window_icon(self):
         """윈도우 아이콘 설정"""

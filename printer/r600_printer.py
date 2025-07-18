@@ -286,9 +286,9 @@ class R600Printer:
     def get_card_dimensions(self, orientation: str) -> tuple:
         """카드 방향에 따른 크기 반환"""
         if orientation == "portrait":
-            return 53.98, 85.6  # 세로형
+            return 55, 86.6  # 세로형
         else:
-            return 85.6, 53.98  # 가로형
+            return 86.6, 55  # 가로형
         
     def clear_canvas(self):
         """캔버스 클리어"""
@@ -320,8 +320,8 @@ class R600Printer:
         else:
             path_encoded = b""
 
-        adjusted_x = x - 0.29  # 왼쪽으로 2mm 이동
-        adjusted_y = y - 0.25  # 위쪽으로 1.5mm 이동
+        adjusted_x = x - 0  # 좌표 조정 없음
+        adjusted_y = y - 0  # 좌표 조정 없음
     
         ret = self.lib.R600DrawWaterMark(adjusted_x, adjusted_y, width, height, path_encoded)
         self._check_result(ret, f"워터마크 그리기 ({image_path})")
@@ -349,8 +349,8 @@ class R600Printer:
             path_encoded = temp_path.encode('cp949')
             print(f"임시 파일 생성: {temp_path}")
 
-        adjusted_x = x - 0.29  # 왼쪽으로 2mm 이동
-        adjusted_y = y - 0.25  # 위쪽으로 1.5mm 이동
+        adjusted_x = x - 0  # 좌표 조정 없음
+        adjusted_y = y - 0  # 좌표 조정 없음
         ret = self.lib.R600DrawImage(adjusted_x, adjusted_y, width, height, path_encoded, mode)
         self._check_result(ret, f"이미지 그리기 ({image_path})")
     
@@ -371,7 +371,7 @@ class R600Printer:
         return img_info
     
     def prepare_front_canvas(self, front_image_path: str, watermark_path: Optional[str] = None,
-                           card_width: float = 53.98, card_height: float = 85.6,
+                           card_width: float = 55, card_height: float = 86.6,
                            card_orientation: str = "portrait") -> str:
         """카드 방향을 고려한 앞면 캔버스 준비"""
         print(f"=== 앞면 캔버스 준비 ({card_orientation}) ===")
@@ -392,7 +392,7 @@ class R600Printer:
     
     def prepare_back_canvas(self, back_image_path: Optional[str] = None, 
                           watermark_path: Optional[str] = None,
-                          card_width: float = 53.98, card_height: float = 85.6,
+                          card_width: float = 55, card_height: float = 86.6,
                           card_orientation: str = "portrait") -> str:
         """카드 방향을 고려한 뒷면 캔버스 준비"""
         print(f"=== 뒷면 캔버스 준비 ({card_orientation}) ===")
