@@ -4,11 +4,11 @@
 	<Print>
 		<EntireRotate180>0</EntireRotate180>	<!-- The overall image is rotated 180 degrees, which is mainly used to synchronize with the driving effect. 0:Do not rotate (default); 1:rotate; -->
 		<FixWhiteLine> <!-- Repair white edges -->
-			<WlIsOpen>0</WlIsOpen> <!-- Whether to enable the repair of white edges function. 0: No; 1: Yes; -->
-			<WlTop>8</WlTop> <!-- Upper repair Range:[0-25] -->
-			<WlDown>8</WlDown> <!-- Bottom repair Range:[0-24] -->
-			<WlLeft>8</WlLeft> <!-- Left repair Range:[0-45] -->
-			<WlRight>8</WlRight> <!-- Right repair Range:[0-45] -->
+			<WlIsOpen>1</WlIsOpen> <!-- Whether to enable the repair of white edges function. 0: No; 1: Yes; -->
+			<WlTop>25</WlTop> <!-- Upper repair Range:[0-25] -->
+			<WlDown>24</WlDown> <!-- Bottom repair Range:[0-24] -->
+			<WlLeft>45</WlLeft> <!-- Left repair Range:[0-45] -->
+			<WlRight>45</WlRight> <!-- Right repair Range:[0-45] -->
 		</FixWhiteLine>
 	</Print>
 	<!-- combined-printing -->

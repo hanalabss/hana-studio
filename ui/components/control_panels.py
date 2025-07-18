@@ -25,9 +25,9 @@ class PositionAdjustPanel(QGroupBox):
     
     def __init__(self):
         super().__init__("📐 인쇄 위치 조정")
-        # 기본값 설정: x - 0.29, y - 0.25
-        self.adjusted_x = -0.29
-        self.adjusted_y = -0.25
+        # 기본값 설정: x 0, y 0
+        self.adjusted_x = 0
+        self.adjusted_y = 0
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         self._setup_ui()
     
@@ -77,7 +77,7 @@ class PositionAdjustPanel(QGroupBox):
         # X축 DoubleSpinBox
         self.x_spinbox = QDoubleSpinBox()
         self.x_spinbox.setRange(-50.0, 50.0)
-        self.x_spinbox.setValue(-0.29)
+        self.x_spinbox.setValue(0)
         self.x_spinbox.setSingleStep(0.01)
         self.x_spinbox.setDecimals(2)
         self.x_spinbox.setFixedSize(62, 24)
@@ -187,7 +187,7 @@ class PositionAdjustPanel(QGroupBox):
         # Y축 DoubleSpinBox
         self.y_spinbox = QDoubleSpinBox()
         self.y_spinbox.setRange(-50.0, 50.0)
-        self.y_spinbox.setValue(-0.25)
+        self.y_spinbox.setValue(0)
         self.y_spinbox.setSingleStep(0.01)
         self.y_spinbox.setDecimals(2)
         self.y_spinbox.setFixedSize(62, 24)
@@ -333,8 +333,8 @@ class PositionAdjustPanel(QGroupBox):
     
     def _reset_position(self):
         """위치 초기화 - 기본값으로 복원"""
-        self.x_spinbox.setValue(-0.29)  # -0.29mm
-        self.y_spinbox.setValue(-0.25)  # -0.25mm
+        self.x_spinbox.setValue(0)  # 0mm
+        self.y_spinbox.setValue(0)  # 0mm
     
     def get_position(self):
         """현재 위치 조정값 반환 (float)"""
