@@ -81,6 +81,9 @@ class HanaStudio(QMainWindow):
         self._check_printer_availability()
         self._setup_manual_mask_viewers()
     
+        self.adjusted_x = -0.29  # 왼쪽으로 0.29mm 이동
+        self.adjusted_y = -0.25  # 위쪽으로 0.25mm 이동
+        
     def _setup_window_icon(self):
         """윈도우 아이콘 설정"""
         try:
@@ -159,16 +162,16 @@ class HanaStudio(QMainWindow):
         self.setMinimumSize(1600, 900)
         
         self.setStyleSheet(get_app_style())
-    
+
     def _connect_signals(self):
-        """시그널 연결 - 탭 관련 시그널 추가"""
+        """시그널 연결 - 위치 조정 시그널 추가"""
         components = self.ui.components
         
-        # 파일 선택
+        # 기존 시그널들...
         components['file_panel'].front_btn.clicked.connect(self.select_front_image)
         components['file_panel'].back_btn.clicked.connect(self.select_back_image)
         
-        # 개별 배경제거 (임계값 포함)
+        # 개별 배경제거
         components['front_original_viewer'].process_requested.connect(
             lambda threshold: self.process_single_image(is_front=True, threshold=threshold)
         )
@@ -176,7 +179,7 @@ class HanaStudio(QMainWindow):
             lambda threshold: self.process_single_image(is_front=False, threshold=threshold)
         )
         
-        # 개별 면 방향 변경 시그널 연결
+        # 개별 면 방향 변경
         components['front_original_viewer'].orientation_changed.connect(
             lambda orientation: self.on_front_orientation_changed(orientation)
         )
@@ -184,7 +187,7 @@ class HanaStudio(QMainWindow):
             lambda orientation: self.on_back_orientation_changed(orientation)
         )
         
-        # 임계값 변경 시그널 (선택사항)
+        # 임계값 변경
         components['front_original_viewer'].threshold_changed.connect(
             lambda value: self.log(f"앞면 임계값 변경: {value}")
         )
@@ -199,9 +202,207 @@ class HanaStudio(QMainWindow):
         components['printer_panel'].test_requested.connect(self.test_printer_connection)
         components['printer_panel'].print_requested.connect(self.print_card)
 
-        # ✨ 탭 변경 시그널 연결 (새로 추가)
+        # 탭 변경 시그널
         if 'image_tab_widget' in components:
             components['image_tab_widget'].tab_changed.connect(self.on_image_tab_changed)
+
+        # ✨ 위치 조정 시그널 연결 (float 타입)
+        components['position_panel'].position_changed.connect(self.on_position_changed)
+
+    def on_position_changed(self, x: float, y: float):
+        """위치 조정값 변경 처리 (float)"""
+        self.adjusted_x = x
+        self.adjusted_y = y
+        
+        # 로그에 위치 변경 기록
+        if x == 0.0 and y == 0.0:
+            self.log("📐 카드 위치 초기화됨")
+        else:
+            self.log(f"📐 카드 위치 조정: X={x:+.1f}mm, Y={y:+.1f}mm")
+        
+        # 상태 표시 업데이트
+        if x != 0.0 or y != 0.0:
+            position_text = f" (위치조정: X{x:+.1f}, Y{y:+.1f})"
+        else:
+            position_text = ""
+        
+        # 현재 상태에 위치 정보 추가
+        current_status = self.ui.components['progress_panel'].status_label.text()
+        if "위치조정:" in current_status:
+            # 기존 위치 정보 제거
+            base_status = current_status.split(" (위치조정:")[0]
+        else:
+            base_status = current_status
+        
+        new_status = base_status + position_text
+        self.ui.components['progress_panel'].update_status(new_status)
+    
+    def get_position_adjustment(self):
+        """현재 위치 조정값 반환 (float)"""
+        return self.adjusted_x, self.adjusted_y
+    
+    def set_position_adjustment(self, x: float, y: float):
+        """위치 조정값 설정 (float)"""
+        self.ui.components['position_panel'].set_position(x, y)
+    
+    def _start_multi_print(self, front_path=None, back_path=None):
+        """여러장 인쇄 시작 - 위치 조정값 포함 (float)"""
+        try:
+            self.ui.components['printer_panel'].set_print_enabled(False)
+            self.ui.components['progress_panel'].show_progress()
+            
+            if front_path is None:
+                front_path = self.front_image_path
+            if back_path is None:
+                back_path = self.back_image_path
+            
+            # 프린터 스레드 시작 - 위치 조정값 추가
+            self.current_printer_thread = print_manager.start_multi_print(
+                dll_path=self.printer_dll_path,
+                front_image_path=front_path,
+                back_image_path=back_path,
+                front_mask_path=self.front_saved_mask_path if self.print_mode == "layered" else None,
+                back_mask_path=self.back_saved_mask_path if self.print_mode == "layered" else None,
+                print_mode=self.print_mode,
+                is_dual_side=self.is_dual_side,
+                quantity=self.print_quantity,
+                front_orientation=self.front_orientation,
+                back_orientation=self.back_orientation,
+                adjusted_x=self.adjusted_x,  # 위치 조정값 추가 (float)
+                adjusted_y=self.adjusted_y   # 위치 조정값 추가 (float)
+            )
+            
+            # 시그널 연결
+            self.current_printer_thread.progress.connect(self.on_printer_progress)
+            self.current_printer_thread.finished.connect(self.on_printer_finished)
+            self.current_printer_thread.error.connect(self.on_printer_error)
+            self.current_printer_thread.print_progress.connect(self.on_print_progress)
+            self.current_printer_thread.card_completed.connect(self.on_card_completed)
+            
+            self.current_printer_thread.start()
+            
+            front_orientation_text = "세로형" if self.front_orientation == "portrait" else "가로형"
+            back_orientation_text = "세로형" if self.back_orientation == "portrait" else "가로형"
+            
+            # 위치 조정 정보 추가
+            position_text = ""
+            if self.adjusted_x != 0.0 or self.adjusted_y != 0.0:
+                position_text = f" (위치조정: X{self.adjusted_x:+.1f}mm, Y{self.adjusted_y:+.1f}mm)"
+            
+            if self.is_dual_side:
+                self.log(f"📄 앞면:{front_orientation_text}, 뒷면:{back_orientation_text} {self.print_quantity}장 인쇄 시작!{position_text}")
+            else:
+                self.log(f"📄 앞면:{front_orientation_text} {self.print_quantity}장 인쇄 시작!{position_text}")
+            
+        except Exception as e:
+            self.ui.components['progress_panel'].hide_progress()
+            self.ui.components['printer_panel'].set_print_enabled(True)
+            error_msg = f"인쇄 시작 실패: {e}"
+            self.log(f"❌ {error_msg}")
+            QMessageBox.critical(self, "인쇄 오류", error_msg)
+    
+    def print_card(self):
+        """카드 인쇄 - 위치 조정 정보 포함된 확인 다이얼로그"""
+        # 기존 검증 코드들...
+        if not self.printer_available or not self.printer_dll_path:
+            QMessageBox.warning(self, "경고", "프린터를 사용할 수 없습니다.")
+            return
+        
+        if not self.front_image_path:
+            QMessageBox.warning(self, "경고", "앞면 이미지를 먼저 선택해주세요.")
+            return
+        
+        if print_manager.get_print_status()['is_printing']:
+            QMessageBox.warning(self, "경고", "이미 인쇄가 진행 중입니다.")
+            return
+        
+        # 레이어 모드 검증...
+        if self.print_mode == "layered":
+            front_mask = self.ui.components['front_unified_mask_viewer'].get_current_mask()
+            if front_mask is None:
+                QMessageBox.warning(self, "경고", "레이어 인쇄를 위해서는 마스킹 이미지가 필요합니다.\n개별 배경제거를 실행하거나 수동 마스킹을 업로드해주세요.")
+                return
+            
+            # 마스크 저장...
+            self.front_saved_mask_path = self.file_manager.save_mask_for_printing(
+                front_mask, self.front_image_path, "front"
+            )
+            if not self.front_saved_mask_path:
+                QMessageBox.critical(self, "오류", "앞면 마스크 이미지 저장에 실패했습니다.")
+                return
+            
+            if self.is_dual_side and self.back_image_path:
+                back_mask = self.ui.components['back_unified_mask_viewer'].get_current_mask()
+                if back_mask is not None:
+                    self.back_saved_mask_path = self.file_manager.save_mask_for_printing(
+                        back_mask, self.back_image_path, "back"
+                    )
+                    if not self.back_saved_mask_path:
+                        self.log("⚠️ 뒷면 마스크 저장 실패, 뒷면은 일반 모드로 인쇄됩니다.")
+        
+        # 인쇄 경로 설정
+        front_print_path = self.front_image_path
+        back_print_path = self.back_image_path
+        
+        # 인쇄 확인 다이얼로그 - 위치 조정 정보 포함
+        mode_text = "일반 인쇄" if self.print_mode == "normal" else "레이어 인쇄 (YMCW)"
+        side_text = "양면" if self.is_dual_side else "단면"
+        
+        # 개별 면 방향 정보
+        front_orientation_text = "세로형" if self.front_orientation == "portrait" else "가로형"
+        back_orientation_text = "세로형" if self.back_orientation == "portrait" else "가로형"
+        
+        front_name, _ = self.file_manager.get_file_info(self.front_image_path)
+        detail_text = f"앞면 이미지: {front_name} ({front_orientation_text})\n"
+        
+        # 마스킹 정보 추가
+        if self.print_mode == "layered":
+            front_mask_type = self.ui.components['front_unified_mask_viewer'].get_mask_type()
+            front_mask_text = "수동 마스킹" if front_mask_type == "manual" else "자동 마스킹"
+            detail_text += f"  마스킹: {front_mask_text}\n"
+        
+        if self.is_dual_side and self.back_image_path:
+            back_name, _ = self.file_manager.get_file_info(self.back_image_path)
+            detail_text += f"뒷면 이미지: {back_name} ({back_orientation_text})\n"
+            
+            if self.print_mode == "layered":
+                back_mask_type = self.ui.components['back_unified_mask_viewer'].get_mask_type()
+                if back_mask_type:
+                    back_mask_text = "수동 마스킹" if back_mask_type == "manual" else "자동 마스킹"
+                    detail_text += f"  마스킹: {back_mask_text}\n"
+            
+        elif self.is_dual_side:
+            detail_text += f"뒷면 이미지: 없음 (빈 뒷면으로 인쇄, {back_orientation_text})\n"
+        
+        detail_text += f"인쇄 방식: {side_text} {mode_text}\n"
+        detail_text += f"인쇄 매수: {self.print_quantity}장\n"
+        
+        # ✨ 위치 조정 정보 추가 (float 형식)
+        if self.adjusted_x != 0.0 or self.adjusted_y != 0.0:
+            detail_text += f"위치 조정: X{self.adjusted_x:+.1f}mm, Y{self.adjusted_y:+.1f}mm\n"
+        
+        # 예상 시간 계산
+        estimated_minutes = (self.print_quantity * 30) // 60
+        estimated_seconds = (self.print_quantity * 30) % 60
+        if estimated_minutes > 0:
+            time_text = f"예상 시간: 약 {estimated_minutes}분 {estimated_seconds}초"
+        else:
+            time_text = f"예상 시간: 약 {self.print_quantity * 30}초"
+        
+        reply = QMessageBox.question(
+            self,
+            "카드 인쇄",
+            f"카드 인쇄를 시작하시겠습니까?\n\n{detail_text}{time_text}\n\n"
+            "프린터에 충분한 카드가 준비되어 있는지 확인해주세요.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        
+        # 인쇄 시작
+        self._start_multi_print(front_print_path, back_print_path)
 
     def on_image_tab_changed(self, tab_index: int):
         """이미지 탭 변경 시 처리"""
@@ -792,156 +993,8 @@ class HanaStudio(QMainWindow):
             self.log(f"❌ 테스트 결과 처리 오류: {e}")
             self.ui.components['printer_panel'].set_test_enabled(True)
             self.ui.components['printer_panel'].update_status("❌ 테스트 오류")
-        
-    def print_card(self):
-        """카드 인쇄 - 개별 면 방향 적용"""
-        if not self.printer_available or not self.printer_dll_path:
-            QMessageBox.warning(self, "경고", "프린터를 사용할 수 없습니다.")
-            return
-        
-        if not self.front_image_path:
-            QMessageBox.warning(self, "경고", "앞면 이미지를 먼저 선택해주세요.")
-            return
-        
-        if print_manager.get_print_status()['is_printing']:
-            QMessageBox.warning(self, "경고", "이미 인쇄가 진행 중입니다.")
-            return
-        
-        # 인쇄 모드별 확인
-        if self.print_mode == "layered":
-            front_mask = self.ui.components['front_unified_mask_viewer'].get_current_mask()
-            if front_mask is None:
-                QMessageBox.warning(self, "경고", "레이어 인쇄를 위해서는 마스킹 이미지가 필요합니다.\n개별 배경제거를 실행하거나 수동 마스킹을 업로드해주세요.")
-                return
-            
-            # 최종 마스킹 이미지 저장 (통합에서 가져옴)
-            self.front_saved_mask_path = self.file_manager.save_mask_for_printing(
-                front_mask, self.front_image_path, "front"
-            )
-            if not self.front_saved_mask_path:
-                QMessageBox.critical(self, "오류", "앞면 마스크 이미지 저장에 실패했습니다.")
-                return
-            
-            # 뒷면 마스크도 저장 (있는 경우)
-            if self.is_dual_side and self.back_image_path:
-                back_mask = self.ui.components['back_unified_mask_viewer'].get_current_mask()
-                if back_mask is not None:
-                    self.back_saved_mask_path = self.file_manager.save_mask_for_printing(
-                        back_mask, self.back_image_path, "back"
-                    )
-                    if not self.back_saved_mask_path:
-                        self.log("⚠️ 뒷면 마스크 저장 실패, 뒷면은 일반 모드로 인쇄됩니다.")
-        
-        # 원본 이미지 사용 (회전 관련 코드 제거)
-        front_print_path = self.front_image_path
-        back_print_path = self.back_image_path
-        
-        # 인쇄 확인 다이얼로그
-        mode_text = "일반 인쇄" if self.print_mode == "normal" else "레이어 인쇄 (YMCW)"
-        side_text = "양면" if self.is_dual_side else "단면"
-        
-        # 개별 면 방향 정보
-        front_orientation_text = "세로형" if self.front_orientation == "portrait" else "가로형"
-        back_orientation_text = "세로형" if self.back_orientation == "portrait" else "가로형"
-        
-        front_name, _ = self.file_manager.get_file_info(self.front_image_path)
-        detail_text = f"앞면 이미지: {front_name} ({front_orientation_text})\n"
-        
-        # 마스킹 정보 추가
-        if self.print_mode == "layered":
-            front_mask_type = self.ui.components['front_unified_mask_viewer'].get_mask_type()
-            front_mask_text = "수동 마스킹" if front_mask_type == "manual" else "자동 마스킹"
-            detail_text += f"  마스킹: {front_mask_text}\n"
-        
-        if self.is_dual_side and self.back_image_path:
-            back_name, _ = self.file_manager.get_file_info(self.back_image_path)
-            detail_text += f"뒷면 이미지: {back_name} ({back_orientation_text})\n"
-            
-            # 뒷면 마스킹 정보
-            if self.print_mode == "layered":
-                back_mask_type = self.ui.components['back_unified_mask_viewer'].get_mask_type()
-                if back_mask_type:
-                    back_mask_text = "수동 마스킹" if back_mask_type == "manual" else "자동 마스킹"
-                    detail_text += f"  마스킹: {back_mask_text}\n"
-            
-        elif self.is_dual_side:
-            detail_text += f"뒷면 이미지: 없음 (빈 뒷면으로 인쇄, {back_orientation_text})\n"
-        
-        detail_text += f"인쇄 방식: {side_text} {mode_text}\n"
-        detail_text += f"인쇄 매수: {self.print_quantity}장"
-        
-        # 예상 시간 계산
-        estimated_minutes = (self.print_quantity * 30) // 60
-        estimated_seconds = (self.print_quantity * 30) % 60
-        if estimated_minutes > 0:
-            time_text = f"예상 시간: 약 {estimated_minutes}분 {estimated_seconds}초"
-        else:
-            time_text = f"예상 시간: 약 {self.print_quantity * 30}초"
-        
-        reply = QMessageBox.question(
-            self,
-            "카드 인쇄",
-            f"카드 인쇄를 시작하시겠습니까?\n\n{detail_text}\n{time_text}\n\n"
-            "프린터에 충분한 카드가 준비되어 있는지 확인해주세요.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-        
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-        
-        # 인쇄 시작
-        self._start_multi_print(front_print_path, back_print_path)
-        
-    def _start_multi_print(self, front_path=None, back_path=None):
-        """여러장 인쇄 시작 - 개별 면 방향 정보 추가"""
-        try:
-            self.ui.components['printer_panel'].set_print_enabled(False)
-            self.ui.components['progress_panel'].show_progress()
-            
-            if front_path is None:
-                front_path = self.front_image_path
-            if back_path is None:
-                back_path = self.back_image_path
-            
-            # 프린터 스레드 시작 - 개별 면 방향 정보 전달
-            self.current_printer_thread = print_manager.start_multi_print(
-                dll_path=self.printer_dll_path,
-                front_image_path=front_path,
-                back_image_path=back_path,
-                front_mask_path=self.front_saved_mask_path if self.print_mode == "layered" else None,
-                back_mask_path=self.back_saved_mask_path if self.print_mode == "layered" else None,
-                print_mode=self.print_mode,
-                is_dual_side=self.is_dual_side,
-                quantity=self.print_quantity,
-                front_orientation=self.front_orientation,  # 개별 면 방향 추가
-                back_orientation=self.back_orientation      # 개별 면 방향 추가
-            )
-            
-            # 시그널 연결
-            self.current_printer_thread.progress.connect(self.on_printer_progress)
-            self.current_printer_thread.finished.connect(self.on_printer_finished)
-            self.current_printer_thread.error.connect(self.on_printer_error)
-            self.current_printer_thread.print_progress.connect(self.on_print_progress)
-            self.current_printer_thread.card_completed.connect(self.on_card_completed)
-            
-            self.current_printer_thread.start()
-            
-            front_orientation_text = "세로형" if self.front_orientation == "portrait" else "가로형"
-            back_orientation_text = "세로형" if self.back_orientation == "portrait" else "가로형"
-            
-            if self.is_dual_side:
-                self.log(f"📄 앞면:{front_orientation_text}, 뒷면:{back_orientation_text} {self.print_quantity}장 인쇄 시작!")
-            else:
-                self.log(f"📄 앞면:{front_orientation_text} {self.print_quantity}장 인쇄 시작!")
-            
-        except Exception as e:
-            self.ui.components['progress_panel'].hide_progress()
-            self.ui.components['printer_panel'].set_print_enabled(True)
-            error_msg = f"인쇄 시작 실패: {e}"
-            self.log(f"❌ {error_msg}")
-            QMessageBox.critical(self, "인쇄 오류", error_msg)
-            
+    
+ 
     def on_printer_progress(self, message):
         """프린터 진행상황 업데이트"""
         self.ui.components['progress_panel'].update_status(message)

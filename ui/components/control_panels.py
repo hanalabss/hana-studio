@@ -6,9 +6,9 @@ ui/components/control_panels.py 수정
 from PySide6.QtWidgets import (
     QSizePolicy, QVBoxLayout, QHBoxLayout, QGroupBox, 
     QLabel, QRadioButton, QButtonGroup, QProgressBar, QTextEdit, QCheckBox,
-    QSpinBox,QFrame
+    QDoubleSpinBox,QSpinBox,QFrame
 )
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal,Qt
 from .modern_button import ModernButton
 
 
@@ -19,6 +19,332 @@ def truncate_text(text: str, max_length: int = 30) -> str:
     return text[:max_length-3] + "..."
 
 
+class PositionAdjustPanel(QGroupBox):
+    """카드 위치 미세조정 패널 - 크기 및 여백 최적화"""
+    position_changed = Signal(float, float)  # x, y 조정값 (float)
+    
+    def __init__(self):
+        super().__init__("📐 인쇄 위치 조정")
+        # 기본값 설정: x - 0.29, y - 0.25
+        self.adjusted_x = -0.29
+        self.adjusted_y = -0.25
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        self._setup_ui()
+    
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)  # 8 → 12로 증가 (세로 간격)
+        layout.setContentsMargins(8, 16, 8, 12)  # 상단 여백 12 → 16으로 증가
+        
+        # X축 조정
+        x_layout = QHBoxLayout()
+        x_layout.setSpacing(5)
+        x_layout.setContentsMargins(0, 0, 0, 0)
+        
+        x_label = QLabel("↔️ X:")
+        x_label.setFixedWidth(32)
+        x_label.setStyleSheet("""
+            QLabel {
+                background: transparent;
+                border: none;
+                font-size: 12px;
+                font-weight: 600;
+                color: #495057;
+            }
+        """)
+        
+        # X축 감소 버튼
+        self.x_minus_btn = ModernButton("-")
+        self.x_minus_btn.setFixedSize(24, 24)
+        self.x_minus_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #DC3545;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-size: 13px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #C82333;
+            }
+            QPushButton:pressed {
+                background-color: #A71E2A;
+            }
+        """)
+        self.x_minus_btn.clicked.connect(lambda: self._adjust_x(-0.01))
+        
+        # X축 DoubleSpinBox
+        self.x_spinbox = QDoubleSpinBox()
+        self.x_spinbox.setRange(-50.0, 50.0)
+        self.x_spinbox.setValue(-0.29)
+        self.x_spinbox.setSingleStep(0.01)
+        self.x_spinbox.setDecimals(2)
+        self.x_spinbox.setFixedSize(62, 24)
+        self.x_spinbox.setStyleSheet("""
+            QDoubleSpinBox {
+                background-color: #FFFFFF;
+                border: 1px solid #DEE2E6;
+                border-radius: 4px;
+                padding: 2px 4px;
+                font-size: 11px;
+                color: #495057;
+                font-weight: 600;
+            }
+            QDoubleSpinBox:focus {
+                border-color: #4A90E2;
+                border-width: 2px;
+            }
+            QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+                width: 14px;
+                border: none;
+                background-color: #F8F9FA;
+            }
+            QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {
+                background-color: #E9ECEF;
+            }
+        """)
+        
+        # X축 증가 버튼
+        self.x_plus_btn = ModernButton("+")
+        self.x_plus_btn.setFixedSize(24, 24)
+        self.x_plus_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #28A745;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-size: 13px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #218838;
+            }
+            QPushButton:pressed {
+                background-color: #1E7E34;
+            }
+        """)
+        self.x_plus_btn.clicked.connect(lambda: self._adjust_x(0.01))
+        
+        # 단위 라벨
+        x_unit_label = QLabel("mm")
+        x_unit_label.setFixedWidth(20)
+        x_unit_label.setStyleSheet("""
+            QLabel {
+                background: transparent;
+                border: none;
+                font-size: 10px;
+                color: #6C757D;
+                font-weight: 500;
+            }
+        """)
+        
+        x_layout.addWidget(x_label)
+        x_layout.addWidget(self.x_minus_btn)
+        x_layout.addWidget(self.x_spinbox)
+        x_layout.addWidget(self.x_plus_btn)
+        x_layout.addWidget(x_unit_label)
+        x_layout.addStretch()
+        
+        # Y축 조정
+        y_layout = QHBoxLayout()
+        y_layout.setSpacing(5)
+        y_layout.setContentsMargins(0, 0, 0, 0)
+        
+        y_label = QLabel("↕️ Y:")
+        y_label.setFixedWidth(32)
+        y_label.setStyleSheet("""
+            QLabel {
+                background: transparent;
+                border: none;
+                font-size: 12px;
+                font-weight: 600;
+                color: #495057;
+            }
+        """)
+        
+        # Y축 감소 버튼
+        self.y_minus_btn = ModernButton("-")
+        self.y_minus_btn.setFixedSize(24, 24)
+        self.y_minus_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #DC3545;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-size: 13px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #C82333;
+            }
+            QPushButton:pressed {
+                background-color: #A71E2A;
+            }
+        """)
+        self.y_minus_btn.clicked.connect(lambda: self._adjust_y(-0.01))
+        
+        # Y축 DoubleSpinBox
+        self.y_spinbox = QDoubleSpinBox()
+        self.y_spinbox.setRange(-50.0, 50.0)
+        self.y_spinbox.setValue(-0.25)
+        self.y_spinbox.setSingleStep(0.01)
+        self.y_spinbox.setDecimals(2)
+        self.y_spinbox.setFixedSize(62, 24)
+        self.y_spinbox.setStyleSheet("""
+            QDoubleSpinBox {
+                background-color: #FFFFFF;
+                border: 1px solid #DEE2E6;
+                border-radius: 4px;
+                padding: 2px 4px;
+                font-size: 11px;
+                color: #495057;
+                font-weight: 600;
+            }
+            QDoubleSpinBox:focus {
+                border-color: #28A745;
+                border-width: 2px;
+            }
+            QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+                width: 14px;
+                border: none;
+                background-color: #F8F9FA;
+            }
+            QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {
+                background-color: #E9ECEF;
+            }
+        """)
+        
+        # Y축 증가 버튼
+        self.y_plus_btn = ModernButton("+")
+        self.y_plus_btn.setFixedSize(24, 24)
+        self.y_plus_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #28A745;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-size: 13px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #218838;
+            }
+            QPushButton:pressed {
+                background-color: #1E7E34;
+            }
+        """)
+        self.y_plus_btn.clicked.connect(lambda: self._adjust_y(0.01))
+        
+        # 단위 라벨
+        y_unit_label = QLabel("mm")
+        y_unit_label.setFixedWidth(20)
+        y_unit_label.setStyleSheet("""
+            QLabel {
+                background: transparent;
+                border: none;
+                font-size: 10px;
+                color: #6C757D;
+                font-weight: 500;
+            }
+        """)
+        
+        y_layout.addWidget(y_label)
+        y_layout.addWidget(self.y_minus_btn)
+        y_layout.addWidget(self.y_spinbox)
+        y_layout.addWidget(self.y_plus_btn)
+        y_layout.addWidget(y_unit_label)
+        y_layout.addStretch()
+        
+        # 리셋 버튼 - 여백 추가
+        reset_container = QHBoxLayout()
+        reset_container.setContentsMargins(0, 8, 0, 0)  # 상단 여백 4 → 8로 증가
+        
+        self.reset_btn = ModernButton("초기화")
+        self.reset_btn.setFixedHeight(26)
+        self.reset_btn.setFixedWidth(60)
+        self.reset_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #6C757D;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-size: 10px;
+                font-weight: 600;
+                padding: 2px 8px;
+            }
+            QPushButton:hover {
+                background-color: #5A6268;
+            }
+            QPushButton:pressed {
+                background-color: #495057;
+            }
+        """)
+        self.reset_btn.clicked.connect(self._reset_position)
+        
+        reset_container.addStretch()
+        reset_container.addWidget(self.reset_btn)
+        reset_container.addStretch()
+        
+        # 레이아웃에 추가 - 여백 조정
+        layout.addLayout(x_layout)
+        layout.addSpacing(8)  # X, Y축 사이 추가 여백 4 → 8로 증가
+        layout.addLayout(y_layout)
+        layout.addSpacing(10)  # Y축과 리셋 버튼 사이 여백 6 → 10으로 증가
+        layout.addLayout(reset_container)
+        layout.addStretch()
+        
+        # 시그널 연결
+        self.x_spinbox.valueChanged.connect(self._on_x_changed)
+        self.y_spinbox.valueChanged.connect(self._on_y_changed)
+        
+        # 초기값 설정 및 시그널 발송
+        self._update_initial_values()
+    
+    def _update_initial_values(self):
+        """초기값 설정 및 시그널 발송"""
+        self.adjusted_x = self.x_spinbox.value()
+        self.adjusted_y = self.y_spinbox.value()
+        self.position_changed.emit(self.adjusted_x, self.adjusted_y)
+    
+    def _adjust_x(self, delta):
+        """X축 값 조정"""
+        current_value = self.x_spinbox.value()
+        new_value = current_value + delta
+        new_value = max(-50.0, min(50.0, new_value))  # 범위 제한
+        self.x_spinbox.setValue(new_value)
+    
+    def _adjust_y(self, delta):
+        """Y축 값 조정"""
+        current_value = self.y_spinbox.value()
+        new_value = current_value + delta
+        new_value = max(-50.0, min(50.0, new_value))  # 범위 제한
+        self.y_spinbox.setValue(new_value)
+    
+    def _on_x_changed(self, value):
+        """X축 값 변경"""
+        self.adjusted_x = value
+        self.position_changed.emit(self.adjusted_x, self.adjusted_y)
+    
+    def _on_y_changed(self, value):
+        """Y축 값 변경"""
+        self.adjusted_y = value
+        self.position_changed.emit(self.adjusted_x, self.adjusted_y)
+    
+    def _reset_position(self):
+        """위치 초기화 - 기본값으로 복원"""
+        self.x_spinbox.setValue(-0.29)  # -0.29mm
+        self.y_spinbox.setValue(-0.25)  # -0.25mm
+    
+    def get_position(self):
+        """현재 위치 조정값 반환 (float)"""
+        return self.adjusted_x, self.adjusted_y
+    
+    def set_position(self, x, y):
+        """위치 조정값 설정 (float)"""
+        self.x_spinbox.setValue(x)
+        self.y_spinbox.setValue(y)
+          
 class FileSelectionPanel(QGroupBox):
     """파일 선택 패널"""
     file_selected = Signal(str)  # 파일 경로 시그널
@@ -520,53 +846,32 @@ class ProgressPanel(QGroupBox):
 
 
 class LogPanel(QGroupBox):
-    """로그 패널 - 확장 가능"""
+    """로그 패널 - 숨김 처리"""
     
     def __init__(self):
         super().__init__("📝 처리 로그")
-        # 로그 패널은 확장 가능
+        # 로그 패널을 완전히 숨김
+        self.setVisible(False)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-        self.setMinimumHeight(120)
+        self.setMinimumHeight(0)
+        self.setMaximumHeight(0)
         self._setup_ui()
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setSpacing(0)
-        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setContentsMargins(0, 0, 0, 0)
         
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
-        self.log_text.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-        self.log_text.setStyleSheet("""
-            QTextEdit {
-                background-color: #FFFFFF;
-                border: 2px solid #E9ECEF;
-                border-radius: 4px;
-                padding: 6px;
-                font-family: 'Consolas', 'Monaco', monospace;
-                font-size: 12px;
-                line-height: 1.3;
-                color: #495057;
-            }
-            QTextEdit:focus {
-                border-color: #4A90E2;
-            }
-        """)
-        
+        self.log_text.setVisible(False)  # 텍스트 에디터도 숨김
         layout.addWidget(self.log_text)
     
     def add_log(self, message: str):
-        """로그 메시지 추가"""
-        from datetime import datetime
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        formatted_message = f"[{timestamp}] {message}"
-        self.log_text.append(formatted_message)
-        
-        # 스크롤을 맨 아래로
-        self.log_text.verticalScrollBar().setValue(
-            self.log_text.verticalScrollBar().maximum()
-        )
+        """로그 메시지 추가 - 실제로는 콘솔에만 출력"""
+        print(f"[LOG] {message}")
+        # UI에는 표시하지 않음
     
     def clear_log(self):
-        """로그 클리어"""
-        self.log_text.clear()
+        """로그 클리어 - 아무것도 하지 않음"""
+        pass

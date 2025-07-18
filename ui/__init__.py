@@ -1,5 +1,5 @@
 """
-UI 컴포넌트 모듈 초기화 - ProcessingOptionsPanel 제거
+UI 컴포넌트 모듈 초기화 - PositionAdjustPanel 추가
 """
 
 from .components.modern_button import ModernButton
@@ -10,7 +10,8 @@ from .components.control_panels import (
     PrintQuantityPanel,
     PrinterPanel,
     ProgressPanel,
-    LogPanel
+    LogPanel,
+    PositionAdjustPanel  # 새로 추가
 )
 from .styles import get_app_style, get_light_palette
 from .main_window import HanaStudioMainWindow
@@ -25,6 +26,7 @@ __all__ = [
     'PrinterPanel',
     'ProgressPanel',
     'LogPanel',
+    'PositionAdjustPanel',  # 새로 추가
     
     # 스타일링
     'get_app_style',
