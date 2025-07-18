@@ -269,20 +269,19 @@ class R600Printer:
         ret = self.lib.R600SetRibbonOpt(ribbon_type, key, value_bytes, len(value_bytes))
         self._check_result(ret, "리본 옵션 설정")
     
-    def setup_canvas(self, card_orientation: str = "portrait"):
-        """카드 방향을 고려한 캔버스 설정"""
-        # 방향 설정
+    def setup_canvas(self, card_orientation: str = "portrait", rotation: int = 0):
+        """카드 방향을 고려한 캔버스 설정 + 회전"""
         portrait_mode = (card_orientation == "portrait")
         ret = self.lib.R600SetCanvasPortrait(1 if portrait_mode else 0)
         self._check_result(ret, f"캔버스 방향 설정 ({card_orientation})")
-        
-        # 캔버스 준비
+
         ret = self.lib.R600PrepareCanvas(0, 0)
         self._check_result(ret, "캔버스 준비")
-        
-        # 이미지 파라미터 설정
-        ret = self.lib.R600SetImagePara(1, 0, 0.0)
-        self._check_result(ret, "이미지 파라미터 설정")
+
+        # 회전 각도 적용
+        ret = self.lib.R600SetImagePara(1, rotation, 0.0)
+        self._check_result(ret, f"이미지 파라미터 설정 (회전 {rotation}도)")
+
         
     def get_card_dimensions(self, orientation: str) -> tuple:
         """카드 방향에 따른 크기 반환"""
@@ -400,7 +399,7 @@ class R600Printer:
         
         # 캔버스 클리어 및 재설정
         self.clear_canvas()
-        self.setup_canvas(card_orientation)
+        self.setup_canvas(card_orientation,180)
         
         # 뒷면 이미지가 있는 경우
         if back_image_path and os.path.exists(back_image_path):
