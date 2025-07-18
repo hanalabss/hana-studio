@@ -33,7 +33,7 @@ class PositionAdjustPanel(QGroupBox):
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(12)  # 8 → 12로 증가 (세로 간격)
+        layout.setSpacing(25)  # 8 → 12로 증가 (세로 간격)
         layout.setContentsMargins(8, 16, 8, 12)  # 상단 여백 12 → 16으로 증가
         
         # X축 조정
@@ -261,24 +261,24 @@ class PositionAdjustPanel(QGroupBox):
         reset_container.setContentsMargins(0, 8, 0, 0)  # 상단 여백 4 → 8로 증가
         
         self.reset_btn = ModernButton("초기화")
-        self.reset_btn.setFixedHeight(26)
-        self.reset_btn.setFixedWidth(60)
+        self.reset_btn.setFixedHeight(42)
+        self.reset_btn.setFixedWidth(150)
         self.reset_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #6C757D;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                font-size: 10px;
-                font-weight: 600;
-                padding: 2px 8px;
-            }
-            QPushButton:hover {
-                background-color: #5A6268;
-            }
-            QPushButton:pressed {
-                background-color: #495057;
-            }
+        QPushButton {
+            background-color: #4A90E2;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 2px 8px;
+        }
+        QPushButton:hover {
+            background-color: #357ABD;
+        }
+        QPushButton:pressed {
+            background-color: #2A5F98;
+        }
         """)
         self.reset_btn.clicked.connect(self._reset_position)
         

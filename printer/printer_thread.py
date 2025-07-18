@@ -19,28 +19,33 @@ class PrinterThread(QThread):
     print_progress = Signal(int, int)  # 현재 장수, 전체 장수
     card_completed = Signal(int)  # 완료된 카드 번호
     
+
     def __init__(self, dll_path: str, 
-                 front_image_path: str, 
-                 back_image_path: Optional[str] = None,
-                 front_mask_path: Optional[str] = None,
-                 back_mask_path: Optional[str] = None,
-                 print_mode: str = "normal",
-                 is_dual_side: bool = True,
-                 quantity: int = 1,
-                 front_orientation: str = "portrait",  # 개별 면 방향 추가
-                 back_orientation: str = "portrait"):   # 개별 면 방향 추가
-        super().__init__()
-        self.dll_path = dll_path
-        self.front_image_path = front_image_path
-        self.back_image_path = back_image_path
-        self.front_mask_path = front_mask_path
-        self.back_mask_path = back_mask_path
-        self.print_mode = print_mode
-        self.is_dual_side = is_dual_side
-        self.quantity = quantity
-        self.front_orientation = front_orientation  # 개별 면 방향
-        self.back_orientation = back_orientation    # 개별 면 방향
-        self.should_stop = False
+                    front_image_path: str, 
+                    back_image_path: Optional[str] = None,
+                    front_mask_path: Optional[str] = None,
+                    back_mask_path: Optional[str] = None,
+                    print_mode: str = "normal",
+                    is_dual_side: bool = True,
+                    quantity: int = 1,
+                    front_orientation: str = "portrait",  # 개별 면 방향 추가
+                    back_orientation: str = "portrait",   # 개별 면 방향 추가
+                    adjusted_x: float = 0.0,              # 위치 조정값 추가
+                    adjusted_y: float = 0.0):             # 위치 조정값 추가
+            super().__init__()
+            self.dll_path = dll_path
+            self.front_image_path = front_image_path
+            self.back_image_path = back_image_path
+            self.front_mask_path = front_mask_path
+            self.back_mask_path = back_mask_path
+            self.print_mode = print_mode
+            self.is_dual_side = is_dual_side
+            self.quantity = quantity
+            self.front_orientation = front_orientation  # 개별 면 방향
+            self.back_orientation = back_orientation    # 개별 면 방향
+            self.adjusted_x = adjusted_x                # 위치 조정값
+            self.adjusted_y = adjusted_y                # 위치 조정값
+            self.should_stop = False
 
     
     def stop_printing(self):
