@@ -251,30 +251,29 @@ class HanaStudio(QMainWindow):
             if back_path is None:
                 back_path = self.back_image_path
             
-            # 프린터 스레드 생성 및 시작
-            self.current_printer_thread = PrinterThread(
+            # 프린터 스레드 시작 - 위치 조정값 추가
+            self.current_printer_thread = print_manager.start_multi_print(
                 dll_path=self.printer_dll_path,
                 front_image_path=front_path,
                 back_image_path=back_path,
-                front_mask_path=self.front_saved_mask_path,
-                back_mask_path=self.back_saved_mask_path,
+                front_mask_path=self.front_saved_mask_path if self.print_mode == "layered" else None,
+                back_mask_path=self.back_saved_mask_path if self.print_mode == "layered" else None,
                 print_mode=self.print_mode,
                 is_dual_side=self.is_dual_side,
                 quantity=self.print_quantity,
                 front_orientation=self.front_orientation,
                 back_orientation=self.back_orientation,
-                adjusted_x=self.adjusted_x,
-                adjusted_y=self.adjusted_y
+                adjusted_x=self.adjusted_x,  # 위치 조정값 추가 (float)
+                adjusted_y=self.adjusted_y   # 위치 조정값 추가 (float)
             )
             
             # 시그널 연결
             self.current_printer_thread.progress.connect(self.on_printer_progress)
-            self.current_printer_thread.print_progress.connect(self.on_print_progress)
-            self.current_printer_thread.card_completed.connect(self.on_card_completed)
             self.current_printer_thread.finished.connect(self.on_printer_finished)
             self.current_printer_thread.error.connect(self.on_printer_error)
+            self.current_printer_thread.print_progress.connect(self.on_print_progress)
+            self.current_printer_thread.card_completed.connect(self.on_card_completed)
             
-            # 스레드 시작
             self.current_printer_thread.start()
             
         except Exception as e:
