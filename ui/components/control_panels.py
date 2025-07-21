@@ -641,10 +641,18 @@ class PrintQuantityPanel(QGroupBox):
             QSpinBox::up-button, QSpinBox::down-button {
                 width: 16px;
                 border: none;
-                background-color: #F8F9FA;
             }
-            QSpinBox::up-button:hover, QSpinBox::down-button:hover {
-                background-color: #E9ECEF;
+            QSpinBox::up-button {
+                background-color: #28A745;
+            }
+            QSpinBox::up-button:hover {
+                background-color: #218838;
+            }
+            QSpinBox::down-button {
+                background-color: #DC3545;
+            }
+            QSpinBox::down-button:hover {
+                background-color: #C82333;
             }
         """)
         
