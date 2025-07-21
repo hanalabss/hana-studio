@@ -193,23 +193,13 @@ class PrinterThread(QThread):
         return True
     
     def _handle_final_result(self, successful_prints: int):
-        """최종 결과 처리 - 개별 면 방향 정보 포함"""
-        front_orientation_text = "세로형" if self.front_orientation == "portrait" else "가로형"
-        back_orientation_text = "세로형" if self.back_orientation == "portrait" else "가로형"
-        
+        """최종 결과 처리 - 사용자 친화적 메시지"""
         if self.should_stop:
-            self.progress.emit(f"🛑 인쇄 중단됨 - 완료: {successful_prints}/{self.quantity}장")
+            self.progress.emit(f"⏹️ 인쇄 중단됨 - 완료: {successful_prints}/{self.quantity}장")
             self.finished.emit(successful_prints > 0)
         elif successful_prints == self.quantity:
-            # 모든 카드 성공
-            side_text = "양면" if self.is_dual_side else "단면"
-            mode_text = "레이어" if self.print_mode == "layered" else "일반"
-            
-            if self.is_dual_side:
-                self.progress.emit(f"🎉 모든 카드 인쇄 완료! ({self.quantity}장 {side_text} {mode_text} 인쇄, 앞면:{front_orientation_text}, 뒷면:{back_orientation_text})")
-            else:
-                self.progress.emit(f"🎉 모든 카드 인쇄 완료! ({self.quantity}장 {side_text} {mode_text} 인쇄, 앞면:{front_orientation_text})")
-            
+            # 모든 카드 성공 - 단순화
+            self.progress.emit(f"🎉 모든 카드 인쇄 완료! ({self.quantity}장)")
             self.finished.emit(True)
         elif successful_prints > 0:
             # 일부 성공
@@ -217,7 +207,7 @@ class PrinterThread(QThread):
             self.finished.emit(True)
         else:
             # 모두 실패
-            self.progress.emit("❌ 모든 카드 인쇄 실패")
+            self.progress.emit("❌ 카드 인쇄 실패")
             self.finished.emit(False)
 
 

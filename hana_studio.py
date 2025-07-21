@@ -1,3 +1,4 @@
+import sys
 import os
 import cv2
 import numpy as np
@@ -7,7 +8,7 @@ import tempfile
 from pathlib import Path
 
 from PySide6.QtWidgets import QMainWindow, QFileDialog, QMessageBox
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QIcon
 
 # 분리된 모듈들 import
@@ -214,28 +215,15 @@ class HanaStudio(QMainWindow):
         self.adjusted_x = x
         self.adjusted_y = y
         
-        # 로그에 위치 변경 기록
+        # 로그에 위치 변경 기록 (개발자용)
         if x == 0.0 and y == 0.0:
             self.log("📐 카드 위치 초기화됨")
         else:
             self.log(f"📐 카드 위치 조정: X={x:+.1f}mm, Y={y:+.1f}mm")
         
-        # 상태 표시 업데이트
-        if x != 0.0 or y != 0.0:
-            position_text = f" (위치조정: X{x:+.1f}, Y{y:+.1f})"
-        else:
-            position_text = ""
-        
-        # 현재 상태에 위치 정보 추가
-        current_status = self.ui.components['progress_panel'].status_label.text()
-        if "위치조정:" in current_status:
-            # 기존 위치 정보 제거
-            base_status = current_status.split(" (위치조정:")[0]
-        else:
-            base_status = current_status
-        
-        new_status = base_status + position_text
-        self.ui.components['progress_panel'].update_status(new_status)
+        # 🎯 진행 상황 패널에는 위치 정보 표시하지 않음 (사용자 친화적)
+        # 기존 상태만 유지
+        # (위치 조정은 별도 패널에서 확인 가능하므로 진행상황에 중복 표시 불필요)
     
     def get_position_adjustment(self):
         """현재 위치 조정값 반환 (float)"""
@@ -248,51 +236,46 @@ class HanaStudio(QMainWindow):
     def _start_multi_print(self, front_path=None, back_path=None):
         """여러장 인쇄 시작 - 위치 조정값 포함 (float)"""
         try:
-            self.ui.components['printer_panel'].set_print_enabled(False)
+            # 🎯 진행 상황 표시 시작
             self.ui.components['progress_panel'].show_progress()
+            self.ui.components['printer_panel'].set_print_enabled(False)
+            
+            # 🎯 사용자 친화적 인쇄 시작 메시지
+            if self.print_quantity > 1:
+                self.log(f"📄 카드 {self.print_quantity}장 인쇄 시작!")
+            else:
+                self.log(f"📄 카드 인쇄 시작!")
             
             if front_path is None:
                 front_path = self.front_image_path
             if back_path is None:
                 back_path = self.back_image_path
             
-            # 프린터 스레드 시작 - 위치 조정값 추가
-            self.current_printer_thread = print_manager.start_multi_print(
+            # 프린터 스레드 생성 및 시작
+            self.current_printer_thread = PrinterThread(
                 dll_path=self.printer_dll_path,
                 front_image_path=front_path,
                 back_image_path=back_path,
-                front_mask_path=self.front_saved_mask_path if self.print_mode == "layered" else None,
-                back_mask_path=self.back_saved_mask_path if self.print_mode == "layered" else None,
+                front_mask_path=self.front_saved_mask_path,
+                back_mask_path=self.back_saved_mask_path,
                 print_mode=self.print_mode,
                 is_dual_side=self.is_dual_side,
                 quantity=self.print_quantity,
                 front_orientation=self.front_orientation,
                 back_orientation=self.back_orientation,
-                adjusted_x=self.adjusted_x,  # 위치 조정값 추가 (float)
-                adjusted_y=self.adjusted_y   # 위치 조정값 추가 (float)
+                adjusted_x=self.adjusted_x,
+                adjusted_y=self.adjusted_y
             )
             
             # 시그널 연결
             self.current_printer_thread.progress.connect(self.on_printer_progress)
-            self.current_printer_thread.finished.connect(self.on_printer_finished)
-            self.current_printer_thread.error.connect(self.on_printer_error)
             self.current_printer_thread.print_progress.connect(self.on_print_progress)
             self.current_printer_thread.card_completed.connect(self.on_card_completed)
+            self.current_printer_thread.finished.connect(self.on_printer_finished)
+            self.current_printer_thread.error.connect(self.on_printer_error)
             
+            # 스레드 시작
             self.current_printer_thread.start()
-            
-            front_orientation_text = "세로형" if self.front_orientation == "portrait" else "가로형"
-            back_orientation_text = "세로형" if self.back_orientation == "portrait" else "가로형"
-            
-            # 위치 조정 정보 추가
-            position_text = ""
-            if self.adjusted_x != 0.0 or self.adjusted_y != 0.0:
-                position_text = f" (위치조정: X{self.adjusted_x:+.1f}mm, Y{self.adjusted_y:+.1f}mm)"
-            
-            if self.is_dual_side:
-                self.log(f"📄 앞면:{front_orientation_text}, 뒷면:{back_orientation_text} {self.print_quantity}장 인쇄 시작!{position_text}")
-            else:
-                self.log(f"📄 앞면:{front_orientation_text} {self.print_quantity}장 인쇄 시작!{position_text}")
             
         except Exception as e:
             self.ui.components['progress_panel'].hide_progress()
@@ -762,32 +745,28 @@ class HanaStudio(QMainWindow):
             QMessageBox.critical(self, "업로드 오류", error_msg)
     
     def _update_ui_state(self):
-        """UI 상태 업데이트 - 개별 면 방향 정보 포함"""
+        """UI 상태 업데이트 - 단순화된 메시지"""
         # 상태 메시지만 업데이트
         if self.front_image_path:
-            # 개별 면 방향 정보 구성
-            front_orientation_text = "세로형" if self.front_orientation == "portrait" else "가로형"
-            back_orientation_text = "세로형" if self.back_orientation == "portrait" else "가로형"
-            
             if self.print_quantity > 1:
                 if self.is_dual_side and self.back_image_path:
-                    status = f"앞면:{front_orientation_text}, 뒷면:{back_orientation_text} {self.print_quantity}장 인쇄 준비"
+                    status = f"📋 카드 {self.print_quantity}장 인쇄 준비"
                 elif self.is_dual_side:
-                    status = f"앞면:{front_orientation_text} 양면 {self.print_quantity}장 인쇄 준비 (뒷면 선택사항)"
+                    status = f"📋 카드 {self.print_quantity}장 인쇄 준비"
                 else:
-                    status = f"앞면:{front_orientation_text} 단면 {self.print_quantity}장 인쇄 준비"
+                    status = f"📋 카드 {self.print_quantity}장 인쇄 준비"
             elif self.is_dual_side:
                 if self.back_image_path:
-                    status = f"앞면:{front_orientation_text}, 뒷면:{back_orientation_text} 양면 인쇄 준비"
+                    status = "📋 카드 인쇄 준비"
                 else:
-                    status = f"앞면:{front_orientation_text} 양면 인쇄 준비 (뒷면 선택사항)"
+                    status = "📋 카드 인쇄 준비"
             else:
-                status = f"앞면:{front_orientation_text} 단면 인쇄 준비"
+                status = "📋 카드 인쇄 준비"
             
             # status_text 대신 progress_panel 사용
             self.ui.components['progress_panel'].update_status(status)
         else:
-            self.ui.components['progress_panel'].update_status("앞면 이미지를 선택해주세요")
+            self.ui.components['progress_panel'].update_status("📂 이미지를 선택해주세요")
             
     def _reset_front_processing_results(self):
         """앞면 처리 결과 초기화"""
@@ -812,8 +791,19 @@ class HanaStudio(QMainWindow):
         self._update_print_button_state()
     
     def on_processing_progress(self, message):
-        """처리 진행상황 업데이트"""
-        self.ui.components['progress_panel'].update_status(message)
+        """처리 진행상황 업데이트 - 단순화"""
+        # 기술적 메시지를 사용자 친화적으로 변환
+        if "AI 모델" in message or "모델" in message:
+            simple_message = "🔄 이미지 처리 중..."
+        elif "배경 제거" in message or "마스크" in message:
+            simple_message = "🔄 이미지 처리 중..."
+        elif "완료" in message:
+            simple_message = "✅ 이미지 처리 완료!"
+        else:
+            simple_message = "🔄 이미지 처리 중..."
+            
+        self.ui.components['progress_panel'].update_status(simple_message)
+        # 로그는 기존 메시지 유지 (개발자용)
         self.log(message)
     
     def on_front_processing_finished(self, mask_array, used_threshold, original_threshold):
@@ -996,57 +986,62 @@ class HanaStudio(QMainWindow):
     
  
     def on_printer_progress(self, message):
-        """프린터 진행상황 업데이트"""
-        self.ui.components['progress_panel'].update_status(message)
+        """프린터 진행상황 업데이트 - 단순화"""
+        # 프린터 관련 메시지 단순화
+        if "카드 삽입" in message:
+            simple_message = "🔄 카드 인쇄 준비 중..."
+        elif "캔버스" in message or "설정" in message:
+            simple_message = "🖨️ 카드 인쇄 중..."
+        elif "인쇄 실행" in message:
+            simple_message = "🖨️ 카드 인쇄 중..."
+        elif "배출" in message:
+            simple_message = "✅ 카드 인쇄 완료"
+        elif "완료" in message:
+            simple_message = "✅ 인쇄 완료!"
+        elif "실패" in message or "오류" in message:
+            simple_message = "❌ 인쇄 실패"
+        else:
+            simple_message = "🖨️ 카드 인쇄 중..."
+            
+        self.ui.components['progress_panel'].update_status(simple_message)
+        # 로그는 기존 메시지 유지 (개발자용)
         self.log(message)
-    
+
     def on_print_progress(self, current, total):
         """인쇄 진행률 업데이트"""
         self.ui.components['progress_panel'].update_print_status(current, total, f"📄 {current}/{total} 장 인쇄 중...")
     
     def on_card_completed(self, card_num):
-        """개별 카드 완료"""
+        """개별 카드 완료 - 단순화"""
         self.log(f"✅ {card_num}번째 카드 인쇄 완료!")
         
         if card_num < self.print_quantity:
-            self.ui.components['progress_panel'].update_status(f"인쇄 진행 중: {card_num}/{self.print_quantity} 완료")
+            # 사용자에게는 간단한 메시지만 표시
+            self.ui.components['progress_panel'].update_status(f"🖨️ 카드 인쇄 중... ({card_num}/{self.print_quantity})")
     
     def on_printer_finished(self, success):
-        """프린터 작업 완료"""
+        """프린터 작업 완료 - 단순화"""
         self.ui.components['progress_panel'].hide_progress()
         self.ui.components['printer_panel'].set_print_enabled(True)
         
-        mode_text = "일반 인쇄" if self.print_mode == "normal" else "레이어 인쇄"
-        side_text = "양면" if self.is_dual_side else "단면"
-        
         if success:
-            # 사용된 마스킹 타입 정보 추가
-            mask_info = ""
-            if self.print_mode == "layered":
-                front_mask_type = self.ui.components['front_unified_mask_viewer'].get_mask_type()
-                back_mask_type = self.ui.components['back_unified_mask_viewer'].get_mask_type() if self.is_dual_side else None
-                
-                front_type_text = "수동" if front_mask_type == "manual" else "자동"
-                back_type_text = "수동" if back_mask_type == "manual" else "자동" if back_mask_type else "없음"
-                
-                mask_info = f" (앞면: {front_type_text}, 뒷면: {back_type_text})"
-            
-            self.log(f"✅ {side_text} {mode_text} {self.print_quantity}장 완료!{mask_info}")
-            self.ui.components['progress_panel'].update_status("인쇄 완료")
-            QMessageBox.information(self, "성공", f"{side_text} {mode_text} {self.print_quantity}장이 완료되었습니다!")
+            # 단순한 성공 메시지
+            self.log(f"✅ 카드 {self.print_quantity}장 인쇄 완료!")
+            self.ui.components['progress_panel'].update_status("🎉 인쇄 완료!")
+            QMessageBox.information(self, "성공", f"카드 {self.print_quantity}장이 완료되었습니다!")
         else:
-            self.log(f"❌ {side_text} {mode_text} 실패")
-            self.ui.components['progress_panel'].update_status("인쇄 실패")
+            self.log(f"❌ 카드 인쇄 실패")
+            self.ui.components['progress_panel'].update_status("❌ 인쇄 실패")
         
         self._update_print_button_state()
-    
+
     def on_printer_error(self, error_message):
-        """프린터 오류 처리"""
+        """프린터 오류 처리 - 단순화"""
         self.ui.components['progress_panel'].hide_progress()
         self.ui.components['printer_panel'].set_print_enabled(True)
         
         self.log(f"❌ 프린터 오류: {error_message}")
-        self.ui.components['progress_panel'].update_status("인쇄 오류 발생")
+        self.ui.components['progress_panel'].update_status("❌ 인쇄 오류 발생")
         QMessageBox.critical(self, "인쇄 오류", f"카드 인쇄 중 오류가 발생했습니다:\n\n{error_message}")
         
         self._update_print_button_state()
