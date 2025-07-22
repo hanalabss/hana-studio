@@ -23,18 +23,15 @@ class ProcessingThread(QThread):
     def run(self):
         """스레드 실행"""
         try:
-            self.progress.emit("AI 모델 로딩 중...")
+            self.progress.emit("🔄 이미지 처리 중...")
             
             # 모델 준비 상태 확인
             if not self.processor.is_model_ready():
                 self.error.emit("AI 모델이 준비되지 않았습니다.")
                 return
             
-            # 임계값 정보 포함하여 진행상황 표시
-            if self.alpha_threshold is not None:
-                self.progress.emit(f"배경 제거 처리 중... (임계값: {self.alpha_threshold})")
-            else:
-                self.progress.emit("배경 제거 처리 중...")
+            # 단순화된 진행상황 표시
+            self.progress.emit("🔄 이미지 처리 중...")
             
             # 배경 제거 실행 - 임계값 전달
             mask_result = self.processor.remove_background(
@@ -42,7 +39,7 @@ class ProcessingThread(QThread):
                 alpha_threshold=self.alpha_threshold
             )
             
-            self.progress.emit("마스크 생성 완료!")
+            self.progress.emit("✅ 이미지 처리 완료!")
             self.finished.emit(mask_result)
             
         except Exception as e:
