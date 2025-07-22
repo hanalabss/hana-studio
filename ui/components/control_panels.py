@@ -796,7 +796,7 @@ class ProgressPanel(QGroupBox):
         self.progress_bar.setVisible(False)
         self.progress_bar.setFixedHeight(25)
         
-        self.status_label = QLabel("대기 중...")
+        self.status_label = QLabel("⏸️ 대기 중...")
         self.status_label.setStyleSheet("""
             font-size: 14px; 
             color: #495057;
@@ -821,7 +821,81 @@ class ProgressPanel(QGroupBox):
         layout.addWidget(self.progress_bar)
         layout.addWidget(self.status_label)
         layout.addWidget(self.print_progress_label)
-    
+
+    def _get_user_friendly_status(self, technical_status: str) -> str:
+        """사용자 친화적 상태 메시지로 변환"""
+        status = technical_status.lower()
+        
+        # 🎯 기술적 정보 제거 및 단순화 매핑
+        simple_mappings = {
+            # 이미지 처리 관련
+            "배경 제거": "이미지 처리",
+            "마스크 생성": "이미지 처리",
+            "ai 모델": "이미지 처리",
+            "임계값": "",
+            
+            # 인쇄 준비 관련  
+            "앞면:": "",
+            "뒷면:": "",
+            "세로형": "",
+            "가로형": "",
+            "단면": "",
+            "양면": "",
+            "레이어": "",
+            "일반": "",
+            
+            # 위치 조정 정보 제거
+            "(위치조정:": "(",
+            "x+": "",
+            "x-": "",
+            "y+": "",
+            "y-": "",
+            "mm": "",
+        }
+        
+        # 기술적 용어 단순화
+        result = technical_status
+        for tech_term, simple_term in simple_mappings.items():
+            result = result.replace(tech_term, simple_term)
+        
+        # 🎯 상태별 간단 메시지로 변환 (이모지 추가)
+        if "처리 중" in status or "로딩" in status or "다운로드" in status:
+            return "🔄 이미지 처리 중..."
+        elif "인쇄 준비" in status:
+            # 매수 정보만 추출
+            import re
+            quantity_match = re.search(r'(\d+)장', result)
+            if quantity_match:
+                return f"📋 카드 {quantity_match.group(1)}장 인쇄 준비"
+            else:
+                return "📋 카드 인쇄 준비"
+        elif "인쇄 진행" in status or "인쇄 중" in status:
+            return "🖨️ 카드 인쇄 중..."
+        elif "인쇄 완료" in status or "완료" in status:
+            return "✅ 인쇄 완료!"
+        elif "실패" in status or "오류" in status:
+            return "❌ 작업 실패"
+        elif "테스트" in status:
+            if "성공" in status:
+                return "✅ 프린터 연결 확인됨"
+            elif "실패" in status:
+                return "❌ 프린터 연결 실패"
+            else:
+                return "🔍 프린터 확인 중..."
+        elif "대기" in status:
+            return "⏸️ 대기 중..."
+        
+        # 🎯 괄호와 상세 정보 제거
+        result = re.sub(r'\(.*?\)', '', result)  # 모든 괄호 내용 제거
+        result = re.sub(r'[,:].*$', '', result)  # 콤마나 콜론 이후 내용 제거
+        result = result.strip()
+        
+        # 빈 문자열이면 기본값 반환
+        if not result or len(result.strip()) < 3:
+            return "⚙️ 작업 중..."
+            
+        return result[:30]  # 최대 30자 제한
+
     def show_progress(self, indeterminate=True):
         """진행바 표시"""
         if indeterminate:
@@ -834,13 +908,14 @@ class ProgressPanel(QGroupBox):
         self.print_progress_label.setVisible(False)
     
     def update_status(self, status: str):
-        """상태 메시지 업데이트"""
-        truncated_status = truncate_text(status, 30)
+        """상태 메시지 업데이트 - 사용자 친화적으로 변환"""
+        user_friendly_status = self._get_user_friendly_status(status)
+        truncated_status = truncate_text(user_friendly_status, 30)
         self.status_label.setText(truncated_status)
     
     def show_print_progress(self, current: int, total: int):
-        """인쇄 진행상황 표시"""
-        progress_text = f"📄 {current}/{total} 장 인쇄 중..."
+        """인쇄 진행상황 표시 - 단순화"""
+        progress_text = f"📄 {current}/{total} 장"
         self.print_progress_label.setText(progress_text)
         self.print_progress_label.setVisible(True)
         
@@ -848,8 +923,8 @@ class ProgressPanel(QGroupBox):
         self.progress_bar.setValue(current)
     
     def update_print_status(self, current: int, total: int, status: str):
-        """인쇄 상태와 진행률 동시 업데이트"""
-        self.update_status(status)
+        """인쇄 상태와 진행률 동시 업데이트 - 단순화"""
+        self.update_status("🖨️ 카드 인쇄 중...")
         self.show_print_progress(current, total)
 
 
