@@ -592,7 +592,7 @@ class PrintModePanel(QGroupBox):
 
 
 class PrintQuantityPanel(QGroupBox):
-    """인쇄 매수 선택 패널"""
+    """인쇄 매수 선택 패널 - 통일된 컨트롤 버튼 스타일"""
     quantity_changed = Signal(int)
     
     def __init__(self):
@@ -602,62 +602,114 @@ class PrintQuantityPanel(QGroupBox):
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(5)
-        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(12)
+        layout.setContentsMargins(8, 16, 8, 12)
         
-        # 매수 선택 영역
+        # 매수 선택 영역 - 위치 조정 패널과 동일한 스타일
         quantity_layout = QHBoxLayout()
-        quantity_layout.setSpacing(6)
-        quantity_label = QLabel("매수:")
+        quantity_layout.setSpacing(5)
+        quantity_layout.setContentsMargins(0, 0, 0, 0)
+        
+        quantity_label = QLabel("📄 매수:")
+        quantity_label.setFixedWidth(52)
         quantity_label.setStyleSheet("""
             QLabel {
                 background: transparent;
                 border: none;
-                padding: 0px;
-                font-size: 14px;
+                font-size: 12px;
+                font-weight: 600;
                 color: #495057;
             }
         """)
-
+        
+        # 감소 버튼 - 위치 조정과 동일한 스타일
+        self.minus_btn = ModernButton("-")
+        self.minus_btn.setFixedSize(24, 24)
+        self.minus_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #DC3545;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-size: 13px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #C82333;
+            }
+            QPushButton:pressed {
+                background-color: #A71E2A;
+            }
+        """)
+        
+        # 매수 SpinBox - 위치 조정과 동일한 스타일
         self.quantity_spinbox = QSpinBox()
         self.quantity_spinbox.setMinimum(1)
         self.quantity_spinbox.setMaximum(99999)
         self.quantity_spinbox.setValue(1)
-        self.quantity_spinbox.setSuffix(" 장")
-        self.quantity_spinbox.setFixedSize(100, 35)
+        self.quantity_spinbox.setFixedSize(62, 24)
         self.quantity_spinbox.setStyleSheet("""
             QSpinBox {
                 background-color: #FFFFFF;
-                border: 2px solid #E9ECEF;
+                border: 1px solid #DEE2E6;
                 border-radius: 4px;
-                padding: 3px 6px;
-                font-size: 15px;
+                padding: 2px 4px;
+                font-size: 11px;
                 color: #495057;
                 font-weight: 600;
             }
             QSpinBox:focus {
                 border-color: #4A90E2;
+                border-width: 2px;
             }
             QSpinBox::up-button, QSpinBox::down-button {
-                width: 16px;
+                width: 14px;
                 border: none;
+                background-color: #F8F9FA;
             }
-            QSpinBox::up-button {
+            QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+                background-color: #E9ECEF;
+            }
+        """)
+        
+        # 증가 버튼 - 위치 조정과 동일한 스타일
+        self.plus_btn = ModernButton("+")
+        self.plus_btn.setFixedSize(24, 24)
+        self.plus_btn.setStyleSheet("""
+            QPushButton {
                 background-color: #28A745;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-size: 13px;
+                font-weight: bold;
             }
-            QSpinBox::up-button:hover {
+            QPushButton:hover {
                 background-color: #218838;
             }
-            QSpinBox::down-button {
-                background-color: #DC3545;
+            QPushButton:pressed {
+                background-color: #1E7E34;
             }
-            QSpinBox::down-button:hover {
-                background-color: #C82333;
+        """)
+        
+        # 단위 라벨
+        unit_label = QLabel("장")
+        unit_label.setFixedWidth(20)
+        unit_label.setStyleSheet("""
+            QLabel {
+                background: transparent;
+                border: none;
+                font-size: 10px;
+                color: #6C757D;
+                font-weight: 500;
             }
         """)
         
         quantity_layout.addWidget(quantity_label)
+        quantity_layout.addWidget(self.minus_btn)
         quantity_layout.addWidget(self.quantity_spinbox)
+        quantity_layout.addWidget(self.plus_btn)
+        quantity_layout.addWidget(unit_label)
         quantity_layout.addStretch()
         
         # 예상 시간 표시
@@ -673,10 +725,26 @@ class PrintQuantityPanel(QGroupBox):
         self.time_estimate_label.setWordWrap(True)
         
         layout.addLayout(quantity_layout)
+        layout.addSpacing(8)  # 간격 추가
         layout.addWidget(self.time_estimate_label)
+        layout.addStretch()
         
-        # 신호 연결
+        # 시그널 연결
         self.quantity_spinbox.valueChanged.connect(self._on_quantity_changed)
+        self.minus_btn.clicked.connect(self._decrease_quantity)
+        self.plus_btn.clicked.connect(self._increase_quantity)
+    
+    def _decrease_quantity(self):
+        """매수 감소"""
+        current_value = self.quantity_spinbox.value()
+        if current_value > 1:
+            self.quantity_spinbox.setValue(current_value - 1)
+    
+    def _increase_quantity(self):
+        """매수 증가"""
+        current_value = self.quantity_spinbox.value()
+        if current_value < 99999:
+            self.quantity_spinbox.setValue(current_value + 1)
     
     def _on_quantity_changed(self, value):
         """매수 변경 시 예상 시간 업데이트"""
@@ -702,7 +770,6 @@ class PrintQuantityPanel(QGroupBox):
     def set_quantity(self, quantity: int):
         """매수 설정"""
         self.quantity_spinbox.setValue(quantity)
-
 
 class PrinterPanel(QGroupBox):
     """프린터 연동 패널 - 개별 면 방향 지원"""
