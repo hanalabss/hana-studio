@@ -399,7 +399,12 @@ class R600Printer:
         
         # 캔버스 클리어 및 재설정
         self.clear_canvas()
-        self.setup_canvas(card_orientation,180)
+        
+        # 🎯 인쇄 방향에 따른 회전 설정
+        # LANDSCAPE(가로)일 때는 회전하지 않고, PORTRAIT(세로)일 때만 180도 회전
+        rotation = 0 if card_orientation == "landscape" else 180
+        print(f"뒷면 회전 각도: {rotation}도 (방향: {card_orientation})")
+        self.setup_canvas(card_orientation, rotation)
         
         # 뒷면 이미지가 있는 경우
         if back_image_path and os.path.exists(back_image_path):
