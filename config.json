@@ -1,0 +1,29 @@
+{
+  "ai_model": "isnet-general-use",
+  "alpha_threshold": 45,
+  "output_quality": 95,
+  "auto_save_results": false,
+  "max_image_size": 2048,
+  "timeout_seconds": 30,
+  "language": "ko",
+  "theme": "light",
+  "window_geometry": {
+    "width": 1920,
+    "height": 1017,
+    "x": 0,
+    "y": 31
+  },
+  "directories": {
+    "output": "output",
+    "temp": "temp",
+    "models": "models",
+    "logs": "logs"
+  },
+  "printer": {
+    "dll_path": "./libDSRetransfer600App.dll",
+    "card_width": 55,
+    "card_height": 86.6,
+    "timeout_ms": 10000,
+    "auto_detect": true
+  }
+}
