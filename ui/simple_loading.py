@@ -1,68 +1,162 @@
 """
 ui/simple_loading.py
-즉시 표시되는 간단한 로딩 윈도우 - 멀티스레드 지원 + 아이콘 표시
+즉시 표시되는 통합 로딩 윈도우 - 모든 로딩 프로세스 통합
+기존 loading_dialog.py, installation_dialog.py, unified_loading_dialog.py 기능 통합
 """
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar, QPushButton
 from PySide6.QtCore import Qt, QTimer, QThread, Signal
 from PySide6.QtGui import QFont, QPixmap
 import os
+import time
+from pathlib import Path
+import sys
 
 
 class InitializationThread(QThread):
-    """초기화 작업을 백그라운드에서 수행하는 스레드"""
+    """모든 초기화 작업을 통합 처리하는 스레드"""
     
-    progress_update = Signal(str)  # 진행 상황 메시지
-    finished = Signal()           # 완료 시그널
-    error = Signal(str)          # 오류 시그널
+    progress_update = Signal(str)    # 진행 상황 메시지
+    progress_percent = Signal(int)   # 진행률 퍼센트
+    step_changed = Signal(str, str)  # (제목, 설명)
+    finished = Signal()             # 완료 시그널
+    error = Signal(str)            # 오류 시그널
+    
+    def __init__(self):
+        super().__init__()
+        self.cancelled = False
+        self.model_name = None
+        
+    def cancel(self):
+        """초기화 취소"""
+        self.cancelled = True
     
     def run(self):
-        """백그라운드 초기화 작업"""
+        """통합 초기화 작업"""
         try:
-            import time
+            # 1단계: 기본 설정 로딩 (10%)
+            self.step_changed.emit("기본 설정", "프로그램 구성요소를 준비하고 있습니다...")
+            self.progress_percent.emit(10)
+            time.sleep(0.3)
             
-            # 1단계: 기본 설정 로딩
-            self.progress_update.emit("기본 설정 로딩 중...")
-            time.sleep(0.3)  # UI 응답성을 위한 짧은 대기
-            
+            if self.cancelled:
+                return
+                
             from config import config, AppConstants, get_resource_path
+            self.model_name = config.get('ai_model', 'isnet-general-use')
             
-            # 2단계: UI 스타일 로딩
-            self.progress_update.emit("UI 테마 로딩 중...")
+            # 2단계: UI 테마 로딩 (20%)
+            self.step_changed.emit("UI 테마", "사용자 인터페이스를 준비하고 있습니다...")
+            self.progress_percent.emit(20)
             time.sleep(0.2)
+            
+            if self.cancelled:
+                return
             
             from ui.styles import get_light_palette
             
-            # 3단계: 다이얼로그 모듈 로딩
-            self.progress_update.emit("AI 엔진 모듈 준비 중...")
-            time.sleep(0.2)
-            
-            from ui.installation_dialog import InstallationDialog
-            
-            # 4단계: 완료
-            self.progress_update.emit("준비 완료!")
+            # 3단계: AI 엔진 확인 (30%)
+            self.step_changed.emit("AI 엔진 확인", "AI 모델 상태를 확인하고 있습니다...")
+            self.progress_percent.emit(30)
             time.sleep(0.3)
+            
+            if self.cancelled:
+                return
+            
+            # 모델 정보 가져오기
+            model_info = self._get_model_info()
+            cache_exists = self._check_cache_exists()
+            
+            # 4단계: AI 모델 로딩/다운로드 (40-85%)
+            if cache_exists:
+                self.step_changed.emit("AI 엔진 로딩", "기존 AI 엔진을 메모리에 로딩하고 있습니다...")
+                self.progress_percent.emit(60)
+            else:
+                self.step_changed.emit("AI 엔진 다운로드", 
+                    f"고품질 AI 엔진을 다운로드하고 있습니다...\n파일 크기: 약 {model_info.get('size', '176MB')}")
+                self.progress_percent.emit(40)
+            
+            time.sleep(0.5)
+            
+            if self.cancelled:
+                return
+            
+            # 실제 AI 모델 로딩
+            self.step_changed.emit("AI 엔진 초기화", "AI 모델을 메모리에 로딩하고 있습니다...")
+            self.progress_percent.emit(70)
+            
+            from rembg import new_session
+            session = new_session(model_name=self.model_name)
+            
+            if self.cancelled:
+                return
+            
+            self.progress_percent.emit(85)
+            
+            # 5단계: 완료 (100%)
+            self.step_changed.emit("초기화 완료", "Hana Studio 준비가 완료되었습니다!")
+            self.progress_percent.emit(100)
+            time.sleep(0.5)
             
             self.finished.emit()
             
         except Exception as e:
-            self.error.emit(str(e))
+            if not self.cancelled:
+                self.error.emit(f"초기화 중 오류가 발생했습니다: {str(e)}")
+    
+    def _get_model_info(self):
+        """AI 모델 정보 반환"""
+        model_info = {
+            'isnet-general-use': {'name': '고품질 AI 엔진', 'size': '176MB'},
+            'u2net': {'name': '표준 AI 엔진', 'size': '176MB'},
+            'u2netp': {'name': '경량 AI 엔진', 'size': '4.7MB'},
+            'silueta': {'name': '정밀 AI 엔진', 'size': '43MB'}
+        }
+        return model_info.get(self.model_name, {'name': 'AI 엔진', 'size': '176MB'})
+    
+    def _check_cache_exists(self):
+        """AI 모델 캐시 존재 여부 확인"""
+        try:
+            if sys.platform == "win32":
+                cache_base = Path.home() / ".cache" / "huggingface" / "hub"
+            else:
+                cache_base = Path.home() / ".cache" / "huggingface" / "hub"
+            
+            if not cache_base.exists():
+                return False
+            
+            # 간단한 캐시 확인
+            for pattern in ["*model*", "*.onnx", "*.pth"]:
+                if list(cache_base.glob(f"**/{pattern}")):
+                    return True
+            
+            return False
+        except Exception:
+            return False
 
 
 class SimpleLoadingWindow(QWidget):
-    """즉시 표시되는 간단한 로딩 윈도우 - 아이콘 + 멀티스레드"""
+    """통합 로딩 윈도우 - 즉시 표시 + 모든 기능 통합"""
     
     def __init__(self):
         super().__init__()
         self.init_thread = None
+        self.current_phase = "initialization"
         self._setup_ui()
         self._setup_window()
-        self._start_initialization()
+        
+        # 🚀 UI 구성 완료 후 즉시 표시
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        
+        # 🎯 UI가 완전히 표시된 후 초기화 시작
+        QTimer.singleShot(200, self._start_initialization)
     
     def _setup_window(self):
         """윈도우 기본 설정"""
         self.setWindowTitle("Hana Studio")
-        self.setFixedSize(380, 140)  # 아이콘 공간을 위해 폭 증가
+        self.setFixedSize(550, 220)  # 충분히 넓고 높게 설정
         
         # 화면 중앙에 배치
         from PySide6.QtWidgets import QApplication
@@ -77,12 +171,12 @@ class SimpleLoadingWindow(QWidget):
             Qt.WindowType.FramelessWindowHint
         )
         
-        # 스타일 설정
+        # 현대적인 스타일 설정
         self.setStyleSheet("""
             QWidget {
                 background-color: white;
                 border: 2px solid #4A90E2;
-                border-radius: 12px;
+                border-radius: 15px;
             }
             QLabel {
                 color: #2C3E50;
@@ -92,50 +186,113 @@ class SimpleLoadingWindow(QWidget):
             QProgressBar {
                 border: none;
                 background-color: #E9ECEF;
-                border-radius: 6px;
-                height: 8px;
+                border-radius: 9px;
+                height: 18px;
+                text-align: center;
+                font-size: 12px;
+                font-weight: 600;
+                color: #495057;
             }
             QProgressBar::chunk {
-                background-color: #4A90E2;
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 1, y2: 0,
+                    stop: 0 #4A90E2, stop: 0.5 #357ABD, stop: 1 #4A90E2
+                );
+                border-radius: 9px;
+                margin: 1px;
+            }
+            QPushButton {
+                background-color: #6c757d;
+                color: white;
+                border: none;
                 border-radius: 6px;
+                font-family: 'Segoe UI', Arial, sans-serif;
+                font-size: 11px;
+                font-weight: 600;
+                padding: 8px 16px;
+            }
+            QPushButton:hover {
+                background-color: #5a6268;
+            }
+            QPushButton:pressed {
+                background-color: #545b62;
             }
         """)
     
     def _setup_ui(self):
-        """UI 구성 - 아이콘 포함"""
+        """UI 구성 - UX 최적화된 넉넉한 레이아웃"""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 15, 20, 15)
-        layout.setSpacing(12)
+        layout.setContentsMargins(35, 25, 35, 25)  # 넉넉한 여백
+        layout.setSpacing(20)  # 요소 간 충분한 간격
         
         # 헤더 영역 (아이콘 + 제목)
         header_layout = QHBoxLayout()
-        header_layout.setSpacing(12)
+        header_layout.setSpacing(20)  # 아이콘과 제목 간 충분한 간격
         
         # 🎨 아이콘 표시
         self.icon_label = QLabel()
         self._load_icon()
         header_layout.addWidget(self.icon_label)
         
-        # 제목
-        title = QLabel("Hana Studio")
-        title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        header_layout.addWidget(title)
+        # 제목만 표시 (부제목 삭제)
+        title_layout = QVBoxLayout()
+        title_layout.setSpacing(5)
         
+        title = QLabel("Hana Studio")
+        title.setFont(QFont("Segoe UI", 20, QFont.Weight.Bold))  # 더 큰 폰트
+        title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        
+        title_layout.addWidget(title)
+        title_layout.addStretch()  # 세로 공간 채우기
+        
+        header_layout.addLayout(title_layout)
         header_layout.addStretch()
         
-        # 상태 메시지
-        self.status_label = QLabel("시작 중...")
-        self.status_label.setFont(QFont("Segoe UI", 10))
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # 진행 상황 영역 - 넉넉한 공간 할당
+        progress_container = QVBoxLayout()
+        progress_container.setSpacing(12)  # 요소 간 충분한 간격
         
-        # 진행바 (애니메이션용)
+        # 현재 단계 제목
+        self.step_title = QLabel("시작 중...")
+        self.step_title.setFont(QFont("Segoe UI", 14, QFont.Weight.DemiBold))  # 큰 폰트
+        self.step_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.step_title.setMinimumHeight(25)  # 최소 높이 보장
+        
+        # 현재 단계 설명
+        self.step_description = QLabel("Hana Studio를 준비하고 있습니다.")
+        self.step_description.setFont(QFont("Segoe UI", 11))  # 읽기 좋은 크기
+        self.step_description.setStyleSheet("color: #6C757D; line-height: 1.4;")
+        self.step_description.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.step_description.setWordWrap(True)
+        self.step_description.setMinimumHeight(45)  # 2줄 텍스트 대응
+        
+        # 진행바
         self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 0)  # 무한 애니메이션
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setFormat("%p%")
+        self.progress_bar.setFixedHeight(18)  # 진행바 높이 증가
         
+        progress_container.addWidget(self.step_title)
+        progress_container.addWidget(self.step_description)
+        progress_container.addWidget(self.progress_bar)
+        
+        # 취소 버튼 영역
+        button_layout = QHBoxLayout()
+        button_layout.setContentsMargins(0, 15, 0, 0)  # 상단 여백
+        
+        self.cancel_button = QPushButton("취소")
+        self.cancel_button.setFixedSize(80, 35)  # 넉넉한 버튼 크기
+        self.cancel_button.clicked.connect(self._cancel_operation)
+        
+        button_layout.addStretch()
+        button_layout.addWidget(self.cancel_button)
+        
+        # 레이아웃 조립
         layout.addLayout(header_layout)
-        layout.addWidget(self.status_label)
-        layout.addWidget(self.progress_bar)
+        layout.addLayout(progress_container)
+        layout.addLayout(button_layout)
     
     def _load_icon(self):
         """hana.ico 아이콘 로딩"""
@@ -145,9 +302,8 @@ class SimpleLoadingWindow(QWidget):
             
             if os.path.exists(icon_path):
                 pixmap = QPixmap(icon_path)
-                # 적절한 크기로 스케일링
                 scaled_pixmap = pixmap.scaled(
-                    48, 48, 
+                    56, 56,  # 더 큰 아이콘
                     Qt.AspectRatioMode.KeepAspectRatio, 
                     Qt.TransformationMode.SmoothTransformation
                 )
@@ -156,26 +312,29 @@ class SimpleLoadingWindow(QWidget):
             else:
                 # 아이콘이 없으면 이모지 사용
                 self.icon_label.setText("🎨")
-                self.icon_label.setFont(QFont("Segoe UI", 32))
+                self.icon_label.setFont(QFont("Segoe UI", 32))  # 더 큰 이모지
                 self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 print(f"⚠️ 아이콘 파일 없음, 이모지 사용: {icon_path}")
                 
         except Exception as e:
             # 오류 시 기본 이모지
             self.icon_label.setText("🎨")
-            self.icon_label.setFont(QFont("Segoe UI", 32))
+            self.icon_label.setFont(QFont("Segoe UI", 32))  # 더 큰 이모지
             self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             print(f"❌ 아이콘 로드 실패: {e}")
         
-        # 아이콘 레이블 크기 고정
-        self.icon_label.setFixedSize(48, 48)
+        # 아이콘 레이블 크기 조정 (넉넉하게)
+        self.icon_label.setFixedSize(56, 56)
     
     def _start_initialization(self):
-        """멀티스레드로 초기화 시작"""
+        """통합 초기화 시작"""
+        self.current_phase = "initialization"
         self.init_thread = InitializationThread()
         
         # 시그널 연결
         self.init_thread.progress_update.connect(self.update_status)
+        self.init_thread.progress_percent.connect(self.update_progress)
+        self.init_thread.step_changed.connect(self.update_step)
         self.init_thread.finished.connect(self._on_initialization_finished)
         self.init_thread.error.connect(self._on_initialization_error)
         
@@ -183,59 +342,108 @@ class SimpleLoadingWindow(QWidget):
         self.init_thread.start()
     
     def update_status(self, message):
-        """상태 메시지 업데이트 (스레드 안전)"""
-        self.status_label.setText(message)
-        # processEvents 호출하지 않음 (스레드에서 호출하면 안전하지 않음)
+        """상태 메시지 업데이트"""
+        self.step_description.setText(message)
+    
+    def update_progress(self, percent):
+        """진행률 업데이트"""
+        self.progress_bar.setValue(percent)
+        
+        # 완료 시 버튼 변경
+        if percent >= 100:
+            self.cancel_button.setText("완료")
+            self.cancel_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #28a745;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    font-family: 'Segoe UI', Arial, sans-serif;
+                    font-size: 11px;
+                    font-weight: 600;
+                    padding: 8px 16px;
+                }
+                QPushButton:hover {
+                    background-color: #218838;
+                }
+            """)
+    
+    def update_step(self, title, description):
+        """단계 정보 업데이트"""
+        self.step_title.setText(title)
+        self.step_description.setText(description)
     
     def _on_initialization_finished(self):
         """초기화 완료 처리"""
-        self.update_status("준비 완료!")
+        self.current_phase = "complete"
+        self.update_step("초기화 완료", "Hana Studio 준비가 완료되었습니다!")
         
-        # 잠시 대기 후 다음 단계로
-        QTimer.singleShot(500, self._proceed_to_next_step)
+        # 잠시 대기 후 메인 윈도우로 전환
+        QTimer.singleShot(1000, self._show_main_window)
     
     def _on_initialization_error(self, error_msg):
         """초기화 오류 처리"""
-        self.update_status(f"오류: {error_msg}")
+        self.current_phase = "error"
+        self.update_step("오류 발생", f"초기화 중 오류가 발생했습니다:\n{error_msg}")
+        
+        # 진행바 빨간색으로 변경
         self.progress_bar.setStyleSheet("""
             QProgressBar::chunk {
-                background-color: #E74C3C;
+                background-color: #dc3545;
+                border-radius: 8px;
             }
         """)
         
-        # 3초 후 종료
-        QTimer.singleShot(3000, self.close)
+        # 버튼을 닫기로 변경
+        self.cancel_button.setText("닫기")
+        self.cancel_button.setStyleSheet("""
+            QPushButton {
+                background-color: #dc3545;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-family: 'Segoe UI', Arial, sans-serif;
+                font-size: 11px;
+                font-weight: 600;
+                padding: 8px 16px;
+            }
+            QPushButton:hover {
+                background-color: #c82333;
+            }
+        """)
+        
+        # 5초 후 자동 종료
+        QTimer.singleShot(5000, self.close)
     
-    def _proceed_to_next_step(self):
-        """다음 단계로 진행 (설치 다이얼로그 표시)"""
-        try:
-            # 설치 다이얼로그 생성 및 표시
-            from ui.installation_dialog import InstallationDialog
+    def _cancel_operation(self):
+        """작업 취소/완료"""
+        if self.current_phase == "complete":
+            # 완료 버튼이면 메인 윈도우로
+            self._show_main_window()
+            return
+        elif self.current_phase == "error":
+            # 오류 시 프로그램 종료
+            import sys
+            sys.exit(1)
+        else:
+            # 초기화 중 취소
+            from PySide6.QtWidgets import QMessageBox
+            reply = QMessageBox.question(
+                self,
+                "초기화 취소",
+                "Hana Studio 초기화를 취소하시겠습니까?\n\n"
+                "취소하면 프로그램을 사용할 수 없습니다.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
             
-            dialog = InstallationDialog()
-            dialog.show()
-            dialog.raise_()
-            dialog.activateWindow()
-            
-            # 로딩 윈도우 숨기기
-            self.hide()
-            
-            # 다이얼로그 실행 및 결과 처리
-            result = dialog.exec()
-            
-            if result == dialog.DialogCode.Accepted:
-                # AI 모델 로딩 완료, 메인 윈도우 표시
-                self._show_main_window()
-            else:
-                # 취소됨, 프로그램 종료
+            if reply == QMessageBox.StandardButton.Yes:
+                if self.init_thread and self.init_thread.isRunning():
+                    self.init_thread.cancel()
+                    self.init_thread.quit()
+                    self.init_thread.wait(3000)
                 import sys
                 sys.exit(1)
-                
-        except Exception as e:
-            print(f"다음 단계 진행 오류: {e}")
-            import traceback
-            traceback.print_exc()
-            self.close()
     
     def _show_main_window(self):
         """메인 윈도우 표시"""
@@ -268,7 +476,37 @@ class SimpleLoadingWindow(QWidget):
     def closeEvent(self, event):
         """윈도우 닫기 시 스레드 정리"""
         if self.init_thread and self.init_thread.isRunning():
+            self.init_thread.cancel()
             self.init_thread.quit()
             self.init_thread.wait(1000)
         
         event.accept()
+
+
+# 하위 호환성을 위한 편의 함수들
+def show_installation_dialog(parent=None):
+    """하위 호환성을 위한 별칭 - 실제로는 통합 로딩 윈도우 표시"""
+    window = SimpleLoadingWindow()
+    # 이미 show()가 호출되므로 추가 작업 불필요
+    return True  # 항상 성공으로 간주
+
+
+def show_unified_loading_dialog(parent=None):
+    """하위 호환성을 위한 별칭"""
+    return show_installation_dialog(parent)
+
+
+# 하위 호환성을 위한 클래스 별칭들
+class InstallationDialog(SimpleLoadingWindow):
+    """하위 호환성을 위한 별칭"""
+    pass
+
+
+class LoadingDialog(SimpleLoadingWindow):
+    """하위 호환성을 위한 별칭"""
+    pass
+
+
+class UnifiedLoadingDialog(SimpleLoadingWindow):
+    """하위 호환성을 위한 별칭"""
+    pass
