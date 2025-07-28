@@ -195,4 +195,5 @@ cython_debug/
 dll파일/
 *.exe
 release/
+release_fast/
 debug/

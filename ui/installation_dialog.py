@@ -137,17 +137,31 @@ class InstallationDialog(QDialog):
     """현대적인 설치 다이얼로그"""
     
     def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Hana Studio 설치")
-        self.setFixedSize(550, 320)
-        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowTitleHint | Qt.WindowType.WindowStaysOnTopHint)
-        self.setModal(True)
-        
-        # 스레드 참조
-        self.installation_thread = None
-        self._setup_ui()
-        self._apply_modern_style()
-        self._start_installation()
+            super().__init__(parent)
+            self.setWindowTitle("Hana Studio 설치")
+            self.setFixedSize(550, 320)
+            
+            # 🎯 다이얼로그가 확실히 보이도록 설정
+            self.setWindowFlags(
+                Qt.WindowType.Dialog | 
+                Qt.WindowType.WindowTitleHint | 
+                Qt.WindowType.WindowStaysOnTopHint |
+                Qt.WindowType.WindowSystemMenuHint
+            )
+            self.setModal(True)
+            
+            # 스레드 참조
+            self.installation_thread = None
+            self._setup_ui()
+            self._apply_modern_style()
+            
+            # 🚀 UI 구성 완료 후 즉시 표시
+            self.show()
+            self.raise_()
+            self.activateWindow()
+            
+            # 🎯 UI가 완전히 표시된 후 설치 시작
+            QTimer.singleShot(200, self._start_installation)
     
     def _setup_ui(self):
         """UI 구성"""
