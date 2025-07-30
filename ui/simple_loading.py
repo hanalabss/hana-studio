@@ -136,7 +136,7 @@ class InitializationThread(QThread):
 
 
 class SimpleLoadingWindow(QWidget):
-    """통합 로딩 윈도우 - 즉시 표시 + 모든 기능 통합"""
+    """통합 로딩 윈도우 - 로고와 현재 진행상황만 깔끔하게 표시"""
     
     def __init__(self):
         super().__init__()
@@ -154,9 +154,9 @@ class SimpleLoadingWindow(QWidget):
         QTimer.singleShot(200, self._start_initialization)
     
     def _setup_window(self):
-        """윈도우 기본 설정"""
+        """윈도우 기본 설정 - 더 넓고 높게 조정"""
         self.setWindowTitle("Hana Studio")
-        self.setFixedSize(550, 220)  # 충분히 넓고 높게 설정
+        self.setFixedSize(600, 280)  # 550x220 → 600x280으로 증가 (더 넉넉하게)
         
         # 화면 중앙에 배치
         from PySide6.QtWidgets import QApplication
@@ -220,51 +220,49 @@ class SimpleLoadingWindow(QWidget):
         """)
     
     def _setup_ui(self):
-        """UI 구성 - UX 최적화된 넉넉한 레이아웃"""
+        """UI 구성 - 로고 + 현재 진행상황으로 깔끔하게 재구성"""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(35, 25, 35, 25)  # 넉넉한 여백
-        layout.setSpacing(20)  # 요소 간 충분한 간격
+        layout.setContentsMargins(40, 30, 40, 30)  # 35x25 → 40x30으로 증가 (더 넉넉한 여백)
+        layout.setSpacing(25)  # 20 → 25로 증가 (요소 간 더 넓은 간격)
         
-        # 헤더 영역 (아이콘 + 제목)
+        # 헤더 영역 (로고만 표시)
         header_layout = QHBoxLayout()
-        header_layout.setSpacing(20)  # 아이콘과 제목 간 충분한 간격
+        header_layout.setSpacing(25)  # 20 → 25로 증가
         
-        # 🎨 아이콘 표시
+        # 🎨 로고/아이콘 표시
         self.icon_label = QLabel()
         self._load_icon()
         header_layout.addWidget(self.icon_label)
         
-        # 제목만 표시 (부제목 삭제)
-        title_layout = QVBoxLayout()
-        title_layout.setSpacing(5)
+        # 현재 진행상황 영역 (제목 제거하고 진행상황만)
+        status_layout = QVBoxLayout()
+        status_layout.setSpacing(8)  # 5 → 8로 증가
         
-        title = QLabel("Hana Studio")
-        title.setFont(QFont("Segoe UI", 20, QFont.Weight.Bold))  # 더 큰 폰트
-        title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        
-        title_layout.addWidget(title)
-        title_layout.addStretch()  # 세로 공간 채우기
-        
-        header_layout.addLayout(title_layout)
-        header_layout.addStretch()
-        
-        # 진행 상황 영역 - 넉넉한 공간 할당
-        progress_container = QVBoxLayout()
-        progress_container.setSpacing(12)  # 요소 간 충분한 간격
-        
-        # 현재 단계 제목
+        # 현재 단계 제목 (더 큰 폰트)
         self.step_title = QLabel("시작 중...")
-        self.step_title.setFont(QFont("Segoe UI", 14, QFont.Weight.DemiBold))  # 큰 폰트
-        self.step_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.step_title.setMinimumHeight(25)  # 최소 높이 보장
+        self.step_title.setFont(QFont("Segoe UI", 16, QFont.Weight.DemiBold))  # 14 → 16으로 증가
+        self.step_title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.step_title.setMinimumHeight(30)  # 25 → 30으로 증가 (높이 보장)
+        self.step_title.setStyleSheet("color: #2C3E50; background: transparent;")
         
-        # 현재 단계 설명
+        # 현재 단계 설명 (더 넉넉한 공간)
         self.step_description = QLabel("Hana Studio를 준비하고 있습니다.")
-        self.step_description.setFont(QFont("Segoe UI", 11))  # 읽기 좋은 크기
-        self.step_description.setStyleSheet("color: #6C757D; line-height: 1.4;")
-        self.step_description.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.step_description.setFont(QFont("Segoe UI", 12))  # 11 → 12로 증가
+        self.step_description.setStyleSheet("color: #6C757D; line-height: 1.5; background: transparent;")
+        self.step_description.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.step_description.setWordWrap(True)
-        self.step_description.setMinimumHeight(45)  # 2줄 텍스트 대응
+        self.step_description.setMinimumHeight(60)  # 45 → 60으로 증가 (3줄 텍스트 대응)
+        
+        status_layout.addWidget(self.step_title)
+        status_layout.addWidget(self.step_description)
+        status_layout.addStretch()  # 세로 공간 채우기
+        
+        header_layout.addLayout(status_layout)
+        header_layout.addStretch()  # 가로 공간 채우기
+        
+        # 진행바 영역 (별도 섹션으로)
+        progress_layout = QVBoxLayout()
+        progress_layout.setSpacing(15)  # 12 → 15로 증가
         
         # 진행바
         self.progress_bar = QProgressBar()
@@ -272,18 +270,16 @@ class SimpleLoadingWindow(QWidget):
         self.progress_bar.setValue(0)
         self.progress_bar.setTextVisible(True)
         self.progress_bar.setFormat("%p%")
-        self.progress_bar.setFixedHeight(18)  # 진행바 높이 증가
+        self.progress_bar.setFixedHeight(20)  # 18 → 20으로 증가
         
-        progress_container.addWidget(self.step_title)
-        progress_container.addWidget(self.step_description)
-        progress_container.addWidget(self.progress_bar)
+        progress_layout.addWidget(self.progress_bar)
         
         # 취소 버튼 영역
         button_layout = QHBoxLayout()
-        button_layout.setContentsMargins(0, 15, 0, 0)  # 상단 여백
+        button_layout.setContentsMargins(0, 20, 0, 0)  # 15 → 20으로 증가 (상단 여백)
         
         self.cancel_button = QPushButton("취소")
-        self.cancel_button.setFixedSize(80, 35)  # 넉넉한 버튼 크기
+        self.cancel_button.setFixedSize(85, 38)  # 80x35 → 85x38로 증가
         self.cancel_button.clicked.connect(self._cancel_operation)
         
         button_layout.addStretch()
@@ -291,7 +287,7 @@ class SimpleLoadingWindow(QWidget):
         
         # 레이아웃 조립
         layout.addLayout(header_layout)
-        layout.addLayout(progress_container)
+        layout.addLayout(progress_layout)
         layout.addLayout(button_layout)
     
     def _load_icon(self):
@@ -303,7 +299,7 @@ class SimpleLoadingWindow(QWidget):
             if os.path.exists(icon_path):
                 pixmap = QPixmap(icon_path)
                 scaled_pixmap = pixmap.scaled(
-                    56, 56,  # 더 큰 아이콘
+                    64, 64,  # 56 → 64로 증가 (더 큰 아이콘)
                     Qt.AspectRatioMode.KeepAspectRatio, 
                     Qt.TransformationMode.SmoothTransformation
                 )
@@ -312,19 +308,20 @@ class SimpleLoadingWindow(QWidget):
             else:
                 # 아이콘이 없으면 이모지 사용
                 self.icon_label.setText("🎨")
-                self.icon_label.setFont(QFont("Segoe UI", 32))  # 더 큰 이모지
+                self.icon_label.setFont(QFont("Segoe UI", 36))  # 32 → 36으로 증가
                 self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 print(f"⚠️ 아이콘 파일 없음, 이모지 사용: {icon_path}")
                 
         except Exception as e:
             # 오류 시 기본 이모지
             self.icon_label.setText("🎨")
-            self.icon_label.setFont(QFont("Segoe UI", 32))  # 더 큰 이모지
+            self.icon_label.setFont(QFont("Segoe UI", 36))  # 32 → 36으로 증가
             self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             print(f"❌ 아이콘 로드 실패: {e}")
         
-        # 아이콘 레이블 크기 조정 (넉넉하게)
-        self.icon_label.setFixedSize(56, 56)
+        # 아이콘 레이블 크기 조정
+        self.icon_label.setFixedSize(64, 64)  # 56 → 64로 증가
+        self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     
     def _start_initialization(self):
         """통합 초기화 시작"""
