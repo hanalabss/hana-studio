@@ -376,61 +376,71 @@ class ImageViewer(QWidget):
                 from PySide6.QtWidgets import QMessageBox
                 QMessageBox.warning(self, "오류", f"선택한 파일을 찾을 수 없습니다:\n{file_path}")
 
+
     def _safe_imread_unicode(self, image_path: str) -> np.ndarray:
-        """한글 경로 지원 안전 이미지 읽기 - EXIF 회전 적용"""
+        """한글 경로 지원 안전 이미지 읽기 - EXIF 회전 무시 (인쇄 결과와 일치)"""
         try:
             if not os.path.exists(image_path):
                 print(f"[DEBUG] 파일이 존재하지 않음: {image_path}")
                 return None
             
-            # 🎯 PIL로 EXIF 회전 정보 적용
+            # 🎯 방법 1: EXIF 회전을 무시하고 원본 픽셀 데이터 그대로 사용
             try:
-                from PIL import Image, ImageOps
                 import cv2
                 import numpy as np
                 
-                print("[DEBUG] PIL + EXIF 회전 적용")
+                print("[DEBUG] 원본 픽셀 데이터 사용 (EXIF 무시)")
                 
-                # PIL로 이미지 열기
-                pil_image = Image.open(image_path)
+                # 바이트 읽기 방식으로 한글 경로 대응
+                with open(image_path, 'rb') as f:
+                    image_data = f.read()
                 
-                # EXIF 회전 정보 적용
-                pil_image = ImageOps.exif_transpose(pil_image)
+                if len(image_data) == 0:
+                    print("[ERROR] 읽은 데이터가 비어있음")
+                    return None
                 
-                # RGB 변환
-                if pil_image.mode in ('RGBA', 'LA', 'P'):
-                    pil_image = pil_image.convert('RGB')
-                elif pil_image.mode != 'RGB':
-                    pil_image = pil_image.convert('RGB')
+                print(f"[DEBUG] 바이트 데이터 크기: {len(image_data)}")
                 
-                # OpenCV 형식으로 변환
-                image_array = np.array(pil_image)
-                opencv_image = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
+                # numpy 배열로 변환
+                nparr = np.frombuffer(image_data, np.uint8)
+                image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                 
-                print(f"[DEBUG] EXIF 적용 후 크기: {opencv_image.shape}")
-                return opencv_image
+                if image is None:
+                    print("[ERROR] OpenCV 디코딩 실패")
+                    return None
+                
+                print(f"[DEBUG] 원본 픽셀 데이터 크기: {image.shape} (height x width x channels)")
+                
+                # 🔍 EXIF 정보 확인 (참고용)
+                try:
+                    from PIL import Image as PILImage
+                    pil_image = PILImage.open(image_path)
+                    if hasattr(pil_image, '_getexif') and pil_image._getexif() is not None:
+                        exif_data = pil_image._getexif()
+                        orientation = exif_data.get(274, 1)
+                        print(f"[DEBUG] EXIF Orientation: {orientation} (무시됨)")
+                    else:
+                        print("[DEBUG] EXIF 정보 없음")
+                except Exception as e:
+                    print(f"[DEBUG] EXIF 확인 실패: {e}")
+                
+                # 최종 결과 확인
+                height, width = image.shape[:2]
+                if height > width:
+                    print(f"[DEBUG] ✅ 미리보기: 세로 형태 ({width}x{height}) - 실제 인쇄 결과와 일치")
+                else:
+                    print(f"[DEBUG] ✅ 미리보기: 가로 형태 ({width}x{height}) - 실제 인쇄 결과와 일치")
+                
+                return image
                 
             except Exception as e:
-                print(f"[DEBUG] PIL + EXIF 방식 실패: {e}")
-            
-            # 백업: 기존 바이트 방식
-            with open(image_path, 'rb') as f:
-                image_data = f.read()
-            nparr = np.frombuffer(image_data, np.uint8)
-            image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            
-            if image is None:
-                print(f"[DEBUG] 이미지 디코딩 실패: {image_path}")
+                print(f"[ERROR] 이미지 읽기 실패: {e}")
                 return None
-                
-            print(f"[DEBUG] 백업 방식 성공 (EXIF 무시): {image.shape}")
-            return image
             
         except Exception as e:
             print(f"[DEBUG] 이미지 읽기 실패: {image_path}, 오류: {e}")
             return None
-
-
+        
     def clear_image(self):
         """이미지 클리어"""
         print("[DEBUG] 이미지 클리어")

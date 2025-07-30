@@ -296,36 +296,68 @@ class R600Printer:
         self._check_result(ret, "캔버스 클리어")
     
     def draw_watermark(self, x: float, y: float, width: float, height: float, image_path: str):
-        """워터마크 그리기 - 한글 경로 지원"""
+        """워터마크 그리기 - EXIF 제거 후 전송"""
         if image_path and not os.path.exists(image_path):
             raise R600PrinterError(f"이미지 파일 {image_path}이 존재하지 않습니다.")
         
-        # 한글 경로 문제 해결을 위해 절대 경로로 변환
-        if image_path:
-            try:
-                image_path = os.path.abspath(image_path)
-                path_encoded = image_path.encode('cp949')
-            except UnicodeEncodeError:
-                # cp949로 인코딩할 수 없는 경우 (한글 문제)
-                print(f"⚠️ 한글 경로 문제로 임시 복사: {image_path}")
-                # 임시 디렉토리에 영문 이름으로 복사
-                import tempfile
-                import shutil
-                temp_dir = tempfile.gettempdir()
-                temp_name = f"temp_watermark_{int(time.time())}.jpg"
-                temp_path = os.path.join(temp_dir, temp_name)
-                shutil.copy2(image_path, temp_path)
-                path_encoded = temp_path.encode('cp949')
-                print(f"임시 파일 생성: {temp_path}")
-        else:
+        if not image_path:
             path_encoded = b""
+        else:
+            # 🔧 EXIF 정보를 제거한 임시 워터마크 생성
+            try:
+                from PIL import Image as PILImage
+                import tempfile
+                
+                print(f"[PRINTER DEBUG] 워터마크 EXIF 제거 처리")
+                
+                # 원본 워터마크 열기
+                original_watermark = PILImage.open(image_path)
+                print(f"  워터마크 원본 크기: {original_watermark.size}")
+                
+                # RGB 모드로 변환 (EXIF 정보 자동 제거됨)
+                if original_watermark.mode in ('RGBA', 'LA', 'P'):
+                    clean_watermark = original_watermark.convert('RGB')
+                elif original_watermark.mode != 'RGB':
+                    clean_watermark = original_watermark.convert('RGB')
+                else:
+                    # 이미 RGB인 경우에도 새 이미지로 복사해서 EXIF 제거
+                    clean_watermark = PILImage.new('RGB', original_watermark.size)
+                    clean_watermark.paste(original_watermark)
+                
+                # 임시 파일로 저장 (EXIF 없음)
+                temp_dir = tempfile.gettempdir()
+                temp_name = f"watermark_clean_{int(time.time())}.jpg"
+                temp_path = os.path.join(temp_dir, temp_name)
+                
+                # 고품질로 저장
+                clean_watermark.save(temp_path, 'JPEG', quality=95, optimize=True)
+                
+                print(f"  EXIF 제거된 워터마크: {temp_path}")
+                
+                path_encoded = temp_path.encode('cp949')
+                
+            except Exception as e:
+                print(f"[PRINTER DEBUG] 워터마크 EXIF 제거 실패: {e}")
+                # 실패 시 원본 파일 사용
+                try:
+                    image_path = os.path.abspath(image_path)
+                    path_encoded = image_path.encode('cp949')
+                except UnicodeEncodeError:
+                    # 한글 경로 처리
+                    import shutil
+                    temp_dir = tempfile.gettempdir()
+                    temp_name = f"temp_watermark_{int(time.time())}.jpg"
+                    temp_path = os.path.join(temp_dir, temp_name)
+                    shutil.copy2(image_path, temp_path)
+                    path_encoded = temp_path.encode('cp949')
+                    print(f"워터마크 임시 파일 생성: {temp_path}")
 
         adjusted_x = x - 0  # 좌표 조정 없음
         adjusted_y = y - 0  # 좌표 조정 없음
-    
+
         ret = self.lib.R600DrawWaterMark(adjusted_x, adjusted_y, width, height, path_encoded)
         self._check_result(ret, f"워터마크 그리기 ({image_path})")
-    
+        
     def draw_watermark_rotated(self, x: float, y: float, width: float, height: float, 
                               image_path: str, rotation: int):
         """마스킹 이미지를 회전하여 그리기"""
@@ -392,33 +424,103 @@ class R600Printer:
             return image_path
     
     def draw_image(self, x: float, y: float, width: float, height: float, 
-                   image_path: str, mode: int = 1):
-        """이미지 그리기 - 한글 경로 지원"""
+                image_path: str, mode: int = 1):
+        """이미지 그리기 - EXIF 회전 적용 후 EXIF 제거"""
         if not os.path.exists(image_path):
             raise R600PrinterError(f"이미지 파일 {image_path}이 존재하지 않습니다.")
         
-        # 한글 경로 문제 해결을 위해 절대 경로로 변환
+        # 🔧 EXIF 회전을 적용한 후 EXIF 정보 제거
         try:
-            image_path = os.path.abspath(image_path)
-            path_encoded = image_path.encode('cp949')
-        except UnicodeEncodeError:
-            # cp949로 인코딩할 수 없는 경우 (한글 문제)
-            print(f"⚠️ 한글 경로 문제로 임시 복사: {image_path}")
-            # 임시 디렉토리에 영문 이름으로 복사
+            from PIL import Image as PILImage, ImageOps
             import tempfile
-            import shutil
+            
+            print(f"[PRINTER DEBUG] EXIF 회전 적용 후 제거 처리")
+            
+            # 원본 이미지 열기
+            original_image = PILImage.open(image_path)
+            print(f"  원본 크기: {original_image.size}")
+            
+            # EXIF 정보 확인
+            if hasattr(original_image, '_getexif') and original_image._getexif() is not None:
+                exif_data = original_image._getexif()
+                orientation = exif_data.get(274, 1)
+                print(f"  적용할 EXIF Orientation: {orientation}")
+            else:
+                print(f"  EXIF 정보 없음")
+                orientation = 1
+            
+            # 🎯 핵심: EXIF 회전을 실제 픽셀에 적용
+            rotated_image = ImageOps.exif_transpose(original_image)
+            print(f"  EXIF 회전 적용 후 크기: {rotated_image.size}")
+            
+            # 회전이 적용되었는지 확인
+            if original_image.size != rotated_image.size:
+                print(f"  ✅ 이미지 회전됨: {original_image.size} → {rotated_image.size}")
+            else:
+                print(f"  ℹ️ 회전 없음 (이미 올바른 방향)")
+            
+            # RGB 모드로 변환 (EXIF 정보 자동 제거됨)
+            if rotated_image.mode in ('RGBA', 'LA', 'P'):
+                clean_image = rotated_image.convert('RGB')
+            elif rotated_image.mode != 'RGB':
+                clean_image = rotated_image.convert('RGB')
+            else:
+                # 이미 RGB인 경우에도 새 이미지로 복사해서 EXIF 제거
+                clean_image = PILImage.new('RGB', rotated_image.size)
+                clean_image.paste(rotated_image)
+            
+            print(f"  최종 이미지 크기: {clean_image.size}")
+            
+            # 임시 파일로 저장 (EXIF 없음, 회전 적용됨)
             temp_dir = tempfile.gettempdir()
-            temp_name = f"temp_image_{int(time.time())}.jpg"
+            temp_name = f"printer_rotated_{int(time.time())}.jpg"
             temp_path = os.path.join(temp_dir, temp_name)
-            shutil.copy2(image_path, temp_path)
+            
+            # 고품질로 저장 (EXIF 정보는 저장되지 않음)
+            clean_image.save(temp_path, 'JPEG', quality=95, optimize=True)
+            
+            print(f"  회전+EXIF제거 파일: {temp_path}")
+            
+            # 검증: 저장된 파일에 EXIF가 없는지 확인
+            verify_image = PILImage.open(temp_path)
+            if hasattr(verify_image, '_getexif') and verify_image._getexif() is not None:
+                print(f"  ⚠️ EXIF 제거 실패!")
+            else:
+                print(f"  ✅ EXIF 제거 성공!")
+                
+            # 최종 형태 확인
+            if verify_image.size[0] > verify_image.size[1]:
+                print(f"  📄 최종: 가로 형태 ({verify_image.size[0]}x{verify_image.size[1]})")
+            else:
+                print(f"  📄 최종: 세로 형태 ({verify_image.size[0]}x{verify_image.size[1]})")
+            
+            # 프린터에 회전된+EXIF없는 파일 전송
             path_encoded = temp_path.encode('cp949')
-            print(f"임시 파일 생성: {temp_path}")
+            image_path_for_log = temp_path
+            
+        except Exception as e:
+            print(f"[PRINTER DEBUG] EXIF 처리 실패: {e}")
+            # 실패 시 원본 파일 사용 (기존 방식)
+            try:
+                image_path = os.path.abspath(image_path)
+                path_encoded = image_path.encode('cp949')
+                image_path_for_log = image_path
+            except UnicodeEncodeError:
+                # 한글 경로 처리
+                import shutil
+                temp_dir = tempfile.gettempdir()
+                temp_name = f"temp_image_{int(time.time())}.jpg"
+                temp_path = os.path.join(temp_dir, temp_name)
+                shutil.copy2(image_path, temp_path)
+                path_encoded = temp_path.encode('cp949')
+                image_path_for_log = temp_path
+                print(f"임시 파일 생성: {temp_path}")
 
         adjusted_x = x - 0  # 좌표 조정 없음
         adjusted_y = y - 0  # 좌표 조정 없음
         ret = self.lib.R600DrawImage(adjusted_x, adjusted_y, width, height, path_encoded, mode)
-        self._check_result(ret, f"이미지 그리기 ({image_path})")
-    
+        self._check_result(ret, f"이미지 그리기 ({image_path_for_log})")
+        
     def commit_canvas(self) -> str:
         """캔버스 커밋"""
         img_info_buffer_size = 200

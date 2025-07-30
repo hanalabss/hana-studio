@@ -41,7 +41,7 @@ class ImageProcessor:
     
     def remove_background(self, image_path: str, alpha_threshold: int = None) -> np.ndarray:
         """
-        배경 제거 처리 - 동적 임계값 지원
+        배경 제거 처리 - EXIF 회전 무시 (인쇄 결과와 일치)
         
         Args:
             image_path: 이미지 파일 경로
@@ -55,7 +55,7 @@ class ImageProcessor:
             if alpha_threshold is None:
                 alpha_threshold = config.get('alpha_threshold', 200)
             
-            print(f"[DEBUG] 배경 제거 시작 - 임계값: {alpha_threshold}")
+            print(f"[DEBUG] 배경 제거 시작 - 임계값: {alpha_threshold} (EXIF 회전 무시)")
             
             # 이미지 파일 읽기
             with open(image_path, 'rb') as f:
@@ -64,30 +64,38 @@ class ImageProcessor:
             # 배경 제거 처리
             result = remove(input_data, session=self.session)
             
-            # 마스크 생성
+            # 마스크 생성 (EXIF 회전 적용하지 않음)
             img_rgba = Image.open(io.BytesIO(result)).convert("RGBA")
             alpha = np.array(img_rgba.split()[-1])
             
+            print(f"[DEBUG] 원본 마스크 크기: {alpha.shape} (EXIF 회전 무시)")
+            
             # 실루엣 마스크 생성 (배경은 흰색, 객체는 검은색)
-            # 임계값에 따라 마스크 생성
             mask = np.where(alpha > alpha_threshold, 0, 255).astype(np.uint8)
             mask_rgb = cv2.merge([mask, mask, mask])
             
             print(f"[DEBUG] 마스크 생성 완료 - 임계값: {alpha_threshold}, 마스크 크기: {mask_rgb.shape}")
             
             # 마스크 통계 출력 (디버깅용)
-            black_pixels = np.sum(mask == 0)  # 객체 픽셀
+            black_pixels = np.sum(mask == 0)  # 객체 픽셀  
             white_pixels = np.sum(mask == 255)  # 배경 픽셀
             total_pixels = mask.size
             object_ratio = (black_pixels / total_pixels) * 100
             
             print(f"[DEBUG] 마스크 통계 - 객체: {object_ratio:.1f}%, 배경: {100-object_ratio:.1f}%")
             
+            # 🔍 최종 확인
+            height, width = mask_rgb.shape[:2]
+            if height > width:
+                print(f"[DEBUG] ✅ 마스크: 세로 형태 ({width}x{height}) - 원본과 일치")
+            else:
+                print(f"[DEBUG] ✅ 마스크: 가로 형태 ({width}x{height}) - 원본과 일치")
+            
             return mask_rgb
             
         except Exception as e:
             raise RuntimeError(f"배경 제거 처리 실패: {e}")
-    
+        
     def create_composite_preview(self, original_image: np.ndarray, mask_image: np.ndarray) -> np.ndarray:
         """합성 미리보기 생성"""
         try:
