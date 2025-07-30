@@ -1,6 +1,6 @@
 """
-ui/simple_loading.py - 완전히 재작성
-즉시 표시되는 통합 로딩 윈도우 - 중복 실행 방지
+ui/simple_loading.py - 중복 검사 완전 제거
+즉시 표시되는 통합 로딩 윈도우
 """
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar, QPushButton, QApplication
@@ -137,7 +137,7 @@ class InitializationThread(QThread):
 
 
 class SimpleLoadingWindow(QWidget):
-    """통합 로딩 윈도우 - 중복 실행 방지"""
+    """통합 로딩 윈도우 - 중복 검사 제거"""
     
     def __init__(self):
         super().__init__()
@@ -146,10 +146,7 @@ class SimpleLoadingWindow(QWidget):
         self.main_window_created = False
         self.main_window = None
         
-        # 중복 실행 방지
-        if self._check_already_running():
-            print("⚠️ Hana Studio가 이미 실행 중입니다.")
-            sys.exit(0)
+        # 🎯 중복 실행 방지 완전 제거 (main.py에서 이미 처리함)
         
         # UI 설정
         self._setup_window()
@@ -162,52 +159,6 @@ class SimpleLoadingWindow(QWidget):
         
         # 초기화 시작
         QTimer.singleShot(200, self._start_initialization)
-    
-    def _check_already_running(self):
-        """이미 실행 중인 인스턴스 확인"""
-        try:
-            import psutil
-            current_pid = os.getpid()
-            current_name = "HanaStudio.exe" if getattr(sys, 'frozen', False) else "python.exe"
-            
-            # 같은 이름의 프로세스 찾기
-            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-                try:
-                    if proc.info['name'] and proc.info['name'].lower() == current_name.lower():
-                        if proc.info['pid'] != current_pid:
-                            # 명령줄 인수 확인 (개발 환경)
-                            if not getattr(sys, 'frozen', False):
-                                cmdline = proc.info.get('cmdline', [])
-                                if any('main.py' in arg or 'hana_studio' in arg.lower() for arg in cmdline):
-                                    return True
-                            else:
-                                return True
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    continue
-            
-            return False
-        except ImportError:
-            # psutil이 없는 경우 락 파일 방식
-            return self._simple_running_check()
-        except Exception:
-            return False
-    
-    def _simple_running_check(self):
-        """간단한 실행 중 확인"""
-        try:
-            import tempfile
-            
-            lock_file_path = os.path.join(tempfile.gettempdir(), "hana_studio.lock")
-            
-            try:
-                self.lock_file = open(lock_file_path, 'w')
-                self.lock_file.write(str(os.getpid()))
-                self.lock_file.flush()
-                return False  # 락 파일 생성 성공
-            except IOError:
-                return True  # 이미 실행 중
-        except Exception:
-            return False
     
     def _setup_window(self):
         """윈도우 기본 설정"""
@@ -534,13 +485,6 @@ class SimpleLoadingWindow(QWidget):
     
     def closeEvent(self, event):
         """윈도우 닫기 시 정리"""
-        # 락 파일 정리
-        try:
-            if hasattr(self, 'lock_file') and self.lock_file:
-                self.lock_file.close()
-        except Exception:
-            pass
-        
         # 스레드 정리
         if self.init_thread and self.init_thread.isRunning():
             self.init_thread.cancel()

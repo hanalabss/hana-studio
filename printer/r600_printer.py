@@ -1,6 +1,6 @@
 """
 printer/r600_printer.py 수정
-개별 면 방향 지원 - 앞면과 뒷면이 서로 다른 방향을 가질 수 있음
+개별 면 방향 지원 + 세로형 뒷면 마스킹 180도 회전 수정
 """
 
 import ctypes
@@ -12,7 +12,7 @@ from .printer_discovery import PrinterInfo
 
 
 class R600Printer:
-    """R600 프린터 제어 클래스 - 개별 면 방향 지원"""
+    """R600 프린터 제어 클래스 - 개별 면 방향 지원 + 마스킹 회전 수정"""
     
     def __init__(self, dll_path: str = './libDSRetransfer600App.dll', selected_printer: Optional[PrinterInfo] = None):
         """R600 프린터 초기화"""
@@ -326,6 +326,71 @@ class R600Printer:
         ret = self.lib.R600DrawWaterMark(adjusted_x, adjusted_y, width, height, path_encoded)
         self._check_result(ret, f"워터마크 그리기 ({image_path})")
     
+    def draw_watermark_rotated(self, x: float, y: float, width: float, height: float, 
+                              image_path: str, rotation: int):
+        """마스킹 이미지를 회전하여 그리기"""
+        if not image_path or not os.path.exists(image_path):
+            raise R600PrinterError(f"이미지 파일 {image_path}이 존재하지 않습니다.")
+        
+        if rotation == 0:
+            # 회전 없으면 기존 메서드 사용
+            self.draw_watermark(x, y, width, height, image_path)
+            return
+        
+        # 이미지를 회전시켜 임시 파일로 저장
+        rotated_path = self._create_rotated_mask(image_path, rotation)
+        
+        # 회전된 이미지로 워터마크 그리기
+        self.draw_watermark(x, y, width, height, rotated_path)
+
+    def _create_rotated_mask(self, image_path: str, rotation: int) -> str:
+        """마스킹 이미지를 회전시켜 임시 파일로 저장"""
+        import cv2
+        import numpy as np
+        import tempfile
+        
+        try:
+            print(f"마스킹 이미지 {rotation}도 회전 중: {image_path}")
+            
+            # 이미지 읽기 (한글 경로 대응)
+            try:
+                image = cv2.imread(image_path)
+            except:
+                # 한글 경로 대응
+                with open(image_path, 'rb') as f:
+                    image_data = f.read()
+                nparr = np.frombuffer(image_data, np.uint8)
+                image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            
+            if image is None:
+                raise R600PrinterError(f"마스킹 이미지 로드 실패: {image_path}")
+            
+            # 회전 적용
+            if rotation == 180:
+                rotated_image = cv2.rotate(image, cv2.ROTATE_180)
+            elif rotation == 90:
+                rotated_image = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
+            elif rotation == 270:
+                rotated_image = cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            else:
+                rotated_image = image
+            
+            # 임시 파일로 저장
+            temp_dir = tempfile.gettempdir()
+            temp_name = f"rotated_mask_{int(time.time())}_{rotation}deg.jpg"
+            temp_path = os.path.join(temp_dir, temp_name)
+            
+            # 높은 품질로 저장
+            cv2.imwrite(temp_path, rotated_image, [cv2.IMWRITE_JPEG_QUALITY, 95])
+            
+            print(f"회전된 마스킹 이미지 저장: {temp_path}")
+            return temp_path
+            
+        except Exception as e:
+            print(f"마스킹 이미지 회전 실패: {e}")
+            # 실패 시 원본 반환
+            return image_path
+    
     def draw_image(self, x: float, y: float, width: float, height: float, 
                    image_path: str, mode: int = 1):
         """이미지 그리기 - 한글 경로 지원"""
@@ -394,25 +459,31 @@ class R600Printer:
                           watermark_path: Optional[str] = None,
                           card_width: float = 55, card_height: float = 86.6,
                           card_orientation: str = "portrait") -> str:
-        """카드 방향을 고려한 뒷면 캔버스 준비"""
+        """카드 방향을 고려한 뒷면 캔버스 준비 - 세로형 마스킹만 추가 회전"""
         print(f"=== 뒷면 캔버스 준비 ({card_orientation}) ===")
         
         # 캔버스 클리어 및 재설정
         self.clear_canvas()
         
-        # 🎯 인쇄 방향에 따른 회전 설정
-        # LANDSCAPE(가로)일 때는 회전하지 않고, PORTRAIT(세로)일 때만 180도 회전
+        # 🎯 원본 이미지 회전은 기존 로직 유지
         rotation = 0 if card_orientation == "landscape" else 180
         print(f"뒷면 회전 각도: {rotation}도 (방향: {card_orientation})")
         self.setup_canvas(card_orientation, rotation)
         
         # 뒷면 이미지가 있는 경우
         if back_image_path and os.path.exists(back_image_path):
-            # 워터마크 그리기 (레이어 모드인 경우)
+            # 🎯 워터마크(마스킹) 그리기 - 세로형일 때만 추가 180도 회전
             if watermark_path:
-                self.draw_watermark(0.0, 0.0, card_width, card_height, watermark_path)
+                if card_orientation == "portrait":
+                    # 세로형: 마스킹을 180도 더 회전 (총 360도 = 0도와 동일한 효과)
+                    print("세로형 뒷면: 마스킹 이미지 180도 추가 회전 적용")
+                    self.draw_watermark_rotated(0.0, 0.0, card_width, card_height, watermark_path, 180)
+                else:
+                    # 가로형: 마스킹 회전 없음 (현재 상태 유지)
+                    print("가로형 뒷면: 마스킹 이미지 회전 없음")
+                    self.draw_watermark(0.0, 0.0, card_width, card_height, watermark_path)
             
-            # 뒷면 이미지 그리기
+            # 뒷면 이미지 그리기 (기존과 동일)
             self.draw_image(0.0, 0.0, card_width, card_height, back_image_path)
         else:
             # 뒷면 이미지가 없으면 빈 캔버스 또는 기본 이미지
@@ -553,7 +624,7 @@ class R600Printer:
         self.print_single_side_card(image_path or "", watermark_path, card_orientation, "layered")
 
     def cleanup_and_close(self):
-        """강화된 리소스 정리"""
+        """강화된 리소스 정리 - 회전된 마스킹 임시 파일 포함"""
         try:
             if not self.is_initialized:
                 return
@@ -567,13 +638,14 @@ class R600Printer:
             except:
                 print("[DEBUG] 카드 배출 건너뜀 (정상)")
             
-            # 2. 임시 파일 정리
+            # 2. 임시 파일 정리 (회전된 마스킹 파일 포함)
             try:
                 import tempfile
                 import glob
                 temp_dir = tempfile.gettempdir()
                 temp_files = glob.glob(os.path.join(temp_dir, "temp_watermark_*.jpg"))
                 temp_files.extend(glob.glob(os.path.join(temp_dir, "temp_image_*.jpg")))
+                temp_files.extend(glob.glob(os.path.join(temp_dir, "rotated_mask_*.jpg")))  # 🎯 추가
                 
                 for temp_file in temp_files:
                     try:
@@ -586,8 +658,11 @@ class R600Printer:
             
             # 3. 라이브러리 정리
             if self.lib:
-                ret = self.lib.R600LibClear()
-                print(f"[DEBUG] 라이브러리 정리 결과: {ret}")
+                try:
+                    ret = self.lib.R600LibClear()
+                    print(f"[DEBUG] 라이브러리 정리 결과: {ret}")
+                except:
+                    print("[DEBUG] 라이브러리 정리 함수 없음 (정상)")
             
             # 4. 상태 초기화
             self.selected_printer_name = None

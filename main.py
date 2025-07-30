@@ -1,101 +1,183 @@
 """
-Hana Studio 메인 시작 스크립트
-초고속 UI 표시 및 단일 인스턴스 보장
+main.py의 중복 실행 방지 로직 수정
+더 정확하고 안정적인 프로세스 검사
 """
 
-import sys
 import os
+import sys
+import time
 
 
 def check_single_instance():
-    """단일 인스턴스 실행 확인 - 중복 실행 방지"""
+    """단일 인스턴스 실행 확인 - 수정된 버전"""
     try:
         import psutil
         current_pid = os.getpid()
         
         if getattr(sys, 'frozen', False):
-            current_name = "HanaStudio.exe"
+            # PyInstaller 실행파일인 경우
+            target_name = "HanaStudio.exe"
+            print(f"[DEBUG] 실행파일 모드: {target_name} 검사")
         else:
-            current_name = "python.exe"
+            # 개발 환경인 경우
+            target_name = "python.exe"
+            print(f"[DEBUG] 개발 모드: main.py를 실행하는 {target_name} 검사")
         
-        # 같은 이름의 프로세스 찾기
-        running_processes = []
+        # 중복 프로세스 찾기
+        duplicate_found = False
         
         for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
             try:
-                proc_info = proc.info
+                # 자기 자신은 제외
+                if proc.info['pid'] == current_pid:
+                    continue
                 
-                if proc_info['name'] and proc_info['name'].lower() == current_name.lower():
-                    if proc_info['pid'] != current_pid:
-                        # 개발 환경에서 명령줄 인수 확인
-                        if not getattr(sys, 'frozen', False):
-                            cmdline = proc_info.get('cmdline', [])
-                            hana_related = any('main.py' in arg or 'hana_studio' in arg.lower() for arg in cmdline)
-                            if hana_related:
-                                running_processes.append(proc_info['pid'])
-                        else:
-                            # 실행파일인 경우 모든 동일한 이름의 프로세스
-                            running_processes.append(proc_info['pid'])
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                # 프로세스 이름 확인
+                if not proc.info['name'] or proc.info['name'].lower() != target_name.lower():
+                    continue
+                
+                if getattr(sys, 'frozen', False):
+                    # 실행파일: 같은 이름이면 중복
+                    duplicate_found = True
+                    print(f"[DEBUG] 중복 실행파일 발견: PID {proc.info['pid']}")
+                    break
+                else:
+                    # 개발 환경: main.py를 실행하는지 확인
+                    cmdline = proc.info.get('cmdline', [])
+                    
+                    # main.py가 명령줄에 있는지 확인
+                    is_main_py = any(
+                        arg.endswith('main.py') or 'main.py' in arg 
+                        for arg in cmdline if arg
+                    )
+                    
+                    if is_main_py:
+                        duplicate_found = True
+                        print(f"[DEBUG] 중복 main.py 프로세스 발견: PID {proc.info['pid']}")
+                        print(f"[DEBUG] 명령줄: {' '.join(cmdline)}")
+                        break
+                        
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                # 프로세스가 사라졌거나 접근 권한이 없는 경우 무시
+                continue
+            except Exception as e:
+                # 기타 오류는 로그만 출력하고 계속
+                print(f"[DEBUG] 프로세스 검사 오류: {e}")
                 continue
         
-        if running_processes:
-            print(f"⚠️ Hana Studio가 이미 실행 중입니다 (PID: {running_processes})")
+        if duplicate_found:
+            print("⚠️ Hana Studio가 이미 실행 중입니다.")
             print("기존 실행 중인 창을 확인하세요.")
-            return False
+            
+            # 사용자에게 강제 실행 여부 확인
+            try:
+                answer = input("그래도 실행하시겠습니까? (y/N): ").strip().lower()
+                if answer in ['y', 'yes']:
+                    print("✅ 강제 실행합니다.")
+                    return True
+                else:
+                    return False
+            except (KeyboardInterrupt, EOFError):
+                print("\n❌ 실행을 취소합니다.")
+                return False
         
+        print("✅ 중복 실행 없음, 정상 시작합니다.")
         return True
         
     except ImportError:
-        # psutil이 없는 경우 락 파일 방식 사용
+        print("[DEBUG] psutil이 설치되지 않음, 락 파일 방식으로 전환")
         return check_single_instance_lockfile()
     except Exception as e:
-        print(f"인스턴스 확인 오류: {e}")
-        return True  # 오류 시 실행 허용
+        print(f"[DEBUG] 중복 검사 중 오류 발생: {e}")
+        print("⚠️ 오류가 발생했지만 실행을 계속합니다.")
+        return True
 
 
 def check_single_instance_lockfile():
-    """락 파일을 이용한 단일 인스턴스 확인"""
+    """락 파일을 이용한 중복 실행 방지 (psutil 대체)"""
     try:
         import tempfile
         
-        # 임시 락 파일 경로
-        lock_file_path = os.path.join(tempfile.gettempdir(), "hana_studio.lock")
-        
-        if sys.platform == 'win32':
-            # Windows: 파일 잠금으로 확인
-            try:
-                lock_file = open(lock_file_path, 'w')
-                lock_file.write(str(os.getpid()))
-                lock_file.flush()
-                print(f"✅ 락 파일 생성: {lock_file_path}")
-                return True  # 락 파일 생성 성공
-            except IOError:
-                print(f"⚠️ Hana Studio가 이미 실행 중입니다 (락 파일: {lock_file_path})")
-                return False  # 이미 실행 중
+        # 락 파일 경로 생성
+        if getattr(sys, 'frozen', False):
+            lock_filename = "hana_studio_exe.lock"
         else:
-            # Linux/Mac: fcntl 사용
+            lock_filename = "hana_studio_dev.lock"
+        
+        lock_path = os.path.join(tempfile.gettempdir(), lock_filename)
+        
+        try:
+            # 락 파일 생성 시도
+            with open(lock_path, 'x') as lock_file:
+                lock_file.write(f"PID:{os.getpid()}\nTime:{time.time()}")
+            
+            print(f"✅ 락 파일 생성 성공: {lock_path}")
+            return True
+            
+        except FileExistsError:
+            # 락 파일이 이미 존재하는 경우
+            print(f"⚠️ 락 파일이 이미 존재: {lock_path}")
+            
+            # 락 파일이 오래된 경우 정리 시도
             try:
-                import fcntl
-                lock_file = open(lock_file_path, 'w')
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                print(f"✅ 락 파일 생성: {lock_file_path}")
-                return True
-            except IOError:
-                print(f"⚠️ Hana Studio가 이미 실행 중입니다 (락 파일: {lock_file_path})")
+                file_time = os.path.getmtime(lock_path)
+                current_time = time.time()
+                
+                # 1시간 이상 된 락 파일은 삭제
+                if current_time - file_time > 3600:
+                    os.remove(lock_path)
+                    print("🧹 오래된 락 파일을 삭제했습니다.")
+                    return check_single_instance_lockfile()  # 재시도
+                    
+            except Exception as cleanup_error:
+                print(f"[DEBUG] 락 파일 정리 실패: {cleanup_error}")
+            
+            print("다른 Hana Studio 인스턴스가 실행 중일 수 있습니다.")
+            
+            # 사용자에게 강제 실행 여부 확인
+            try:
+                answer = input("그래도 실행하시겠습니까? (y/N): ").strip().lower()
+                if answer in ['y', 'yes']:
+                    # 기존 락 파일 강제 삭제
+                    try:
+                        os.remove(lock_path)
+                        print("✅ 락 파일을 강제 삭제하고 실행합니다.")
+                        return True
+                    except Exception as force_error:
+                        print(f"❌ 락 파일 삭제 실패: {force_error}")
+                        return False
+                else:
+                    return False
+            except (KeyboardInterrupt, EOFError):
+                print("\n❌ 실행을 취소합니다.")
                 return False
+                
     except Exception as e:
-        print(f"락 파일 확인 오류: {e}")
-        return True  # 오류 시 실행 허용
+        print(f"[DEBUG] 락 파일 방식 오류: {e}")
+        print("⚠️ 중복 검사를 건너뛰고 실행합니다.")
+        return True
 
 
-def main():
-    """메인 함수 - 단일 인스턴스 보장"""
+def check_single_instance_simple():
+    """간단한 중복 실행 방지 (개발용)"""
+    print("[DEBUG] 간단한 중복 검사 모드")
     
+    # 환경 변수로 중복 실행 허용 여부 확인
+    if os.environ.get('HANA_ALLOW_MULTIPLE', '').lower() == 'true':
+        print("✅ 환경 변수로 중복 실행이 허용됨")
+        return True
+    
+    # 기본적으로 허용
+    return True
+
+
+# main.py에서 사용할 최종 함수
+def main():
+    """메인 함수 - 개선된 중복 검사"""
     try:
         print("🚀 Hana Studio 시작...")
         
-        # 중복 실행 방지 체크
+        # 중복 실행 방지 (더 안정적인 버전)
         if not check_single_instance():
             print("프로그램을 종료합니다.")
             sys.exit(0)
@@ -118,7 +200,6 @@ def main():
         from ui.simple_loading import SimpleLoadingWindow
         
         loading_window = SimpleLoadingWindow()
-        # SimpleLoadingWindow에서 자동으로 show() 호출됨
         
         print("✅ 로딩 윈도우 표시 완료")
         print("⏳ 백그라운드에서 초기화 진행 중...")
@@ -149,10 +230,9 @@ def main():
                 None,
                 "시작 오류",
                 f"프로그램 시작 중 오류가 발생했습니다:\n\n{str(e)}\n\n"
-                "이미 실행 중인 프로그램이 있는지 확인하고 다시 시도하세요."
+                "문제가 지속되면 프로그램을 다시 설치해보세요."
             )
         except Exception:
-            # 다이얼로그 표시도 실패한 경우 무시
             pass
         
         sys.exit(1)
