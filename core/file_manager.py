@@ -1,5 +1,6 @@
 """
 파일 관리 로직 - 한글 파일명 지원 및 양면 저장 지원
+EXIF 회전 정보 무시하여 항상 픽셀 데이터 그대로 표시
 """
 
 import os
@@ -27,9 +28,9 @@ class FileManager:
         os.makedirs(self.output_dir, exist_ok=True)
     
     def _safe_imread(self, image_path: str) -> Optional[np.ndarray]:
-        """PyInstaller 호환 안전한 이미지 읽기"""
+        """PyInstaller 호환 안전한 이미지 읽기 - EXIF 회전 정보 적용"""
         try:
-            print(f"[DEBUG] 이미지 읽기 시도: {image_path}")
+            print(f"[DEBUG] 이미지 읽기 시도 (EXIF 회전 적용): {image_path}")
             
             # 파일 존재 확인
             if not os.path.exists(image_path):
@@ -47,20 +48,50 @@ class FileManager:
                 print(f"[ERROR] 파일 크기 확인 실패: {e}")
                 return None
             
-            # 방법 1: OpenCV 직접 시도 (영문 경로인 경우)
+            # 🎯 PIL로 EXIF 회전 정보를 적용하여 올바른 방향으로 읽기
+            try:
+                from PIL import Image, ImageOps
+                
+                print("[DEBUG] PIL + EXIF 회전 적용 방식 사용")
+                
+                # PIL로 이미지 열기
+                pil_image = Image.open(image_path)
+                
+                # 🎯 EXIF 회전 정보 적용 - 올바른 방향으로 회전
+                pil_image = ImageOps.exif_transpose(pil_image)
+                
+                print(f"[DEBUG] EXIF 회전 적용 후 크기: {pil_image.size}")
+                
+                # RGB 변환
+                if pil_image.mode == 'RGBA':
+                    pil_image = pil_image.convert('RGB')
+                elif pil_image.mode != 'RGB':
+                    pil_image = pil_image.convert('RGB')
+                
+                # OpenCV 형식으로 변환 (RGB → BGR)
+                opencv_image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+                
+                print(f"[DEBUG] PIL + EXIF 적용 성공: {opencv_image.shape}")
+                return opencv_image
+                
+            except Exception as e:
+                print(f"[ERROR] PIL + EXIF 방식 실패: {e}")
+            
+            # 백업 방법 1: OpenCV 직접 시도 (영문 경로인 경우)
             try:
                 # 경로에 한글이 없는 경우 직접 시도
                 image_path.encode('ascii')
                 image = cv2.imread(image_path, cv2.IMREAD_COLOR)
                 if image is not None:
-                    print(f"[DEBUG] OpenCV 직접 읽기 성공: {image.shape}")
+                    print(f"[DEBUG] OpenCV 직접 읽기 성공 (EXIF 무시): {image.shape}")
+                    print("[WARNING] EXIF 회전 정보가 적용되지 않을 수 있습니다.")
                     return image
             except UnicodeEncodeError:
                 print("[DEBUG] 한글 경로 감지, 바이트 방식 사용")
             except Exception as e:
                 print(f"[DEBUG] OpenCV 직접 읽기 실패: {e}")
             
-            # 방법 2: 바이트 읽기 방식 (한글 경로 대응)
+            # 백업 방법 2: 바이트 읽기 방식 (한글 경로 대응)
             try:
                 with open(image_path, 'rb') as f:
                     image_data = f.read()
@@ -79,24 +110,12 @@ class FileManager:
                     print("[ERROR] OpenCV 디코딩 실패")
                     return None
                     
-                print(f"[DEBUG] 바이트 방식 읽기 성공: {image.shape}")
+                print(f"[DEBUG] 바이트 방식 읽기 성공 (EXIF 무시): {image.shape}")
+                print("[WARNING] EXIF 회전 정보가 적용되지 않을 수 있습니다.")
                 return image
                 
             except Exception as e:
                 print(f"[ERROR] 바이트 읽기 실패: {e}")
-            
-            # 방법 3: PIL 백업 (최후의 수단)
-            try:
-                from PIL import Image
-                pil_image = Image.open(image_path)
-                # PIL RGB를 OpenCV BGR로 변환
-                if pil_image.mode == 'RGBA':
-                    pil_image = pil_image.convert('RGB')
-                opencv_image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
-                print(f"[DEBUG] PIL 백업 읽기 성공: {opencv_image.shape}")
-                return opencv_image
-            except Exception as e:
-                print(f"[ERROR] PIL 백업도 실패: {e}")
             
             return None
             
@@ -105,8 +124,7 @@ class FileManager:
             import traceback
             traceback.print_exc()
             return None
-
-
+        
     def _safe_imwrite(self, image_path: str, image: np.ndarray, quality: int = 95) -> bool:
         """한글 경로를 지원하는 안전한 이미지 저장"""
         try:

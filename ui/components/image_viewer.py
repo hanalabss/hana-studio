@@ -377,24 +377,60 @@ class ImageViewer(QWidget):
                 QMessageBox.warning(self, "오류", f"선택한 파일을 찾을 수 없습니다:\n{file_path}")
 
     def _safe_imread_unicode(self, image_path: str) -> np.ndarray:
-        """한글 경로 지원 안전 이미지 읽기"""
+        """한글 경로 지원 안전 이미지 읽기 - EXIF 회전 적용"""
         try:
             if not os.path.exists(image_path):
                 print(f"[DEBUG] 파일이 존재하지 않음: {image_path}")
                 return None
+            
+            # 🎯 PIL로 EXIF 회전 정보 적용
+            try:
+                from PIL import Image, ImageOps
+                import cv2
+                import numpy as np
+                
+                print("[DEBUG] PIL + EXIF 회전 적용")
+                
+                # PIL로 이미지 열기
+                pil_image = Image.open(image_path)
+                
+                # EXIF 회전 정보 적용
+                pil_image = ImageOps.exif_transpose(pil_image)
+                
+                # RGB 변환
+                if pil_image.mode in ('RGBA', 'LA', 'P'):
+                    pil_image = pil_image.convert('RGB')
+                elif pil_image.mode != 'RGB':
+                    pil_image = pil_image.convert('RGB')
+                
+                # OpenCV 형식으로 변환
+                image_array = np.array(pil_image)
+                opencv_image = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
+                
+                print(f"[DEBUG] EXIF 적용 후 크기: {opencv_image.shape}")
+                return opencv_image
+                
+            except Exception as e:
+                print(f"[DEBUG] PIL + EXIF 방식 실패: {e}")
+            
+            # 백업: 기존 바이트 방식
             with open(image_path, 'rb') as f:
                 image_data = f.read()
             nparr = np.frombuffer(image_data, np.uint8)
             image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            
             if image is None:
                 print(f"[DEBUG] 이미지 디코딩 실패: {image_path}")
                 return None
-            print(f"[DEBUG] 이미지 로드 성공: {image.shape}")
+                
+            print(f"[DEBUG] 백업 방식 성공 (EXIF 무시): {image.shape}")
             return image
+            
         except Exception as e:
             print(f"[DEBUG] 이미지 읽기 실패: {image_path}, 오류: {e}")
             return None
-    
+
+
     def clear_image(self):
         """이미지 클리어"""
         print("[DEBUG] 이미지 클리어")

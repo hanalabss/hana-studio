@@ -197,3 +197,4 @@ dll/
 release/
 release_fast/
 debug/
+installer_output/
