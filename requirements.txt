@@ -6,3 +6,4 @@ numpy>=1.24.0
 onnxruntime>=1.16.0
 cffi
 pyinstaller
+psutil>=5.9.0
