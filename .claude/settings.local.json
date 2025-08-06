@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(\"Hana Studio 실행.bat\")",
+      "Bash(dir build)",
+      "Bash(timeout:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": []
+  }
+}

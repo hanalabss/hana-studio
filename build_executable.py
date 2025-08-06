@@ -19,7 +19,7 @@ class FastHanaStudioBuilder:
         
     def clean_build_dirs(self):
         """기존 빌드 디렉토리 정리"""
-        print("🧹 기존 빌드 파일 정리...")
+        print("[INFO] 기존 빌드 파일 정리...")
         
         for dir_path in [self.build_dir, self.dist_dir]:
             if dir_path.exists():
@@ -27,32 +27,63 @@ class FastHanaStudioBuilder:
     
     def check_dependencies(self):
         """필수 파일 존재 여부 확인"""
-        print("📋 필수 파일 확인...")
+        print("[INFO] 필수 파일 확인...")
         
-        required_files = [
+        # 기본 파이썬 파일들
+        required_py_files = [
             "main.py",
             "hana_studio.py", 
             "config.py",
-            "libDSRetransfer600App.dll",
-            "Retransfer600_SDKCfg.xml",
             "requirements.txt"
         ]
         
+        # DLL 파일들 (dll 폴더 또는 루트에서 찾기)
+        required_dll_files = [
+            "libDSRetransfer600App.dll",
+            "Retransfer600_SDKCfg.xml",
+            "EWL",
+            "R600StatusReference"
+        ]
+        
         missing_files = []
-        for file_name in required_files:
+        
+        # 기본 파이썬 파일들 확인
+        for file_name in required_py_files:
             if not (self.project_root / file_name).exists():
                 missing_files.append(file_name)
         
+        # DLL 파일들 확인 (dll 폴더 또는 루트에서)
+        for file_name in required_dll_files:
+            # dll 폴더에서 먼저 찾기
+            dll_path = self.project_root / "dll" / file_name
+            root_path = self.project_root / file_name
+            
+            if not (dll_path.exists() or root_path.exists()):
+                missing_files.append(f"{file_name} (dll 폴더 또는 루트)")
+        
+        # dll 폴더 자체 확인
+        dll_dir = self.project_root / "dll"
+        if not dll_dir.exists():
+            missing_files.append("dll 폴더")
+        else:
+            dll_files = list(dll_dir.glob("*"))
+            if len(dll_files) == 0:
+                missing_files.append("dll 폴더 내 파일들")
+            else:
+                print(f"[OK] dll 폴더 발견: {len(dll_files)}개 파일")
+                for dll_file in dll_files:
+                    print(f"   - {dll_file.name}")
+        
         if missing_files:
-            print(f"❌ 누락된 파일: {', '.join(missing_files)}")
+            print(f"[ERROR] 누락된 파일: {', '.join(missing_files)}")
             return False
         
-        print("✅ 모든 필수 파일 확인 완료")
+        print("[OK] 모든 필수 파일 확인 완료")
         return True
 
     def run_fast_pyinstaller(self):
         """빠른 시작을 위한 PyInstaller 실행 (onedir 모드)"""
-        print("🚀 빠른 시작용 실행파일 빌드 시작 (폴더 형태)...")
+        print("[BUILD] 빠른 시작용 실행파일 빌드 시작 (폴더 형태)...")
         
         cmd = [
             sys.executable, "-m", "PyInstaller",
@@ -69,16 +100,33 @@ class FastHanaStudioBuilder:
         
         # 필수 데이터 파일들 추가
         data_files = [
-            ("libDSRetransfer600App.dll", "."),
-            ("Retransfer600_SDKCfg.xml", "."),
             ("config.json", "."),
         ]
+        
+        # dll 폴더의 모든 파일들 추가 (프린터 관련)
+        dll_dir = self.project_root / "dll"
+        if dll_dir.exists():
+            for dll_file in dll_dir.iterdir():
+                if dll_file.is_file():
+                    data_files.append((str(dll_file), "."))
+                    print(f"[ADD] DLL 파일 추가: {dll_file.name}")
+        
+        # 루트에 있는 개별 DLL/설정 파일들도 확인 (하위 호환성)
+        root_dll_files = [
+            "libDSRetransfer600App.dll",
+            "Retransfer600_SDKCfg.xml"
+        ]
+        for dll_file in root_dll_files:
+            dll_path = self.project_root / dll_file
+            if dll_path.exists():
+                data_files.append((dll_file, "."))
+                print(f"[ADD] 루트 DLL 파일 추가: {dll_file}")
         
         if (self.project_root / "hana.ico").exists():
             data_files.append(("hana.ico", "."))
         
         # 디렉토리들 추가
-        for dir_name in ["ui", "core", "printer"]:
+        for dir_name in ["ui", "core", "printer", "models", "dll"]:
             if (self.project_root / dir_name).exists():
                 data_files.append((dir_name, dir_name))
         
@@ -97,7 +145,7 @@ class FastHanaStudioBuilder:
                     cmd.extend(["--add-data", f"{src};{dst}"])
                 else:  # Linux/Mac
                     cmd.extend(["--add-data", f"{src}:{dst}"])
-                print(f"✅ 추가: {src}")
+                print(f"[ADD] 추가: {src}")
         
         # 필수 hidden imports + 누락된 종속성 포함
         essential_imports = [
@@ -155,24 +203,24 @@ class FastHanaStudioBuilder:
         cmd.append("main.py")
         
         try:
-            print("🔧 실행 명령어:")
+            print("[BUILD] 실행 명령어:")
             print(" ".join(cmd[:10]) + " ...")
-            print("⏳ 빌드 중... (폴더 형태로 빠른 빌드)")
+            print("[BUILD] 빌드 중... (폴더 형태로 빠른 빌드)")
             
             result = subprocess.run(cmd, check=True, cwd=self.project_root)
-            print("✅ PyInstaller 빌드 완료!")
+            print("[OK] PyInstaller 빌드 완료!")
             return True
         except subprocess.CalledProcessError as e:
-            print(f"❌ PyInstaller 빌드 실패: {e}")
+            print(f"[ERROR] PyInstaller 빌드 실패: {e}")
             return False
     
     def create_fast_package(self):
         """빠른 시작용 패키지 생성 - 중복 실행 문제 해결"""
-        print("📦 빠른 시작용 패키지 생성...")
+        print("[PACKAGE] 빠른 시작용 패키지 생성...")
         
         dist_folder = self.dist_dir / "HanaStudio"
         if not dist_folder.exists():
-            print("❌ 빌드 폴더를 찾을 수 없습니다.")
+            print("[ERROR] 빌드 폴더를 찾을 수 없습니다.")
             return False
         
         # release 폴더 생성
@@ -186,7 +234,7 @@ class FastHanaStudioBuilder:
         # 폴더 크기 확인
         total_size = sum(f.stat().st_size for f in release_dir.rglob('*') if f.is_file())
         size_mb = total_size / (1024 * 1024)
-        print(f"📊 빌드 폴더 크기: {size_mb:.1f}MB")
+        print(f"[INFO] 빌드 폴더 크기: {size_mb:.1f}MB")
         
         # 🔧 수정된 실행 배치 파일 생성 (중복 실행 문제 해결)
         batch_file = release_dir / "Hana Studio 실행.bat"
@@ -216,26 +264,30 @@ HanaStudio.exe
 -------------------
 ✅ 즉시 시작 (2-3초 내 실행)
 ✅ CMD 창 완전 숨김
-✅ AI 모델 다운로드 진행 상황 표시
+✅ AI 모델 백그라운드 로딩 (네트워크 불필요)
+✅ 프린터 DLL 파일 모두 포함
 ✅ 폴더 형태로 모든 파일 포함
 
-📁 파일 구조
-----------
-이 폴더의 모든 파일이 필요합니다.
-다른 컴퓨터에 복사할 때는 전체 폴더를 복사하세요.
+📁 포함된 파일들
+--------------
+- AI 모델: models/ 폴더 (4개 모델 파일)
+- 프린터: dll/ 폴더 (4개 DLL 파일)
+- 설정: config.json, *.EWL 파일들
+- 실행: HanaStudio.exe + 모든 종속성
 
 🔧 시스템 요구사항
 ---------------
 - Windows 10/11 (64bit)
 - 메모리: 최소 4GB RAM 권장  
 - 저장공간: 약 500MB
-- 인터넷 연결: 최초 AI 모델 다운로드 시 필요
+- 네트워크: AI 모델이 포함되어 연결 불필요
 
 🎯 배포 방법
 ----------
 1. 이 폴더 전체를 ZIP으로 압축
 2. 다른 컴퓨터에서 압축 해제
 3. "Hana Studio 실행.bat" 실행
+4. 프린터 연결 후 바로 사용 가능
 
 📞 지원
 ------
@@ -245,12 +297,12 @@ HanaStudio.exe
         with open(release_dir / "README.txt", 'w', encoding='utf-8-sig') as f:
             f.write(readme_content)
         
-        print("✅ 빠른 시작용 패키지 생성 완료")
+        print("[OK] 빠른 시작용 패키지 생성 완료")
         return True
     
     def build(self):
         """전체 빌드 프로세스"""
-        print("⚡ Hana Studio 빠른 시작 빌드 시작")
+        print("[START] Hana Studio 빠른 시작 빌드 시작")
         print("=" * 60)
         
         if not self.check_dependencies():
@@ -265,20 +317,21 @@ HanaStudio.exe
             return False
         
         print("\n" + "=" * 60)
-        print("⚡ 빠른 시작 빌드 완료!")
-        print(f"📁 실행 폴더: {self.project_root / 'release_fast'}")
+        print("[COMPLETE] 빠른 시작 빌드 완료!")
+        print(f"[PATH] 실행 폴더: {self.project_root / 'release_fast'}")
         print("")
-        print("⚡ 빠른 시작 버전:")
+        print("[FEATURES] 빠른 시작 버전:")
         print("   - 2-3초 내 즉시 시작")
-        print("   - 폴더 형태 (압축 해제 없음)")
+        print("   - AI 모델 포함 (네트워크 불필요)")
+        print("   - 프린터 DLL 모두 포함")
         print("   - CMD 창 완전 숨김")
         print("   - 중복 실행 방지")
         print("")
-        print("🧪 테스트:")
+        print("[TEST] 테스트 방법:")
         print("   1. release_fast/Hana Studio 실행.bat 실행")
         print("   2. 즉시 시작되는지 확인")
-        print("   3. AI 다이얼로그가 바로 표시되는지 확인")
-        print("   4. 중복 실행되지 않는지 확인")
+        print("   3. 배경제거 AI 자동 준비 확인")
+        print("   4. 프린터 연결 테스트")
         
         return True
 
@@ -288,9 +341,9 @@ def main():
     # PyInstaller 설치 확인
     try:
         import PyInstaller
-        print(f"✅ PyInstaller {PyInstaller.__version__}")
+        print(f"[OK] PyInstaller {PyInstaller.__version__}")
     except ImportError:
-        print("❌ PyInstaller 미설치")
+        print("[ERROR] PyInstaller 미설치")
         print("설치 명령어: pip install pyinstaller")
         return
     
@@ -298,14 +351,14 @@ def main():
     success = builder.build()
     
     if not success:
-        print("❌ 빌드 실패")
+        print("[ERROR] 빌드 실패")
         return
     
-    print("\n📋 다음 단계:")
-    print("1. release_fast/Hana Studio 실행.bat 실행")
-    print("2. 즉시 시작되는지 확인")
-    print("3. 전체 폴더를 ZIP으로 배포")
-    print("4. 중복 실행되지 않는지 테스트")
+    print("\n[DEPLOY] 배포 단계:")
+    print("1. release_fast 폴더 전체를 ZIP으로 압축")
+    print("2. 배포 및 테스트")
+    print("3. 사용자에게 '실행.bat' 파일 클릭 안내")
+    print("4. AI 모델과 프린터 DLL 모두 포함됨")
 
 
 if __name__ == "__main__":

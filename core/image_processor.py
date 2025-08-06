@@ -7,37 +7,27 @@ import io
 import numpy as np
 import cv2
 from PIL import Image
-from rembg import remove, new_session
+from rembg import remove
 from config import config
+from .model_loader import get_ai_session
 
 
 class ImageProcessor:
-    """이미지 처리를 담당하는 클래스 - 동적 임계값 지원"""
+    """이미지 처리를 담당하는 클래스 - 백그라운드 모델 로딩 지원"""
     
     def __init__(self):
         self.session = None
-        self._initialize_ai_model()
     
-    def _initialize_ai_model(self):
-        """AI 모델 초기화"""
-        try:
-            model_name = config.get('ai_model', 'isnet-general-use')
-            print(f"AI 모델 초기화 중: {model_name}")
-            self.session = new_session(model_name=model_name)
-            
-            model_info = config.get_ai_model_info(model_name)
-            if model_info:
-                print(f"✅ {model_info['name']} 로드 완료!")
-            else:
-                print("✅ AI 모델 로드 완료!")
-                
-        except Exception as e:
-            print(f"❌ AI 모델 로드 실패: {e}")
-            raise
+    def _get_session(self):
+        """AI 모델 세션 가져오기 (지연 로딩)"""
+        if self.session is None:
+            self.session = get_ai_session()
+        return self.session
     
     def is_model_ready(self) -> bool:
         """모델이 준비되었는지 확인"""
-        return self.session is not None
+        from .model_loader import is_ai_model_ready
+        return is_ai_model_ready()
     
     def remove_background(self, image_path: str, alpha_threshold: int = None) -> np.ndarray:
         """
@@ -47,7 +37,8 @@ class ImageProcessor:
             image_path: 이미지 파일 경로
             alpha_threshold: 알파 임계값 (None이면 config에서 가져옴)
         """
-        if not self.session:
+        session = self._get_session()
+        if not session:
             raise RuntimeError("AI 모델이 초기화되지 않았습니다.")
         
         try:
@@ -62,7 +53,7 @@ class ImageProcessor:
                 input_data = f.read()
             
             # 배경 제거 처리
-            result = remove(input_data, session=self.session)
+            result = remove(input_data, session=session)
             
             # 마스크 생성 (EXIF 회전 적용하지 않음)
             img_rgba = Image.open(io.BytesIO(result)).convert("RGBA")
@@ -123,14 +114,16 @@ class ImageProcessor:
         Returns:
             dict: 각 임계값별 객체 비율
         """
-        if not self.session:
+        session = self._get_session()
+        if not session:
             raise RuntimeError("AI 모델이 초기화되지 않았습니다.")
         
         try:
             # 배경 제거 한 번만 수행
+            session = self._get_session()
             with open(image_path, 'rb') as f:
                 input_data = f.read()
-            result = remove(input_data, session=self.session)
+            result = remove(input_data, session=session)
             img_rgba = Image.open(io.BytesIO(result)).convert("RGBA")
             alpha = np.array(img_rgba.split()[-1])
             

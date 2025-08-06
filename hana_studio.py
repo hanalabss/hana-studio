@@ -85,26 +85,33 @@ class HanaStudio(QMainWindow):
         self._lazy_init_scheduled = True
         
         try:
-            print("🔄 코어 모듈 초기화 중...")
+            print("[SYSTEM] 시스템 준비 중...")
             
             # 무거운 모듈들을 여기서 import
             from core import ImageProcessor, FileManager
+            from core.model_loader import get_model_loader
             
             self.image_processor = ImageProcessor()
             self.file_manager = FileManager()
             
-            print("✅ 코어 모듈 초기화 완료")
+            # AI 모델 로딩 상태 시그널 연결
+            model_loader = get_model_loader()
+            model_loader.loading_progress.connect(self._on_model_loading_progress)
+            model_loader.loading_completed.connect(self._on_model_loading_completed)
+            model_loader.loading_failed.connect(self._on_model_loading_failed)
+            
+            print("[SYSTEM] 시스템 준비 완료")
             
             # 프린터 초기화 (더 나중에)
             QTimer.singleShot(500, self._lazy_init_printer)
             
         except Exception as e:
-            print(f"⚠️ 코어 모듈 초기화 실패: {e}")
+            print(f"[ERROR] 시스템 준비 실패: {e}")
     
     def _lazy_init_printer(self):
         """프린터 관련 지연 초기화"""
         try:
-            print("🖨️ 프린터 모듈 초기화 중...")
+            print("[PRINTER] 프린터 연결 준비 중...")
             
             from printer import find_printer_dll
             from printer.printer_thread import print_manager
@@ -112,16 +119,36 @@ class HanaStudio(QMainWindow):
             
             # 프린터 선택 (필수)
             if not self._select_printer_on_startup():
-                print("⚠️ 프린터 선택 실패")
+                print("[WARN] 프린터 선택 실패")
                 return
             
             self._check_printer_availability()
             self._setup_manual_mask_viewers()
             
-            print("✅ 프린터 모듈 초기화 완료")
+            print("[OK] 프린터 연결 준비 완료")
             
         except Exception as e:
-            print(f"⚠️ 프린터 모듈 초기화 실패: {e}")
+            print(f"[ERROR] 프린터 연결 준비 실패: {e}")
+    
+    def _on_model_loading_progress(self, message: str):
+        """AI 모델 로딩 진행 상황 처리"""
+        self.log(message)
+        # UI 상태 업데이트 - 모델 로딩 중임을 표시
+        self.ui.components['progress_panel'].update_status(message)
+    
+    def _on_model_loading_completed(self, session):
+        """AI 모델 로딩 완료 처리"""
+        self.log("[OK] 배경제거 기능 사용 가능!")
+        # UI 상태 업데이트 - 준비 완료
+        if hasattr(self, 'front_image_path') and self.front_image_path:
+            self._update_ui_state()
+        else:
+            self.ui.components['progress_panel'].update_status("[INFO] 이미지를 선택해주세요")
+    
+    def _on_model_loading_failed(self, error_message: str):
+        """AI 모델 로딩 실패 처리"""
+        self.log(f"[ERROR] {error_message}")
+        self.ui.components['progress_panel'].update_status("[ERROR] 배경제거 기능 사용 불가")
     
     # === 지연 로딩을 위한 getter 메서드들 ===
     
@@ -145,11 +172,11 @@ class HanaStudio(QMainWindow):
             icon_path = get_resource_path("hana.ico")
             if os.path.exists(icon_path):
                 self.setWindowIcon(QIcon(icon_path))
-                print(f"✅ 윈도우 아이콘 설정: {icon_path}")
+                print(f"[OK] 윈도우 아이콘 설정: {icon_path}")
             else:
-                print(f"⚠️ 아이콘 파일 없음: {icon_path}")
+                print(f"[WARN] 아이콘 파일 없음: {icon_path}")
         except Exception as e:
-            print(f"⚠️ 윈도우 아이콘 설정 실패: {e}")
+            print(f"[WARN] 윈도우 아이콘 설정 실패: {e}")
         
     def _setup_manual_mask_viewers(self):
         """수동 마스킹 뷰어 설정"""
@@ -192,7 +219,7 @@ class HanaStudio(QMainWindow):
             self.selected_printer_info = selected_printer
             self.printer_available = True
             
-            print(f"✅ 프린터 선택 완료: {selected_printer}")
+            print(f"[OK] 프린터 선택 완료: {selected_printer}")
             return True
             
         except Exception as e:
@@ -490,11 +517,11 @@ class HanaStudio(QMainWindow):
                 self.printer_dll_path = find_printer_dll()
                 if self.printer_dll_path:
                     self.printer_available = True
-                    self.ui.components['printer_panel'].update_status("✅ 프린터 사용 가능")
+                    self.ui.components['printer_panel'].update_status("[OK] 프린터 사용 가능")
                 else:
-                    self.ui.components['printer_panel'].update_status("❌ DLL 파일 없음")
+                    self.ui.components['printer_panel'].update_status("[ERROR] DLL 파일 없음")
             except Exception as e:
-                self.log(f"❌ 프린터 확인 오류: {e}")
+                self.log(f"[ERROR] 프린터 확인 오류: {e}")
         
         threading.Thread(target=check, daemon=True).start()
 
@@ -636,7 +663,7 @@ class HanaStudio(QMainWindow):
         self._reset_back_processing_results()
 
     def process_single_image(self, is_front: bool, threshold: int = 200):
-        """개별 이미지 배경제거 처리 - 지연 로딩 적용"""
+        """개별 이미지 배경제거 처리 - AI 모델 대기 기능 포함"""
         if is_front:
             if not self.front_image_path:
                 return
@@ -654,8 +681,36 @@ class HanaStudio(QMainWindow):
         viewer.set_process_enabled(False)
         self.ui.components['progress_panel'].show_progress()
         
+        # AI 모델 준비 상태 확인
+        from core.model_loader import is_ai_model_ready
+        
+        if not is_ai_model_ready():
+            self.log(f"⏳ 배경제거 AI 준비 완료 대기 중... {side_text} 처리는 자동으로 시작됩니다")
+            self.ui.components['progress_panel'].update_status("⏳ 배경제거 AI 준비 중...")
+            
+            # 모델 로딩 완료까지 대기하는 스레드 시작
+            import threading
+            def wait_and_process():
+                from core.model_loader import get_model_loader
+                loader = get_model_loader()
+                if loader.wait_for_loading(timeout=60.0):  # 최대 60초 대기
+                    # UI 스레드에서 실행하도록 QTimer 사용
+                    from PySide6.QtCore import QTimer
+                    QTimer.singleShot(100, lambda: self._start_processing_after_wait(is_front, threshold, image_path, side_text))
+                else:
+                    # 타임아웃 시 처리
+                    QTimer.singleShot(100, lambda: self._handle_model_timeout(is_front))
+            
+            threading.Thread(target=wait_and_process, daemon=True).start()
+            return
+        
+        # 모델이 준비된 경우 즉시 처리 시작
+        self._start_processing_after_wait(is_front, threshold, image_path, side_text)
+    
+    def _start_processing_after_wait(self, is_front: bool, threshold: int, image_path: str, side_text: str):
+        """AI 모델 로딩 완료 후 실제 배경제거 처리 시작"""
         # 항상 원본 이미지 경로로 처리
-        self.log(f"{side_text} 이미지 배경 제거 시작... (임계값: {threshold})")
+        self.log(f"🎉 배경제거 AI 준비 완료! {side_text} 배경제거 시작...")
         
         # 임계값을 config에 임시 설정
         from config import config
@@ -683,6 +738,26 @@ class HanaStudio(QMainWindow):
         )
         self.processing_thread.progress.connect(self.on_processing_progress)
         self.processing_thread.start()
+    
+    def _handle_model_timeout(self, is_front: bool):
+        """AI 모델 로딩 타임아웃 처리"""
+        side_text = "앞면" if is_front else "뒷면"
+        viewer = self.ui.components['front_original_viewer'] if is_front else self.ui.components['back_original_viewer']
+        
+        self.ui.components['progress_panel'].hide_progress()
+        viewer.set_process_enabled(True)
+        
+        error_msg = f"{side_text} 배경제거 실패: AI 모델 로딩 타임아웃"
+        self.log(f"❌ {error_msg}")
+        self.ui.components['progress_panel'].update_status("❌ AI 모델 로딩 실패")
+        
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.warning(
+            self, 
+            "AI 모델 로딩 실패", 
+            f"AI 모델 로딩이 완료되지 않아 배경제거를 실행할 수 없습니다.\n\n"
+            "네트워크 연결을 확인하고 다시 시도해주세요."
+        )
         
     def on_dual_side_toggled(self, checked):
         """양면 인쇄 토글"""

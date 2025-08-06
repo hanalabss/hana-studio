@@ -175,7 +175,7 @@ def check_single_instance_simple():
 def main():
     """메인 함수 - 개선된 중복 검사"""
     try:
-        print("🚀 Hana Studio 시작...")
+        print("[START] Hana Studio 시작...")
         
         # 중복 실행 방지 (더 안정적인 버전)
         if not check_single_instance():
@@ -194,15 +194,20 @@ def main():
         app.setStyle('Fusion')
         app.setQuitOnLastWindowClosed(True)
         
-        print("✅ QApplication 생성 완료")
+        print("[OK] QApplication 생성 완료")
         
-        # 로딩 윈도우 표시
-        from ui.simple_loading import SimpleLoadingWindow
+        # AI 모델 백그라운드 로딩 시작
+        from core.model_loader import preload_ai_model
+        preload_ai_model()
         
-        loading_window = SimpleLoadingWindow()
+        # 메인 애플리케이션 윈도우 생성 및 표시
+        from hana_studio import HanaStudio
         
-        print("✅ 로딩 윈도우 표시 완료")
-        print("⏳ 백그라운드에서 초기화 진행 중...")
+        main_window = HanaStudio()
+        main_window.show()
+        
+        print("[OK] Hana Studio 시작 완료")
+        print("[AI] 백그라운드에서 배경제거 AI 준비 중...")
         
         # 애플리케이션 실행
         exit_code = app.exec()

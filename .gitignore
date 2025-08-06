@@ -192,9 +192,19 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+# Hana Studio specific
 dll/
 *.exe
 release/
 release_fast/
 debug/
 installer_output/
+installer_final/
+models/
+*.onnx
+*.dll
+*.EWL
+*.bat
+output/
+temp/
+logs/
