@@ -1,5 +1,5 @@
 """
-UI 컴포넌트 모듈 초기화 - PositionAdjustPanel 추가
+UI [EMOJI] [EMOJI] [EMOJI] - PositionAdjustPanel [EMOJI]
 """
 
 from .components.modern_button import ModernButton
@@ -11,13 +11,13 @@ from .components.control_panels import (
     PrinterPanel,
     ProgressPanel,
     LogPanel,
-    PositionAdjustPanel  # 새로 추가
+    PositionAdjustPanel  # [EMOJI] [EMOJI]
 )
 from .styles import get_app_style, get_light_palette
 from .main_window import HanaStudioMainWindow
 
 __all__ = [
-    # 컴포넌트들
+    # [EMOJI]
     'ModernButton',
     'ImageViewer',
     'FileSelectionPanel',
@@ -26,12 +26,12 @@ __all__ = [
     'PrinterPanel',
     'ProgressPanel',
     'LogPanel',
-    'PositionAdjustPanel',  # 새로 추가
+    'PositionAdjustPanel',  # [EMOJI] [EMOJI]
     
-    # 스타일링
+    # [EMOJI]
     'get_app_style',
     'get_light_palette',
     
-    # 메인 윈도우
+    # [EMOJI] [EMOJI]
     'HanaStudioMainWindow'
 ]

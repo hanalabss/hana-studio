@@ -1,201 +1,111 @@
-"""
-Hana Studio 설정 파일
-애플리케이션의 기본 설정값들을 관리합니다.
-"""
-
+# config.py
 import os
 import sys
 import json
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 def get_resource_path(relative_path: str) -> str:
-    """PyInstaller 호환 리소스 경로"""
+    """PyInstaller 실행 파일 경로 처리"""
     try:
+        # PyInstaller로 빌드된 경우
         base_path = sys._MEIPASS
     except AttributeError:
+        # 일반 Python 실행 환경
         base_path = os.path.dirname(os.path.abspath(__file__))
+    
     return os.path.join(base_path, relative_path)
 
-
-def get_executable_dir() -> str:
-    """실행파일 디렉토리"""
-    if getattr(sys, 'frozen', False):
-        return os.path.dirname(sys.executable)
-    else:
-        return os.path.dirname(os.path.abspath(__file__))
-    
 class Config:
     """애플리케이션 설정 관리 클래스"""
     
-    # 기본 설정값
     DEFAULT_SETTINGS = {
-        'ai_model': 'isnet-general-use',
-        'alpha_threshold': 200,
-        'output_quality': 95,
-        'auto_save_results': False,
-        'max_image_size': 2048,
-        'timeout_seconds': 30,
-        'language': 'ko',
-        'theme': 'light',
-        'window_geometry': {
-            'width': 1600,
-            'height': 900,
-            'x': 0,
-            'y': 0
-        },
-        'directories': {
-            'output': 'output',
-            'temp': 'temp',
-            'models': 'models',
-            'logs': 'logs'
-        },
-        'printer': {
-            'dll_path': './libDSRetransfer600App.dll',
-            'card_width': 55,
-            'card_height': 86.6,
-            'timeout_ms': 10000,
-            'auto_detect': True
+        "ai_model": "isnet-general-use",
+        "alpha_threshold": 45,
+        "output_quality": 95,
+        "max_image_size": 2048,
+        "directories": {
+            "output": "output",
+            "masks": "masks",
+            "temp": "temp"
         }
     }
     
-    # 지원하는 AI 모델들
-    SUPPORTED_AI_MODELS = {
-        'isnet-general-use': {
-            'name': '범용 모델 (권장)',
-            'description': '대부분의 이미지에 적합한 고품질 모델',
-            'performance': 'medium',
-            'accuracy': 'high'
-        },
-        'u2net': {
-            'name': 'U²-Net',
-            'description': '빠른 처리 속도의 기본 모델',
-            'performance': 'fast',
-            'accuracy': 'medium'
-        },
-        'u2netp': {
-            'name': 'U²-Net (Light)',
-            'description': '경량화된 빠른 처리 모델',
-            'performance': 'very_fast',
-            'accuracy': 'medium'
-        },
-        'silueta': {
-            'name': 'Silueta',
-            'description': '정밀한 실루엣 처리 모델',
-            'performance': 'slow',
-            'accuracy': 'very_high'
-        }
-    }
-    
-    # 지원하는 이미지 형식
-    SUPPORTED_IMAGE_FORMATS = {
-        '.jpg': 'JPEG 이미지',
-        '.jpeg': 'JPEG 이미지',
-        '.png': 'PNG 이미지',
-        '.bmp': 'Bitmap 이미지',
-        '.tiff': 'TIFF 이미지',
-        '.tif': 'TIFF 이미지',
-        '.webp': 'WebP 이미지'
-    }
-    
-    def __init__(self, config_file: str = 'config.json'):
-        """설정 관리자 초기화"""
-        # PyInstaller 호환 경로 처리
-        if getattr(sys, 'frozen', False):
-            # 실행파일과 같은 위치에서 config 파일 찾기
-            exe_dir = get_executable_dir()
-            self.config_file = Path(exe_dir) / config_file
-        else:
-            self.config_file = Path(config_file)
-            
-        self.settings = self.DEFAULT_SETTINGS.copy()
+    def __init__(self):
+        self.settings = {}
+        self.config_file = "config.json"
         self.load_settings()
-        self.ensure_directories()
+        self._ensure_directories()
     
-    def load_settings(self) -> None:
-        """설정 파일에서 설정을 로드합니다."""
-        if self.config_file.exists():
-            try:
-                with open(self.config_file, 'r', encoding='utf-8') as f:
-                    loaded_settings = json.load(f)
-                    # 기본 설정과 병합
-                    self._merge_settings(self.settings, loaded_settings)
-                print(f"✅ 설정 로드 완료: {self.config_file}")
-            except Exception as e:
-                print(f"⚠️ 설정 로드 실패: {e}, 기본 설정 사용")
+    def _get_safe_temp_dir(self):
+        """안전한 임시 디렉토리 경로 반환"""
+        if getattr(sys, 'frozen', False):
+            # PyInstaller 환경: 실행 파일과 같은 위치
+            exe_dir = Path(sys.executable).parent
+            temp_dir = exe_dir / "HanaStudio_Temp"
         else:
-            print("📄 설정 파일이 없습니다. 기본 설정을 생성합니다.")
-            self.save_settings()
+            # 개발 환경: 현재 작업 디렉토리
+            temp_dir = Path.cwd() / "HanaStudio_Temp"
+        
+        # 디렉토리 생성
+        temp_dir.mkdir(exist_ok=True, parents=True)
+        return str(temp_dir)
     
-    def save_settings(self) -> None:
-        """현재 설정을 파일에 저장합니다."""
+    def _ensure_directories(self):
+        """필요한 디렉토리 생성 (한글 경로 지원)"""
+        for dir_key, dir_path in self.settings.get('directories', {}).items():
+            try:
+                if getattr(sys, 'frozen', False):
+                    # 실행 파일 위치 기준
+                    base_dir = Path(sys.executable).parent
+                else:
+                    # 개발 환경 기준
+                    base_dir = Path.cwd()
+                
+                full_path = base_dir / dir_path
+                full_path.mkdir(exist_ok=True, parents=True)
+                
+            except Exception as e:
+                # 권한 문제 등으로 실패 시 안전한 위치에 생성
+                safe_dir = Path(self._get_safe_temp_dir()) / dir_path
+                safe_dir.mkdir(exist_ok=True, parents=True)
+                self.settings['directories'][dir_key] = str(safe_dir)
+    
+    def load_settings(self):
+        """설정 파일 로드"""
+        try:
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    loaded = json.load(f)
+                    self.settings = self._merge_settings(self.DEFAULT_SETTINGS.copy(), loaded)
+            else:
+                self.settings = self.DEFAULT_SETTINGS.copy()
+        except Exception as e:
+            print(f"설정 로드 실패, 기본값 사용: {e}")
+            self.settings = self.DEFAULT_SETTINGS.copy()
+    
+    def save_settings(self):
+        """현재 설정을 파일에 저장"""
         try:
             with open(self.config_file, 'w', encoding='utf-8') as f:
                 json.dump(self.settings, f, indent=2, ensure_ascii=False)
-            print(f"✅ 설정 저장 완료: {self.config_file}")
+            print(f"설정 저장 완료: {self.config_file}")
         except Exception as e:
-            print(f"❌ 설정 저장 실패: {e}")
+            print(f"설정 저장 실패: {e}")
     
-    def _merge_settings(self, default: Dict, loaded: Dict) -> None:
-        """기본 설정과 로드된 설정을 재귀적으로 병합합니다."""
-        for key, value in loaded.items():
-            if key in default:
-                if isinstance(default[key], dict) and isinstance(value, dict):
-                    self._merge_settings(default[key], value)
-                else:
-                    default[key] = value
-
-    def ensure_directories(self) -> None:
-        """PyInstaller 호환 디렉토리 생성"""
-        import sys
-        
-        for dir_key, dir_path in self.settings['directories'].items():
-            if getattr(sys, 'frozen', False):
-                # PyInstaller 환경에서는 실행파일과 같은 위치에 생성
-                exe_dir = get_executable_dir()
-                full_path = Path(exe_dir) / dir_path
+    def _merge_settings(self, base, update):
+        """설정 병합"""
+        for key, value in update.items():
+            if key in base and isinstance(base[key], dict) and isinstance(value, dict):
+                base[key] = self._merge_settings(base[key], value)
             else:
-                full_path = Path(dir_path)
-            
-            try:
-                full_path.mkdir(parents=True, exist_ok=True)
-                # print(f"[DEBUG] 디렉토리 생성/확인: {full_path}")
-                
-                # 쓰기 권한 테스트
-                test_file = full_path / "write_test.tmp"
-                try:
-                    with open(test_file, 'w') as f:
-                        f.write("test")
-                    test_file.unlink()
-                    # print(f"[DEBUG] 쓰기 권한 확인: {full_path}")
-                except Exception as e:
-                    # print(f"[WARNING] 쓰기 권한 없음: {full_path}, {e}")
-                    # Windows에서 관리자 권한이 필요한 경우 사용자 디렉토리 사용
-                    if getattr(sys, 'frozen', False):
-                        import tempfile
-                        user_dir = Path(tempfile.gettempdir()) / "HanaStudio" / dir_path
-                        user_dir.mkdir(parents=True, exist_ok=True)
-                        # print(f"[INFO] 대체 디렉토리 사용: {user_dir}")
-                        self.settings['directories'][dir_key] = str(user_dir)
-                    
-            except Exception as e:
-                print(f"[ERROR] 디렉토리 생성 실패: {full_path}, {e}")
-
-
+                base[key] = value
+        return base
+    
     def get(self, key: str, default: Any = None) -> Any:
-        """
-        설정값을 가져옵니다.
-        
-        Args:
-            key: 설정 키 (점 표기법 지원, 예: 'window_geometry.width')
-            default: 기본값
-            
-        Returns:
-            설정값 또는 기본값
-        """
+        """설정값 가져오기"""
         keys = key.split('.')
         value = self.settings
-        
         try:
             for k in keys:
                 value = value[k]
@@ -203,182 +113,70 @@ class Config:
         except (KeyError, TypeError):
             return default
     
-    def set(self, key: str, value: Any) -> None:
-        """
-        설정값을 변경합니다.
-        
-        Args:
-            key: 설정 키 (점 표기법 지원)
-            value: 설정값
-        """
+    def set(self, key: str, value: Any):
+        """설정값 저장"""
         keys = key.split('.')
         target = self.settings
-        
-        # 마지막 키를 제외한 경로까지 이동
         for k in keys[:-1]:
             if k not in target:
                 target[k] = {}
             target = target[k]
-        
-        # 마지막 키에 값 설정
         target[keys[-1]] = value
+
+    SUPPORTED_AI_MODELS = {
+        "isnet-general-use": {"name": "ISNet (일반용)", "quality": "최고"},
+        "u2net": {"name": "U2Net", "quality": "높음"},
+        "u2net_human_seg": {"name": "U2Net (인물용)", "quality": "높음"},
+        "silueta": {"name": "Silueta", "quality": "중간"}
+    }
     
-    def get_ai_model_info(self, model_name: str) -> Optional[Dict]:
-        """AI 모델 정보를 가져옵니다."""
-        return self.SUPPORTED_AI_MODELS.get(model_name)
+    SUPPORTED_IMAGE_FORMATS = {
+        ".jpg": "JPEG 이미지",
+        ".jpeg": "JPEG 이미지",
+        ".png": "PNG 이미지",
+        ".bmp": "BMP 이미지",
+        ".tiff": "TIFF 이미지",
+        ".webp": "WebP 이미지"
+    }
     
-    def get_supported_models(self) -> Dict:
-        """지원되는 AI 모델 목록을 가져옵니다."""
-        return self.SUPPORTED_AI_MODELS
-    
-    def get_image_filter(self) -> str:
-        """파일 다이얼로그용 이미지 필터를 생성합니다."""
-        formats = []
-        for ext, desc in self.SUPPORTED_IMAGE_FORMATS.items():
-            formats.append(f"*{ext}")
+    def get_image_filter(self):
+        """QFileDialog용 이미지 필터 문자열 반환"""
+        filters = []
         
-        filter_str = f"이미지 파일 ({' '.join(formats)})"
-        for ext, desc in self.SUPPORTED_IMAGE_FORMATS.items():
-            filter_str += f";;{desc} (*{ext})"
+        # 모든 이미지 형식
+        all_extensions = " ".join([f"*{ext}" for ext in self.SUPPORTED_IMAGE_FORMATS.keys()])
+        filters.append(f"이미지 파일 ({all_extensions})")
         
-        return filter_str
+        # 개별 형식
+        for ext, desc in self.SUPPORTED_IMAGE_FORMATS.items():
+            filters.append(f"{desc} (*{ext})")
+        
+        # 모든 파일
+        filters.append("모든 파일 (*.*)")
+        
+        return ";;".join(filters)
     
     def is_supported_image(self, file_path: str) -> bool:
-        """지원되는 이미지 형식인지 확인합니다."""
+        """지원되는 이미지 형식인지 확인"""
+        from pathlib import Path
         ext = Path(file_path).suffix.lower()
         return ext in self.SUPPORTED_IMAGE_FORMATS
-    
-    def validate_settings(self) -> bool:
-        """설정값들의 유효성을 검사합니다."""
-        try:
-            # AI 모델 확인
-            if self.get('ai_model') not in self.SUPPORTED_AI_MODELS:
-                print(f"⚠️ 지원하지 않는 AI 모델: {self.get('ai_model')}")
-                self.set('ai_model', 'isnet-general-use')
-            
-            # 임계값 범위 확인
-            threshold = self.get('alpha_threshold')
-            if not (0 <= threshold <= 255):
-                print(f"⚠️ 잘못된 알파 임계값: {threshold}")
-                self.set('alpha_threshold', 45)
-            
-            # 품질 범위 확인
-            quality = self.get('output_quality')
-            if not (1 <= quality <= 100):
-                print(f"⚠️ 잘못된 출력 품질: {quality}")
-                self.set('output_quality', 95)
-            
-            return True
-            
-        except Exception as e:
-            print(f"❌ 설정 검증 실패: {e}")
-            return False
-    
-    def reset_to_defaults(self) -> None:
-        """설정을 기본값으로 초기화합니다."""
-        self.settings = self.DEFAULT_SETTINGS.copy()
-        self.save_settings()
-        print("🔄 설정이 기본값으로 초기화되었습니다.")
-    
-    def export_settings(self, file_path: str) -> bool:
-        """설정을 다른 파일로 내보냅니다."""
-        try:
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(self.settings, f, indent=2, ensure_ascii=False)
-            print(f"✅ 설정 내보내기 완료: {file_path}")
-            return True
-        except Exception as e:
-            print(f"❌ 설정 내보내기 실패: {e}")
-            return False
-    
-    def import_settings(self, file_path: str) -> bool:
-        """다른 파일에서 설정을 가져옵니다."""
-        try:
-            if not os.path.exists(file_path):
-                print(f"❌ 파일이 존재하지 않습니다: {file_path}")
-                return False
-            
-            with open(file_path, 'r', encoding='utf-8') as f:
-                imported_settings = json.load(f)
-            
-            self._merge_settings(self.settings, imported_settings)
-            self.save_settings()
-            print(f"✅ 설정 가져오기 완료: {file_path}")
-            return True
-            
-        except Exception as e:
-            print(f"❌ 설정 가져오기 실패: {e}")
-            return False
-
 
 # 전역 설정 인스턴스
 config = Config()
 
-
-# 편의 함수들
-def get_setting(key: str, default: Any = None) -> Any:
-    """설정값을 가져오는 편의 함수"""
+def get_setting(key: str, default: Any = None):
     return config.get(key, default)
 
-
-def set_setting(key: str, value: Any) -> None:
-    """설정값을 변경하는 편의 함수"""
+def set_setting(key: str, value: Any):
     config.set(key, value)
 
-
-def save_config() -> None:
-    """설정을 저장하는 편의 함수"""
-    config.save_settings()
-
-
-# 애플리케이션 상수들
 class AppConstants:
-    """애플리케이션 상수 정의"""
-    
     APP_NAME = "Hana Studio"
     APP_VERSION = "1.0.0"
-    APP_AUTHOR = "Hana Tech"
-    APP_DESCRIPTION = "AI 기반 이미지 배경 제거 도구"
     
-    # 색상 팔레트
     class Colors:
         PRIMARY = "#4A90E2"
-        PRIMARY_DARK = "#357ABD"
-        PRIMARY_LIGHT = "#5BA0F2"
-        
-        SECONDARY = "#F8F9FA"
-        SECONDARY_DARK = "#E9ECEF"
-        SECONDARY_LIGHT = "#FFFFFF"
-        
         SUCCESS = "#28A745"
         WARNING = "#FFC107"
         ERROR = "#DC3545"
-        INFO = "#17A2B8"
-        
-        TEXT_PRIMARY = "#212529"
-        TEXT_SECONDARY = "#6C757D"
-        TEXT_MUTED = "#ADB5BD"
-        
-        BACKGROUND = "#FFFFFF"
-        BACKGROUND_ALT = "#F8F9FA"
-        BORDER = "#DEE2E6"
-    
-    # 크기 상수
-    class Sizes:
-        BUTTON_HEIGHT = 45
-        ICON_SIZE = 16
-        BORDER_RADIUS = 8
-        SPACING_SMALL = 10
-        SPACING_MEDIUM = 15
-        SPACING_LARGE = 20
-        WINDOW_MIN_WIDTH = 1200
-        WINDOW_MIN_HEIGHT = 800
-
-
-if __name__ == "__main__":
-    # 설정 테스트
-    print("🔧 Hana Studio 설정 테스트")
-    print(f"AI 모델: {config.get('ai_model')}")
-    print(f"출력 디렉토리: {config.get('directories.output')}")
-    print(f"지원 모델: {list(config.get_supported_models().keys())}")
-    print(f"설정 유효성: {config.validate_settings()}")

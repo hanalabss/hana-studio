@@ -1,6 +1,6 @@
 """
-core/image_processor.py 수정
-동적 임계값 지원
+core/image_processor.py
+이미지 처리 핵심 모듈
 """
 
 import io
@@ -13,113 +13,113 @@ from .model_loader import get_ai_session
 
 
 class ImageProcessor:
-    """이미지 처리를 담당하는 클래스 - 백그라운드 모델 로딩 지원"""
+    """이미지 처리 핵심 클래스 - AI 모델 지연 로딩 적용"""
     
     def __init__(self):
         self.session = None
     
     def _get_session(self):
-        """AI 모델 세션 가져오기 (지연 로딩)"""
+        """AI 세션 지연 로딩 (필요 시점에 로드)"""
         if self.session is None:
             self.session = get_ai_session()
         return self.session
     
     def is_model_ready(self) -> bool:
-        """모델이 준비되었는지 확인"""
+        """모델 준비 상태 확인"""
         from .model_loader import is_ai_model_ready
         return is_ai_model_ready()
     
     def remove_background(self, image_path: str, alpha_threshold: int = None) -> np.ndarray:
         """
-        배경 제거 처리 - EXIF 회전 무시 (인쇄 결과와 일치)
+        배경 제거 및 마스크 생성 - EXIF 정보 보존 (자동 회전 방지)
         
         Args:
-            image_path: 이미지 파일 경로
+            image_path: 처리할 이미지 경로
             alpha_threshold: 알파 임계값 (None이면 config에서 가져옴)
         """
         session = self._get_session()
         if not session:
-            raise RuntimeError("AI 모델이 초기화되지 않았습니다.")
+            raise RuntimeError("AI 모델이 준비되지 않았습니다.")
         
         try:
-            # 임계값 결정
+            # 임계값 설정
             if alpha_threshold is None:
                 alpha_threshold = config.get('alpha_threshold', 200)
             
-            print(f"[DEBUG] 배경 제거 시작 - 임계값: {alpha_threshold} (EXIF 회전 무시)")
+            print(f"[DEBUG] 배경 제거 시작 - 임계값: {alpha_threshold} (EXIF 정보 보존)")
             
             # 이미지 파일 읽기
             with open(image_path, 'rb') as f:
                 input_data = f.read()
             
-            # 배경 제거 처리
+            # 배경 제거 수행
             result = remove(input_data, session=session)
             
-            # 마스크 생성 (EXIF 회전 적용하지 않음)
+            # 알파 채널 추출 (EXIF 정보 무시하여 자동 회전 방지)
             img_rgba = Image.open(io.BytesIO(result)).convert("RGBA")
             alpha = np.array(img_rgba.split()[-1])
             
-            print(f"[DEBUG] 원본 마스크 크기: {alpha.shape} (EXIF 회전 무시)")
+            print(f"[DEBUG] 알파 채널 추출 완료: {alpha.shape} (EXIF 정보 무시)")
             
-            # 실루엣 마스크 생성 (배경은 흰색, 객체는 검은색)
+            # 마스크 이미지 생성 (흰색: 배경, 검은색: 객체)
             mask = np.where(alpha > alpha_threshold, 0, 255).astype(np.uint8)
             mask_rgb = cv2.merge([mask, mask, mask])
             
             print(f"[DEBUG] 마스크 생성 완료 - 임계값: {alpha_threshold}, 마스크 크기: {mask_rgb.shape}")
             
-            # 마스크 통계 출력 (디버깅용)
+            # 객체 비율 계산 (검정색 픽셀)
             black_pixels = np.sum(mask == 0)  # 객체 픽셀  
             white_pixels = np.sum(mask == 255)  # 배경 픽셀
             total_pixels = mask.size
             object_ratio = (black_pixels / total_pixels) * 100
             
-            print(f"[DEBUG] 마스크 통계 - 객체: {object_ratio:.1f}%, 배경: {100-object_ratio:.1f}%")
+            print(f"[DEBUG] 픽셀 분석 - 객체: {object_ratio:.1f}%, 배경: {100-object_ratio:.1f}%")
             
-            # 🔍 최종 확인
+            # 이미지 방향 확인
             height, width = mask_rgb.shape[:2]
             if height > width:
-                print(f"[DEBUG] ✅ 마스크: 세로 형태 ({width}x{height}) - 원본과 일치")
+                print(f"[DEBUG] [OK] 감지됨: 세로 이미지 ({width}x{height}) - 자동 회전 방지됨")
             else:
-                print(f"[DEBUG] ✅ 마스크: 가로 형태 ({width}x{height}) - 원본과 일치")
+                print(f"[DEBUG] [OK] 감지됨: 가로 이미지 ({width}x{height}) - 자동 회전 방지됨")
             
             return mask_rgb
             
         except Exception as e:
-            raise RuntimeError(f"배경 제거 처리 실패: {e}")
+            raise RuntimeError(f"배경 제거 처리 중 오류: {e}")
         
     def create_composite_preview(self, original_image: np.ndarray, mask_image: np.ndarray) -> np.ndarray:
-        """합성 미리보기 생성"""
+        """합성 미리보기 이미지 생성"""
         try:
-            # 간단한 합성 미리보기 (원본 + 마스크 오버레이)
+            # 합성 이미지 생성 (원본 + 마스크 오버레이)
             composite = original_image.copy()
             
-            # 마스크를 반투명하게 오버레이
+            # 마스크 컬러맵 적용
             mask_colored = cv2.applyColorMap(mask_image, cv2.COLORMAP_JET)
             composite = cv2.addWeighted(composite, 0.7, mask_colored, 0.3, 0)
             
             return composite
             
         except Exception as e:
-            raise RuntimeError(f"합성 미리보기 생성 실패: {e}")
+            raise RuntimeError(f"합성 미리보기 생성 중 오류: {e}")
     
     def analyze_threshold_effectiveness(self, image_path: str, threshold_range: tuple = (50, 250), step: int = 50):
         """
-        임계값 효과 분석 (개발/디버깅용)
+        임계값 자동 분석 (객체/배경 비율)
         
         Args:
-            image_path: 이미지 경로
-            threshold_range: 테스트할 임계값 범위 (min, max)
-            step: 임계값 증가 단위
+            image_path: 분석할 이미지 경로
+            threshold_range: 임계값 테스트 범위 (min, max)
+            step: 임계값 증가 단계
             
         Returns:
-            dict: 각 임계값별 객체 비율
+            dict: 각 임계값별 분석 결과
         """
         session = self._get_session()
         if not session:
-            raise RuntimeError("AI 모델이 초기화되지 않았습니다.")
+            raise RuntimeError("AI 모델이 준비되지 않았습니다.")
         
         try:
-            # 배경 제거 한 번만 수행
+            # 원본 이미지 한 번만 처리
             session = self._get_session()
             with open(image_path, 'rb') as f:
                 input_data = f.read()
@@ -127,7 +127,7 @@ class ImageProcessor:
             img_rgba = Image.open(io.BytesIO(result)).convert("RGBA")
             alpha = np.array(img_rgba.split()[-1])
             
-            # 각 임계값별 분석
+            # 다양한 임계값 테스트
             analysis_results = {}
             min_threshold, max_threshold = threshold_range
             
@@ -142,47 +142,47 @@ class ImageProcessor:
                     'background_ratio': 100 - object_ratio
                 }
             
-            print(f"[DEBUG] 임계값 분석 완료: {len(analysis_results)}개 임계값 테스트")
+            print(f"[DEBUG] 임계값 분석 완료: {len(analysis_results)}개 테스트 완료")
             return analysis_results
             
         except Exception as e:
-            raise RuntimeError(f"임계값 분석 실패: {e}")
+            raise RuntimeError(f"임계값 분석 중 오류: {e}")
     
     def get_recommended_threshold(self, image_path: str) -> int:
         """
-        이미지에 최적화된 임계값 추천 (실험적 기능)
+        분석 결과에서 최적 임계값 선택 (명함 기준)
         
         Returns:
-            int: 추천 임계값
+            int: 최적 임계값
         """
         try:
             analysis = self.analyze_threshold_effectiveness(image_path, (100, 250), 25)
             
-            # 객체 비율이 5-40% 사이인 임계값 중에서 선택
+            # 객체 비율이 5-40% 사이인 후보들 찾기
             candidates = []
             for threshold, data in analysis.items():
                 object_ratio = data['object_ratio']
-                if 5 <= object_ratio <= 40:  # 적절한 객체 비율 범위
+                if 5 <= object_ratio <= 40:  # 명함 크기에 적합한 범위
                     candidates.append((threshold, object_ratio))
             
             if candidates:
-                # 객체 비율이 15-25% 사이에 가장 가까운 임계값 선택
+                # 객체 비율이 15-25% 사이가 되도록 가장 가까운 값 선택
                 target_ratio = 20
                 best_threshold = min(candidates, key=lambda x: abs(x[1] - target_ratio))[0]
-                print(f"[DEBUG] 추천 임계값: {best_threshold}")
+                print(f"[DEBUG] 최적 임계값 선택: {best_threshold}")
                 return best_threshold
             else:
-                print("[DEBUG] 적절한 임계값을 찾지 못함, 기본값 사용")
+                print("[DEBUG] 적합한 임계값을 찾지 못함, 기본값 사용")
                 return 200
                 
         except Exception as e:
-            print(f"[DEBUG] 임계값 추천 실패: {e}, 기본값 사용")
+            print(f"[DEBUG] 최적 임계값 선택 중 오류: {e}, 기본값 사용")
             return 200
     
     def validate_image(self, image_path: str) -> tuple[bool, str]:
-        """이미지 파일 유효성 검사"""
+        """이미지 파일 유효성 검증"""
         try:
-            # 지원되는 형식인지 확인
+            # 지원 형식 확인
             if not config.is_supported_image(image_path):
                 return False, "지원하지 않는 이미지 형식입니다."
             
@@ -196,4 +196,4 @@ class ImageProcessor:
             return True, ""
             
         except Exception as e:
-            return False, f"파일 검사 중 오류: {e}"
+            return False, f"이미지 검증 중 오류 발생: {e}"

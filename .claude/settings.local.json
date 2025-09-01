@@ -6,7 +6,8 @@
       "Bash(\"Hana Studio 실행.bat\")",
       "Bash(dir build)",
       "Bash(timeout:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "mcp__ide__getDiagnostics"
     ],
     "deny": []
   }

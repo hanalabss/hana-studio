@@ -1,5 +1,5 @@
 """
-UI 컴포넌트들 초기화 - PositionAdjustPanel 추가
+UI [EMOJI] [EMOJI] - PositionAdjustPanel [EMOJI]
 """
 
 from .modern_button import ModernButton
@@ -11,7 +11,7 @@ from .control_panels import (
     PrinterPanel,
     ProgressPanel,
     LogPanel,
-    PositionAdjustPanel  # 새로 추가
+    PositionAdjustPanel  # [EMOJI] [EMOJI]
 )
 from .printer_selection_dialog import PrinterSelectionDialog, show_printer_selection_dialog
 

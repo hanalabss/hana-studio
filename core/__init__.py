@@ -1,5 +1,5 @@
 """
-비즈니스 로직 모듈 초기화
+[EMOJI] [EMOJI] [EMOJI] [EMOJI]
 """
 
 from .image_processor import ImageProcessor

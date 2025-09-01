@@ -3,6 +3,7 @@ ui/components/control_panels.py 수정
 전역 카드 방향 선택 제거, 기존 요소들 재배치
 """
 
+import re
 from PySide6.QtWidgets import (
     QSizePolicy, QVBoxLayout, QHBoxLayout, QGroupBox, 
     QLabel, QRadioButton, QButtonGroup, QProgressBar, QTextEdit, QCheckBox,
@@ -41,7 +42,7 @@ class PositionAdjustPanel(QGroupBox):
         x_layout.setSpacing(5)
         x_layout.setContentsMargins(0, 0, 0, 0)
         
-        x_label = QLabel("↔️ X:")
+        x_label = QLabel("[X] X:")
         x_label.setFixedWidth(32)
         x_label.setStyleSheet("""
             QLabel {
@@ -151,7 +152,7 @@ class PositionAdjustPanel(QGroupBox):
         y_layout.setSpacing(5)
         y_layout.setContentsMargins(0, 0, 0, 0)
         
-        y_label = QLabel("↕️ Y:")
+        y_label = QLabel("[Y] Y:")
         y_label.setFixedWidth(32)
         y_label.setStyleSheet("""
             QLabel {
@@ -506,7 +507,7 @@ class PrintModePanel(QGroupBox):
         """)
         
         # 라디오 버튼들
-        self.normal_radio = QRadioButton("🖨️ 일반")
+        self.normal_radio = QRadioButton("[PRINTER] 일반")
         self.layered_radio = QRadioButton("🎭 레이어(YMCW)")
         self.normal_radio.setChecked(True)
         
@@ -596,7 +597,7 @@ class PrintQuantityPanel(QGroupBox):
     quantity_changed = Signal(int)
     
     def __init__(self):
-        super().__init__("📊 인쇄 매수")
+        super().__init__("[DATA] 인쇄 매수")
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         self._setup_ui()
     
@@ -713,7 +714,7 @@ class PrintQuantityPanel(QGroupBox):
         quantity_layout.addStretch()
         
         # 예상 시간 표시
-        self.time_estimate_label = QLabel("⏱️ 예상 시간: 약 30초")
+        self.time_estimate_label = QLabel("[TIME] 예상 시간: 약 30초")
         self.time_estimate_label.setStyleSheet("""
             color: #6C757D; 
             font-size: 13px;
@@ -751,14 +752,14 @@ class PrintQuantityPanel(QGroupBox):
         estimated_seconds = value * 30
         
         if estimated_seconds < 60:
-            time_text = f"⏱️ 예상 시간: 약 {estimated_seconds}초"
+            time_text = f"[TIME] 예상 시간: 약 {estimated_seconds}초"
         else:
             minutes = estimated_seconds // 60
             seconds = estimated_seconds % 60
             if seconds == 0:
-                time_text = f"⏱️ 예상 시간: 약 {minutes}분"
+                time_text = f"[TIME] 예상 시간: 약 {minutes}분"
             else:
-                time_text = f"⏱️ 예상 시간: 약 {minutes}분 {seconds}초"
+                time_text = f"[TIME] 예상 시간: 약 {minutes}분 {seconds}초"
         
         self.time_estimate_label.setText(time_text)
         self.quantity_changed.emit(value)
@@ -777,7 +778,7 @@ class PrinterPanel(QGroupBox):
     print_requested = Signal()
     
     def __init__(self):
-        super().__init__("🖨️ 프린터 연동")
+        super().__init__("[PRINTER] 프린터 연동")
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         self._setup_ui()
     
@@ -850,7 +851,7 @@ class ProgressPanel(QGroupBox):
     """진행 상황 패널"""
     
     def __init__(self):
-        super().__init__("📊 진행 상황")
+        super().__init__("[DATA] 진행 상황")
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         self._setup_ui()
     
@@ -863,7 +864,7 @@ class ProgressPanel(QGroupBox):
         self.progress_bar.setVisible(False)
         self.progress_bar.setFixedHeight(25)
         
-        self.status_label = QLabel("⏸️ 대기 중...")
+        self.status_label = QLabel("[PAUSE] 대기 중...")
         self.status_label.setStyleSheet("""
             font-size: 14px; 
             color: #495057;
@@ -937,20 +938,20 @@ class ProgressPanel(QGroupBox):
             else:
                 return "📋 카드 인쇄 준비"
         elif "인쇄 진행" in status or "인쇄 중" in status:
-            return "🖨️ 카드 인쇄 중..."
+            return "[PRINTER] 카드 인쇄 중..."
         elif "인쇄 완료" in status or "완료" in status:
-            return "✅ 인쇄 완료!"
+            return "[OK] 인쇄 완료!"
         elif "실패" in status or "오류" in status:
             return "❌ 작업 실패"
         elif "테스트" in status:
             if "성공" in status:
-                return "✅ 프린터 연결 확인됨"
+                return "[OK] 프린터 연결 확인됨"
             elif "실패" in status:
                 return "❌ 프린터 연결 실패"
             else:
-                return "🔍 프린터 확인 중..."
+                return "[SEARCH] 프린터 확인 중..."
         elif "대기" in status:
-            return "⏸️ 대기 중..."
+            return "[PAUSE] 대기 중..."
         
         # 🎯 괄호와 상세 정보 제거
         result = re.sub(r'\(.*?\)', '', result)  # 모든 괄호 내용 제거
@@ -959,7 +960,7 @@ class ProgressPanel(QGroupBox):
         
         # 빈 문자열이면 기본값 반환
         if not result or len(result.strip()) < 3:
-            return "⚙️ 작업 중..."
+            return "[CONFIG] 작업 중..."
             
         return result[:30]  # 최대 30자 제한
 
@@ -991,7 +992,7 @@ class ProgressPanel(QGroupBox):
     
     def update_print_status(self, current: int, total: int, status: str):
         """인쇄 상태와 진행률 동시 업데이트 - 단순화"""
-        self.update_status("🖨️ 카드 인쇄 중...")
+        self.update_status("[PRINTER] 카드 인쇄 중...")
         self.show_print_progress(current, total)
 
 

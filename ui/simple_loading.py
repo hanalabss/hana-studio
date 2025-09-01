@@ -146,7 +146,7 @@ class SimpleLoadingWindow(QWidget):
         self.main_window_created = False
         self.main_window = None
         
-        # 🎯 중복 실행 방지 완전 제거 (main.py에서 이미 처리함)
+        # [TARGET] 중복 실행 방지 완전 제거 (main.py에서 이미 처리함)
         
         # UI 설정
         self._setup_window()
@@ -310,17 +310,17 @@ class SimpleLoadingWindow(QWidget):
                     Qt.TransformationMode.SmoothTransformation
                 )
                 self.icon_label.setPixmap(scaled_pixmap)
-                print(f"✅ 아이콘 로드 성공: {icon_path}")
+                print(f"[OK] 아이콘 로드 성공: {icon_path}")
             else:
                 # 아이콘이 없으면 이모지 사용
-                self.icon_label.setText("🎨")
+                self.icon_label.setText("[DESIGN]")
                 self.icon_label.setFont(QFont("Segoe UI", 36))
                 self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                print(f"⚠️ 아이콘 파일 없음, 이모지 사용")
+                print(f"[WARNING] 아이콘 파일 없음, 이모지 사용")
                 
         except Exception as e:
             # 오류 시 기본 이모지
-            self.icon_label.setText("🎨")
+            self.icon_label.setText("[DESIGN]")
             self.icon_label.setFont(QFont("Segoe UI", 36))
             self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             print(f"❌ 아이콘 로드 실패: {e}")
@@ -379,7 +379,7 @@ class SimpleLoadingWindow(QWidget):
     def _on_initialization_finished(self):
         """초기화 완료 처리"""
         if self.main_window_created:
-            print("⚠️ 메인 윈도우가 이미 생성됨")
+            print("[WARNING] 메인 윈도우가 이미 생성됨")
             return
             
         self.current_phase = "complete"
@@ -453,7 +453,7 @@ class SimpleLoadingWindow(QWidget):
     def _show_main_window(self):
         """메인 윈도우 표시"""
         if self.main_window_created:
-            print("⚠️ 메인 윈도우가 이미 생성됨")
+            print("[WARNING] 메인 윈도우가 이미 생성됨")
             return
             
         try:

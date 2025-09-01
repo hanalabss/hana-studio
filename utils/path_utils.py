@@ -1,4 +1,4 @@
-# utils/path_utils.py - PyInstaller 호환 경로 유틸리티
+# utils/path_utils.py - PyInstaller [EMOJI] [EMOJI] [EMOJI]
 
 import os
 import sys
@@ -6,32 +6,32 @@ from pathlib import Path
 
 
 def get_resource_path(relative_path: str) -> str:
-    """PyInstaller 호환 리소스 경로 반환"""
+    """PyInstaller [EMOJI] [EMOJI] [EMOJI] [EMOJI]"""
     try:
-        # PyInstaller로 패키징된 경우
+        # PyInstaller[EMOJI] [EMOJI] [EMOJI]
         base_path = sys._MEIPASS
     except AttributeError:
-        # 개발 환경에서 실행되는 경우
+        # [EMOJI] [EMOJI] [EMOJI] [EMOJI]
         base_path = os.path.dirname(os.path.abspath(__file__))
-        base_path = os.path.dirname(base_path)  # utils 상위 디렉토리
+        base_path = os.path.dirname(base_path)  # utils [EMOJI] [EMOJI]
     
     return os.path.join(base_path, relative_path)
 
 
 def get_executable_dir() -> str:
-    """실행파일이 있는 디렉토리 반환"""
+    """[EMOJI] [EMOJI] [EMOJI] [EMOJI]"""
     if getattr(sys, 'frozen', False):
-        # PyInstaller로 패키징된 경우
+        # PyInstaller[EMOJI] [EMOJI] [EMOJI]
         return os.path.dirname(sys.executable)
     else:
-        # 개발 환경
+        # [EMOJI] [EMOJI]
         return os.path.dirname(os.path.abspath(__file__))
 
 
 def ensure_writable_dir(dir_path: str) -> str:
-    """쓰기 가능한 디렉토리 확보"""
+    """[EMOJI] [EMOJI] [EMOJI] [EMOJI]"""
     if getattr(sys, 'frozen', False):
-        # 실행파일과 같은 위치에 생성
+        # [EMOJI] [EMOJI] [EMOJI] [EMOJI]
         exe_dir = get_executable_dir()
         full_path = os.path.join(exe_dir, dir_path)
     else:

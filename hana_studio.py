@@ -13,7 +13,7 @@ from PySide6.QtGui import QIcon
 from ui import HanaStudioMainWindow, get_app_style
 from config import config, AppConstants, get_resource_path
 
-# 🚀 무거운 모듈들은 지연 import로 처리
+# [START] 무거운 모듈들은 지연 import로 처리
 # import cv2, numpy는 필요할 때만
 # core, printer 모듈들도 필요할 때만
 
@@ -24,9 +24,39 @@ class HanaStudio(QMainWindow):
     def __init__(self):
         super().__init__()
         
-        # 🎯 윈도우 아이콘 설정
-        self._setup_window_icon()
+        print("[INIT] Starting HanaStudio initialization")
         
+        # [TARGET] 윈도우 아이콘 설정
+        try:
+            self._setup_window_icon()
+        except Exception as e:
+            print(f"[WARN] Icon setup failed: {e}")
+        
+        # 데이터 속성들 초기화
+        self._init_data_attributes()
+        
+        # UI 초기화 (가벼운 작업만)
+        print("[INIT] Creating UI...")
+        try:
+            self.ui = HanaStudioMainWindow(self)
+            self._setup_window()
+            self._connect_signals()
+            print("[INIT] UI created successfully")
+        except Exception as e:
+            print(f"[ERROR] UI creation failed: {e}")
+            raise
+        
+        # [START] 무거운 작업들은 나중에 지연 초기화
+        self._lazy_init_scheduled = False
+        QTimer.singleShot(500, self._lazy_initialize)  # 500ms로 늘림
+        
+        self.adjusted_x = 0
+        self.adjusted_y = 0
+        
+        print("[INIT] HanaStudio initialization complete")
+    
+    def _init_data_attributes(self):
+        """데이터 속성들 초기화"""
         # 데이터 속성들
         self.front_image_path = None
         self.back_image_path = None
@@ -56,7 +86,7 @@ class HanaStudio(QMainWindow):
         self.print_quantity = 1
         self.card_orientation = "portrait"
         
-        # 🚀 코어 모듈들은 지연 초기화
+        # [START] 코어 모듈들은 지연 초기화
         self.image_processor = None
         self.file_manager = None
         
@@ -65,18 +95,6 @@ class HanaStudio(QMainWindow):
         self.printer_dll_path = None
         self.current_printer_thread = None
         self.selected_printer_info = None
-        
-        # UI 초기화 (가벼운 작업만)
-        self.ui = HanaStudioMainWindow(self)
-        self._setup_window()
-        self._connect_signals()
-        
-        # 🚀 무거운 작업들은 나중에 지연 초기화
-        self._lazy_init_scheduled = False
-        QTimer.singleShot(100, self._lazy_initialize)
-        
-        self.adjusted_x = 0
-        self.adjusted_y = 0
     
     def _lazy_initialize(self):
         """무거운 모듈들을 지연 초기화"""
@@ -115,20 +133,37 @@ class HanaStudio(QMainWindow):
             
             from printer import find_printer_dll
             from printer.printer_thread import print_manager
-            from ui.components.printer_selection_dialog import show_printer_selection_dialog
             
-            # 프린터 선택 (필수)
-            if not self._select_printer_on_startup():
-                print("[WARN] 프린터 선택 실패")
-                return
+            # 프린터 DLL 확인
+            self.printer_dll_path = find_printer_dll()
+            if self.printer_dll_path:
+                print(f"[OK] 프린터 DLL 발견: {self.printer_dll_path}")
+                # 자동으로 프린터 선택 대화상자 표시
+                QTimer.singleShot(1000, self._auto_show_printer_dialog)
+            else:
+                print("[WARN] 프린터 DLL을 찾을 수 없음")
             
-            self._check_printer_availability()
             self._setup_manual_mask_viewers()
             
-            print("[OK] 프린터 연결 준비 완료")
+            print("[OK] 프린터 초기화 완료")
             
         except Exception as e:
-            print(f"[ERROR] 프린터 연결 준비 실패: {e}")
+            print(f"[ERROR] 프린터 초기화 실패: {e}")
+    
+    def _auto_show_printer_dialog(self):
+        """프린터 선택 대화상자 자동 표시"""
+        try:
+            if self.printer_dll_path and not self.printer_available:
+                from ui.components.printer_selection_dialog import PrinterSelectionDialog
+                # 올바른 순서: dll_path가 먼저, parent가 나중
+                dialog = PrinterSelectionDialog(self.printer_dll_path, parent=self)
+                if dialog.exec():
+                    self.selected_printer_info = dialog.get_selected_printer()
+                    if self.selected_printer_info:
+                        self.printer_available = True
+                        print(f"[OK] 프린터 선택됨: {self.selected_printer_info.name}")
+        except Exception as e:
+            print(f"[ERROR] 프린터 대화상자 표시 실패: {e}")
     
     def _on_model_loading_progress(self, message: str):
         """AI 모델 로딩 진행 상황 처리"""
@@ -234,7 +269,11 @@ class HanaStudio(QMainWindow):
         """윈도우 기본 설정"""
         self.setWindowTitle(f"{AppConstants.APP_NAME}")
         
-        geometry = config.get('window_geometry')
+        # geometry가 None인 경우를 처리
+        geometry = config.get('window_geometry', {})
+        if geometry is None:
+            geometry = {}
+            
         default_width = max(geometry.get('width', 1600), 1800)
         default_height = max(geometry.get('height', 900), 1000)
         
@@ -318,11 +357,11 @@ class HanaStudio(QMainWindow):
         try:
             from printer.printer_thread import print_manager
             
-            # 🎯 진행 상황 표시 시작
+            # [TARGET] 진행 상황 표시 시작
             self.ui.components['progress_panel'].show_progress()
             self.ui.components['printer_panel'].set_print_enabled(False)
             
-            # 🎯 사용자 친화적 인쇄 시작 메시지
+            # [TARGET] 사용자 친화적 인쇄 시작 메시지
             if self.print_quantity > 1:
                 self.log(f"📄 카드 {self.print_quantity}장 인쇄 시작!")
             else:
@@ -362,7 +401,7 @@ class HanaStudio(QMainWindow):
             self.ui.components['progress_panel'].hide_progress()
             self.ui.components['printer_panel'].set_print_enabled(True)
             error_msg = f"인쇄 시작 실패: {e}"
-            self.log(f"❌ {error_msg}")
+            self.log(f"[ERROR] {error_msg}")
             QMessageBox.critical(self, "인쇄 오류", error_msg)
     
     def print_card(self):
@@ -405,7 +444,7 @@ class HanaStudio(QMainWindow):
                         back_mask, self.back_image_path, "back"
                     )
                     if not self.back_saved_mask_path:
-                        self.log("⚠️ 뒷면 마스크 저장 실패, 뒷면은 일반 모드로 인쇄됩니다.")
+                        self.log("[WARNING] 뒷면 마스크 저장 실패, 뒷면은 일반 모드로 인쇄됩니다.")
         
         # 인쇄 경로 설정
         front_print_path = self.front_image_path
@@ -556,7 +595,7 @@ class HanaStudio(QMainWindow):
             QMessageBox.warning(self, "오류", f"파일을 찾을 수 없습니다:\n{file_path}")
             return
         
-        # 🚀 지연 로딩 적용
+        # [START] 지연 로딩 적용
         image_processor = self.get_image_processor()
         file_manager = self.get_file_manager()
         
@@ -625,7 +664,7 @@ class HanaStudio(QMainWindow):
             QMessageBox.warning(self, "오류", f"파일을 찾을 수 없습니다:\n{file_path}")
             return
         
-        # 🚀 지연 로딩 적용
+        # [START] 지연 로딩 적용
         image_processor = self.get_image_processor()
         file_manager = self.get_file_manager()
         
@@ -685,8 +724,8 @@ class HanaStudio(QMainWindow):
         from core.model_loader import is_ai_model_ready
         
         if not is_ai_model_ready():
-            self.log(f"⏳ 배경제거 AI 준비 완료 대기 중... {side_text} 처리는 자동으로 시작됩니다")
-            self.ui.components['progress_panel'].update_status("⏳ 배경제거 AI 준비 중...")
+            self.log(f"[WAIT] 배경제거 AI 준비 완료 대기 중... {side_text} 처리는 자동으로 시작됩니다")
+            self.ui.components['progress_panel'].update_status("[WAIT] 배경제거 AI 준비 중...")
             
             # 모델 로딩 완료까지 대기하는 스레드 시작
             import threading
@@ -710,14 +749,14 @@ class HanaStudio(QMainWindow):
     def _start_processing_after_wait(self, is_front: bool, threshold: int, image_path: str, side_text: str):
         """AI 모델 로딩 완료 후 실제 배경제거 처리 시작"""
         # 항상 원본 이미지 경로로 처리
-        self.log(f"🎉 배경제거 AI 준비 완료! {side_text} 배경제거 시작...")
+        self.log(f"[SUCCESS] 배경제거 AI 준비 완료! {side_text} 배경제거 시작...")
         
         # 임계값을 config에 임시 설정
         from config import config
         original_threshold = config.get('alpha_threshold', 200)
         config.set('alpha_threshold', threshold)
         
-        # 🚀 지연 로딩 적용
+        # [START] 지연 로딩 적용
         from core import ProcessingThread
         image_processor = self.get_image_processor()
         
@@ -748,8 +787,8 @@ class HanaStudio(QMainWindow):
         viewer.set_process_enabled(True)
         
         error_msg = f"{side_text} 배경제거 실패: AI 모델 로딩 타임아웃"
-        self.log(f"❌ {error_msg}")
-        self.ui.components['progress_panel'].update_status("❌ AI 모델 로딩 실패")
+        self.log(f"[ERROR] {error_msg}")
+        self.ui.components['progress_panel'].update_status("[ERROR] AI 모델 로딩 실패")
         
         from PySide6.QtWidgets import QMessageBox
         QMessageBox.warning(
@@ -839,7 +878,7 @@ class HanaStudio(QMainWindow):
     def on_manual_mask_uploaded(self, file_path: str, is_front: bool):
         """수동 마스킹 이미지 업로드 처리"""
         try:
-            # 🚀 지연 로딩 적용
+            # [START] 지연 로딩 적용
             import cv2
             import numpy as np
             
@@ -873,7 +912,7 @@ class HanaStudio(QMainWindow):
                 # 통합 마스킹 뷰어에 수동 마스킹 설정
                 self.ui.components['front_unified_mask_viewer'].set_manual_mask(mask_image)
                 
-                self.log(f"✅ {side_text} 수동 마스킹 업로드: {file_name}")
+                self.log(f"[OK] {side_text} 수동 마스킹 업로드: {file_name}")
                 self.log(f"   {side_text} 통합 미리보기가 수동 마스킹으로 업데이트되었습니다.")
             else:
                 self.back_manual_mask_path = file_path
@@ -882,7 +921,7 @@ class HanaStudio(QMainWindow):
                 # 통합 마스킹 뷰어에 수동 마스킹 설정
                 self.ui.components['back_unified_mask_viewer'].set_manual_mask(mask_image)
                 
-                self.log(f"✅ {side_text} 수동 마스킹 업로드: {file_name}")
+                self.log(f"[OK] {side_text} 수동 마스킹 업로드: {file_name}")
                 self.log(f"   {side_text} 통합 미리보기가 수동 마스킹으로 업데이트되었습니다.")
             
             # UI 상태 업데이트
@@ -892,7 +931,7 @@ class HanaStudio(QMainWindow):
         except Exception as e:
             side_text = "앞면" if is_front else "뒷면"
             error_msg = f"{side_text} 수동 마스킹 업로드 실패: {e}"
-            self.log(f"❌ {error_msg}")
+            self.log(f"[ERROR] {error_msg}")
             QMessageBox.critical(self, "업로드 오류", error_msg)
     
     def _update_ui_state(self):
@@ -948,7 +987,7 @@ class HanaStudio(QMainWindow):
         elif "배경 제거" in message or "마스크" in message:
             simple_message = "🔄 이미지 처리 중..."
         elif "완료" in message:
-            simple_message = "✅ 이미지 처리 완료!"
+            simple_message = "[OK] 이미지 처리 완료!"
         else:
             simple_message = "🔄 이미지 처리 중..."
             
@@ -967,7 +1006,7 @@ class HanaStudio(QMainWindow):
         # 통합 마스킹 뷰어에 자동 마스킹 설정
         self.ui.components['front_unified_mask_viewer'].set_auto_mask(mask_array)
         
-        self.log(f"✅ 앞면 자동 배경 제거 완료! (임계값: {used_threshold})")
+        self.log(f"[OK] 앞면 자동 배경 제거 완료! (임계값: {used_threshold})")
         self.log("   앞면 통합 미리보기가 자동 마스킹으로 업데이트되었습니다.")
         
         # UI 정리
@@ -988,7 +1027,7 @@ class HanaStudio(QMainWindow):
         # 통합 마스킹 뷰어에 자동 마스킹 설정
         self.ui.components['back_unified_mask_viewer'].set_auto_mask(mask_array)
         
-        self.log(f"✅ 뒷면 자동 배경 제거 완료! (임계값: {used_threshold})")
+        self.log(f"[OK] 뒷면 자동 배경 제거 완뢬! (임계값: {used_threshold})")
         self.log("   뒷면 통합 미리보기가 자동 마스킹으로 업데이트되었습니다.")
         
         # UI 정리
@@ -1010,7 +1049,7 @@ class HanaStudio(QMainWindow):
         self.ui.components['progress_panel'].hide_progress()
         viewer.set_process_enabled(True)
         
-        self.log(f"❌ {side_text} 처리 오류: {error_message}")
+        self.log(f"[ERROR] {side_text} 처리 오류: {error_message}")
         self.ui.components['progress_panel'].update_status(f"{side_text} 오류 발생 | 다시 시도해주세요")
         
         QMessageBox.critical(self, "처리 오류", f"{side_text} 이미지 처리 중 오류가 발생했습니다:\n\n{error_message}")
@@ -1039,7 +1078,7 @@ class HanaStudio(QMainWindow):
             self.ui.components['printer_panel'].set_print_enabled(False)
             return
         
-        # 🚀 지연 로딩 적용
+        # [START] 지연 로딩 적용
         try:
             from printer.printer_thread import print_manager
             if print_manager.get_print_status()['is_printing']:
@@ -1061,8 +1100,22 @@ class HanaStudio(QMainWindow):
     
     def test_printer_connection(self):
         """프린터 연결 테스트"""
-        if not self.printer_available or not self.printer_dll_path:
+        # DLL이 없으면 경고
+        if not self.printer_dll_path:
             QMessageBox.warning(self, "경고", "프린터 DLL을 찾을 수 없습니다.")
+            return
+        
+        # 프린터가 선택되지 않았으면 선택 대화상자 표시
+        if not self.printer_available:
+            from ui.components.printer_selection_dialog import PrinterSelectionDialog
+            dialog = PrinterSelectionDialog(self.printer_dll_path, parent=self)
+            if dialog.exec():
+                self.selected_printer_info = dialog.get_selected_printer()
+                if self.selected_printer_info:
+                    self.printer_available = True
+                    print(f"[OK] 프린터 선택됨: {self.selected_printer_info.name}")
+                    self.ui.components['printer_panel'].update_status(f"✅ 프린터 연결됨: {self.selected_printer_info.name}")
+                    self.ui.components['printer_panel'].set_print_enabled(True)
             return
         
         # 테스트 버튼 비활성화
@@ -1119,12 +1172,12 @@ class HanaStudio(QMainWindow):
             self.ui.components['printer_panel'].set_test_enabled(True)
             
             if success:
-                self.log(f"✅ {message}")
-                self.ui.components['printer_panel'].update_status("✅ 프린터 연결 가능")
+                self.log(f"[OK] {message}")
+                self.ui.components['printer_panel'].update_status("[OK] 프린터 연결 가능")
                 self.ui.components['progress_panel'].update_status("프린터 테스트 성공")
             else:
-                self.log(f"❌ {message}")
-                self.ui.components['printer_panel'].update_status("❌ 프린터 연결 실패")
+                self.log(f"[ERROR] {message}")
+                self.ui.components['printer_panel'].update_status("[ERROR] 프린터 연결 실패")
                 QMessageBox.warning(
                     self, 
                     "프린터 테스트 실패", 
@@ -1136,9 +1189,9 @@ class HanaStudio(QMainWindow):
                 delattr(self, 'test_worker')
                 
         except Exception as e:
-            self.log(f"❌ 테스트 결과 처리 오류: {e}")
+            self.log(f"[ERROR] 테스트 결과 처리 오류: {e}")
             self.ui.components['printer_panel'].set_test_enabled(True)
-            self.ui.components['printer_panel'].update_status("❌ 테스트 오류")
+            self.ui.components['printer_panel'].update_status("[ERROR] 테스트 오류")
     
     def on_printer_progress(self, message):
         """프린터 진행상황 업데이트 - 단순화"""
@@ -1146,17 +1199,17 @@ class HanaStudio(QMainWindow):
         if "카드 삽입" in message:
             simple_message = "🔄 카드 인쇄 준비 중..."
         elif "캔버스" in message or "설정" in message:
-            simple_message = "🖨️ 카드 인쇄 중..."
+            simple_message = "[PRINTER] 카드 인쇄 중..."
         elif "인쇄 실행" in message:
-            simple_message = "🖨️ 카드 인쇄 중..."
+            simple_message = "[PRINTER] 카드 인쇄 중..."
         elif "배출" in message:
-            simple_message = "✅ 카드 인쇄 완료"
+            simple_message = "[OK] 카드 인쇄 완료"
         elif "완료" in message:
-            simple_message = "✅ 인쇄 완료!"
+            simple_message = "[OK] 인쇄 완료!"
         elif "실패" in message or "오류" in message:
-            simple_message = "❌ 인쇄 실패"
+            simple_message = "[ERROR] 인쇄 실패"
         else:
-            simple_message = "🖨️ 카드 인쇄 중..."
+            simple_message = "[PRINTER] 카드 인쇄 중..."
             
         self.ui.components['progress_panel'].update_status(simple_message)
         # 로그는 기존 메시지 유지 (개발자용)
@@ -1168,11 +1221,11 @@ class HanaStudio(QMainWindow):
     
     def on_card_completed(self, card_num):
         """개별 카드 완료 - 단순화"""
-        self.log(f"✅ {card_num}번째 카드 인쇄 완료!")
+        self.log(f"[OK] {card_num}번째 카드 인쇄 완료!")
         
         if card_num < self.print_quantity:
             # 사용자에게는 간단한 메시지만 표시
-            self.ui.components['progress_panel'].update_status(f"🖨️ 카드 인쇄 중... ({card_num}/{self.print_quantity})")
+            self.ui.components['progress_panel'].update_status(f"[PRINTER] 카드 인쇄 중... ({card_num}/{self.print_quantity})")
     
     def on_printer_finished(self, success):
         """프린터 작업 완료 - 단순화"""
@@ -1181,12 +1234,12 @@ class HanaStudio(QMainWindow):
         
         if success:
             # 단순한 성공 메시지
-            self.log(f"✅ 카드 {self.print_quantity}장 인쇄 완료!")
-            self.ui.components['progress_panel'].update_status("🎉 인쇄 완료!")
+            self.log(f"[OK] 카드 {self.print_quantity}장 인쇄 완료!")
+            self.ui.components['progress_panel'].update_status("[SUCCESS] 인쇄 완료!")
             QMessageBox.information(self, "성공", f"카드 {self.print_quantity}장이 완료되었습니다!")
         else:
-            self.log(f"❌ 카드 인쇄 실패")
-            self.ui.components['progress_panel'].update_status("❌ 인쇄 실패")
+            self.log(f"[ERROR] 카드 인쇄 실패")
+            self.ui.components['progress_panel'].update_status("[ERROR] 인쇄 실패")
         
         self._update_print_button_state()
 
@@ -1195,8 +1248,8 @@ class HanaStudio(QMainWindow):
         self.ui.components['progress_panel'].hide_progress()
         self.ui.components['printer_panel'].set_print_enabled(True)
         
-        self.log(f"❌ 프린터 오류: {error_message}")
-        self.ui.components['progress_panel'].update_status("❌ 인쇄 오류 발생")
+        self.log(f"[ERROR] 프린터 오류: {error_message}")
+        self.ui.components['progress_panel'].update_status("[ERROR] 인쇄 오류 발생")
         QMessageBox.critical(self, "인쇄 오류", f"카드 인쇄 중 오류가 발생했습니다:\n\n{error_message}")
         
         self._update_print_button_state()

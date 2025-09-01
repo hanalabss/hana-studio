@@ -1,5 +1,5 @@
 """
-모던 스타일 버튼 컴포넌트
+[EMOJI] [EMOJI] [EMOJI] [EMOJI]
 """
 
 from PySide6.QtWidgets import QPushButton
@@ -8,7 +8,7 @@ from PySide6.QtGui import QFont
 
 
 class ModernButton(QPushButton):
-    """모던 스타일의 버튼 위젯"""
+    """[EMOJI] [EMOJI] [EMOJI] [EMOJI]"""
     
     def __init__(self, text, icon_path=None, primary=False):
         super().__init__(text)
@@ -19,7 +19,7 @@ class ModernButton(QPushButton):
         self._apply_style()
     
     def _apply_style(self):
-        """버튼 스타일 적용"""
+        """[EMOJI] [EMOJI] [EMOJI]"""
         if self.primary:
             style = """
                 QPushButton {
@@ -72,6 +72,6 @@ class ModernButton(QPushButton):
         self.setStyleSheet(style)
     
     def set_primary(self, primary: bool):
-        """primary 스타일 변경"""
+        """primary [EMOJI] [EMOJI]"""
         self.primary = primary
         self._apply_style()

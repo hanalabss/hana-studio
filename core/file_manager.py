@@ -10,7 +10,7 @@ import numpy as np
 from pathlib import Path
 from typing import Optional, Tuple, List
 import uuid
-import tempfile
+from utils.safe_temp_path import get_cached_safe_temp_dir, create_safe_temp_file
 from config import config
 
 
@@ -18,7 +18,8 @@ class FileManager:
     """파일 저장/로드를 관리하는 클래스 - 한글 파일명 및 양면 이미지 지원"""
     
     def __init__(self):
-        self.temp_dir = config.get('directories.temp', 'temp')
+        # 안전한 임시 디렉토리 사용
+        self.temp_dir = get_cached_safe_temp_dir()
         self.output_dir = config.get('directories.output', 'output')
         self._ensure_directories()
     
@@ -48,7 +49,7 @@ class FileManager:
                 print(f"[ERROR] 파일 크기 확인 실패: {e}")
                 return None
             
-            # 🎯 PIL로 EXIF 회전 정보를 적용하여 올바른 방향으로 읽기
+            # [TARGET] PIL로 EXIF 회전 정보를 적용하여 올바른 방향으로 읽기
             try:
                 from PIL import Image, ImageOps
                 
@@ -57,7 +58,7 @@ class FileManager:
                 # PIL로 이미지 열기
                 pil_image = Image.open(image_path)
                 
-                # 🎯 EXIF 회전 정보 적용 - 올바른 방향으로 회전
+                # [TARGET] EXIF 회전 정보 적용 - 올바른 방향으로 회전
                 pil_image = ImageOps.exif_transpose(pil_image)
                 
                 print(f"[DEBUG] EXIF 회전 적용 후 크기: {pil_image.size}")
@@ -207,7 +208,7 @@ class FileManager:
             
             if self._safe_imwrite(mask_path, mask_image, quality):
                 saved_files.append(mask_path)
-                print(f"✅ {side} 마스크 저장: {mask_filename}")
+                print(f"[OK] {side} 마스크 저장: {mask_filename}")
             else:
                 print(f"❌ {side} 마스크 저장 실패")
             
@@ -218,7 +219,7 @@ class FileManager:
                 
                 if self._safe_imwrite(composite_path, composite_image, quality):
                     saved_files.append(composite_path)
-                    print(f"✅ {side} 합성 이미지 저장: {composite_filename}")
+                    print(f"[OK] {side} 합성 이미지 저장: {composite_filename}")
                 else:
                     print(f"❌ {side} 합성 이미지 저장 실패")
             
@@ -233,9 +234,9 @@ class FileManager:
                     
                     shutil.copy2(original_image_path, original_path)
                     saved_files.append(original_path)
-                    print(f"✅ {side} 원본 복사: {original_filename}")
+                    print(f"[OK] {side} 원본 복사: {original_filename}")
                 except Exception as e:
-                    print(f"⚠️ {side} 원본 복사 실패: {e}")
+                    print(f"[WARNING] {side} 원본 복사 실패: {e}")
             
             if saved_files:
                 success_msg = f"{side} 결과 저장 완료: {len(saved_files)}개 파일"
@@ -289,9 +290,9 @@ class FileManager:
             
             # 최종 메시지 구성
             if all_success and saved_files:
-                final_msg = f"양면 결과 저장 완료!\n📁 저장 위치: {output_folder}\n✅ {', '.join(saved_files)}"
+                final_msg = f"양면 결과 저장 완료!\n📁 저장 위치: {output_folder}\n[OK] {', '.join(saved_files)}"
             elif saved_files:
-                final_msg = f"일부 저장 완료: {', '.join(saved_files)}\n⚠️ 일부 오류 발생"
+                final_msg = f"일부 저장 완료: {', '.join(saved_files)}\n[WARNING] 일부 오류 발생"
             else:
                 final_msg = "저장 실패\n" + "\n".join(messages)
             

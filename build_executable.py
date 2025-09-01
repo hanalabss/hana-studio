@@ -7,6 +7,7 @@ import os
 import sys
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 
@@ -23,7 +24,13 @@ class FastHanaStudioBuilder:
         
         for dir_path in [self.build_dir, self.dist_dir]:
             if dir_path.exists():
-                shutil.rmtree(dir_path)
+                try:
+                    shutil.rmtree(dir_path)
+                    print(f"[OK] {dir_path} 폴더 삭제 완료")
+                except PermissionError:
+                    print(f"[WARN] {dir_path} 폴더 사용 중 - 스킵")
+                    # 사용 중인 파일이 있어도 계속 진행
+                    pass
     
     def check_dependencies(self):
         """필수 파일 존재 여부 확인"""
@@ -108,8 +115,11 @@ class FastHanaStudioBuilder:
         if dll_dir.exists():
             for dll_file in dll_dir.iterdir():
                 if dll_file.is_file():
-                    data_files.append((str(dll_file), "."))
-                    print(f"[ADD] DLL 파일 추가: {dll_file.name}")
+                    # _internal 폴더에도 복사
+                    data_files.append((str(dll_file), "_internal"))
+                    # dll 하위 폴더에도 복사
+                    data_files.append((str(dll_file), "_internal/dll"))
+                    print(f"[ADD] DLL 파일 추가: {dll_file.name} -> _internal 및 _internal/dll")
         
         # 루트에 있는 개별 DLL/설정 파일들도 확인 (하위 호환성)
         root_dll_files = [
@@ -125,10 +135,16 @@ class FastHanaStudioBuilder:
         if (self.project_root / "hana.ico").exists():
             data_files.append(("hana.ico", "."))
         
-        # 디렉토리들 추가
-        for dir_name in ["ui", "core", "printer", "models", "dll"]:
+        # 디렉토리들 추가 - models 폴더는 _internal/models로 복사
+        for dir_name in ["ui", "core", "printer", "dll"]:
             if (self.project_root / dir_name).exists():
                 data_files.append((dir_name, dir_name))
+        
+        # models 폴더는 특별 처리 (PyInstaller가 _internal/models로 찾음)
+        models_dir = self.project_root / "models"
+        if models_dir.exists():
+            data_files.append(("models", "_internal/models"))
+            print("[ADD] models 폴더를 _internal/models로 추가")
         
         # EWL 파일들 추가
         for ewl_file in self.project_root.glob("*.EWL"):
@@ -154,11 +170,15 @@ class FastHanaStudioBuilder:
             "PySide6.QtWidgets", 
             "PySide6.QtGui",
             
-            # rembg 핵심
+            # rembg 핵심 - 모든 세션 타입 포함
             "rembg",
-            "rembg.sessions.isnet",
+            "rembg.sessions",
             "rembg.sessions.base",
-            "rembg.sessions.u2net",
+            "rembg.sessions.isnet",
+            "rembg.sessions.u2net", 
+            "rembg.sessions.u2net_human_seg",
+            "rembg.sessions.silueta",
+            "rembg.new_session",
             
             # pkg_resources 관련 누락 모듈들 (🔧 추가)
             "pkg_resources",
@@ -176,6 +196,11 @@ class FastHanaStudioBuilder:
             "setuptools.extern",
             "setuptools._vendor",
             
+            # onnxruntime 관련
+            "onnxruntime", 
+            "onnxruntime.capi.onnxruntime_pybind11_state",
+            "onnx",
+            
             # 기타 자주 누락되는 모듈들
             "distutils",
             "distutils.util",
@@ -183,6 +208,7 @@ class FastHanaStudioBuilder:
             # 프로젝트 모듈들
             "config",
             "ui.installation_dialog",
+            "ui.splash_screen",
             "core.image_processor",
             "printer.r600_printer",
         ]
@@ -226,7 +252,17 @@ class FastHanaStudioBuilder:
         # release 폴더 생성
         release_dir = self.project_root / "release_fast"
         if release_dir.exists():
-            shutil.rmtree(release_dir)
+            try:
+                shutil.rmtree(release_dir)
+            except PermissionError as e:
+                print(f"[WARNING] 폴더 삭제 실패: {e}")
+                print("[INFO] 기존 폴더를 백업 후 새로 생성...")
+                backup_dir = self.project_root / f"release_fast_backup_{int(time.time())}"
+                shutil.move(str(release_dir), str(backup_dir))
+                print(f"[INFO] 백업 완료: {backup_dir}")
+            except Exception as e:
+                print(f"[ERROR] 폴더 처리 중 오류: {e}")
+                return False
         
         # 전체 폴더 복사
         shutil.copytree(dist_folder, release_dir)
@@ -236,14 +272,15 @@ class FastHanaStudioBuilder:
         size_mb = total_size / (1024 * 1024)
         print(f"[INFO] 빌드 폴더 크기: {size_mb:.1f}MB")
         
-        # 🔧 수정된 실행 배치 파일 생성 (중복 실행 문제 해결)
+        # 🔧 수정된 실행 배치 파일 생성 (한글 경로 안전)
         batch_file = release_dir / "Hana Studio 실행.bat"
         batch_content = '''@echo off
+chcp 65001 > nul
 cd /d "%~dp0"
-HanaStudio.exe
+start "" "HanaStudio.exe"
 '''
         
-        with open(batch_file, 'w', encoding='cp949') as f:
+        with open(batch_file, 'w', encoding='utf-8') as f:
             f.write(batch_content)
         
         # 사용 설명서 생성

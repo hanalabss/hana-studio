@@ -1,5 +1,5 @@
 """
-프린터 모듈 초기화
+[EMOJI] [EMOJI] [EMOJI]
 """
 
 from .exceptions import (
@@ -26,32 +26,32 @@ from .printer_discovery import (
 )
 
 __all__ = [
-    # 예외 클래스들
+    # [EMOJI] [EMOJI]
     'R600PrinterError',
     'PrinterConnectionError', 
     'PrinterInitializationError',
     'PrintingError',
     'DLLNotFoundError',
     
-    # 메인 클래스들
+    # [EMOJI] [EMOJI]
     'R600Printer',
     'PrinterThread',
     
-    # 유틸리티 함수들
+    # [EMOJI] [EMOJI]
     'check_printer_dll',
     'get_default_dll_paths',
     'find_printer_dll',
     'test_printer_connection',
     'test_print_modes',
     
-    # 프린터 탐지 관련
+    # [EMOJI] [EMOJI] [EMOJI]
     'PrinterInfo',
     'PrinterDiscovery',
     'discover_available_printers',
     'get_printer_display_name'
 ]
 
-# 모듈 정보
+# [EMOJI] [EMOJI]
 __version__ = '1.0.0'
 __author__ = 'Hana Studio Team'
-__description__ = 'RTAI LUKA R600 프린터 연동 모듈 - TCP/USB 지원'
+__description__ = 'RTAI LUKA R600 [EMOJI] [EMOJI] [EMOJI] - TCP/USB [EMOJI]'

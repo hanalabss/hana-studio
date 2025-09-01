@@ -2,22 +2,23 @@
   "ai_model": "isnet-general-use",
   "alpha_threshold": 45,
   "output_quality": 95,
-  "auto_save_results": false,
   "max_image_size": 2048,
+  "directories": {
+    "output": "output",
+    "masks": "masks",
+    "temp": "temp",
+    "models": "models",
+    "logs": "logs"
+  },
+  "auto_save_results": false,
   "timeout_seconds": 30,
   "language": "ko",
   "theme": "light",
   "window_geometry": {
     "width": 1920,
     "height": 1000,
-    "x": 18,
-    "y": 31
-  },
-  "directories": {
-    "output": "output",
-    "temp": "temp",
-    "models": "models",
-    "logs": "logs"
+    "x": 1372,
+    "y": 215
   },
   "printer": {
     "dll_path": "./libDSRetransfer600App.dll",

@@ -128,7 +128,7 @@ class HanaStudioMainWindow:
         title_layout = QVBoxLayout()
         title_layout.setSpacing(2)
         
-        title_label = QLabel("🎨 Hana Studio")
+        title_label = QLabel("[DESIGN] Hana Studio")
         title_label.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
         title_label.setStyleSheet("color: #2C3E50; background: transparent;")
 

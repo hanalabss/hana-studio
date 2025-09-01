@@ -1,12 +1,12 @@
 """
-UI 스타일 정의
+UI [EMOJI] [EMOJI]
 """
 
 from PySide6.QtGui import QPalette, QColor
 
 
 def get_app_style() -> str:
-    """애플리케이션 전체 스타일 반환"""
+    """[EMOJI] [EMOJI] [EMOJI] [EMOJI]"""
     return """
         QMainWindow {
             background-color: #F8F9FA;
@@ -66,7 +66,7 @@ def get_app_style() -> str:
 
 
 def get_light_palette() -> QPalette:
-    """라이트 테마 팔레트 반환"""
+    """[EMOJI] [EMOJI] [EMOJI] [EMOJI]"""
     light_palette = QPalette()
     light_palette.setColor(QPalette.ColorRole.Window, QColor("#F8F9FA"))
     light_palette.setColor(QPalette.ColorRole.WindowText, QColor("#212529"))
@@ -85,7 +85,7 @@ def get_light_palette() -> QPalette:
 
 
 def get_header_style() -> str:
-    """헤더 프레임 스타일"""
+    """[EMOJI] [EMOJI] [EMOJI]"""
     return """
         QFrame {
             background-color: #FFFFFF;
@@ -97,7 +97,7 @@ def get_header_style() -> str:
 
 
 def get_status_bar_style() -> str:
-    """상태바 스타일"""
+    """[EMOJI] [EMOJI]"""
     return """
         QFrame {
             background-color: #FFFFFF;
@@ -108,7 +108,7 @@ def get_status_bar_style() -> str:
 
 
 def get_radio_button_style() -> str:
-    """라디오 버튼 스타일"""
+    """[EMOJI] [EMOJI] [EMOJI]"""
     return """
         QRadioButton {
             font-size: 11px;

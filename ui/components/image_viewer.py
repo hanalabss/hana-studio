@@ -411,7 +411,7 @@ class ImageViewer(QWidget):
                 
                 print(f"[DEBUG] 원본 픽셀 데이터 크기: {image.shape} (height x width x channels)")
                 
-                # 🔍 EXIF 정보 확인 (참고용)
+                # [SEARCH] EXIF 정보 확인 (참고용)
                 try:
                     from PIL import Image as PILImage
                     pil_image = PILImage.open(image_path)
@@ -427,9 +427,9 @@ class ImageViewer(QWidget):
                 # 최종 결과 확인
                 height, width = image.shape[:2]
                 if height > width:
-                    print(f"[DEBUG] ✅ 미리보기: 세로 형태 ({width}x{height}) - 실제 인쇄 결과와 일치")
+                    print(f"[DEBUG] [OK] 미리보기: 세로 형태 ({width}x{height}) - 실제 인쇄 결과와 일치")
                 else:
-                    print(f"[DEBUG] ✅ 미리보기: 가로 형태 ({width}x{height}) - 실제 인쇄 결과와 일치")
+                    print(f"[DEBUG] [OK] 미리보기: 가로 형태 ({width}x{height}) - 실제 인쇄 결과와 일치")
                 
                 return image
                 

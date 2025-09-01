@@ -6,6 +6,33 @@ main.py의 중복 실행 방지 로직 수정
 import os
 import sys
 import time
+import io
+
+# GUI 모드에서 print를 안전하게 처리하기 위한 설정
+_original_print = print
+
+def safe_print(*args, **kwargs):
+    """GUI 모드에서도 안전한 print 함수"""
+    try:
+        _original_print(*args, **kwargs)
+    except:
+        # GUI 모드에서 print 실패 시 무시
+        pass
+
+# 전역 print를 safe_print로 교체
+import builtins
+builtins.print = safe_print
+
+# UTF-8 인코딩 설정 (GUI 모드에서 안전하게)
+try:
+    # stdout과 stderr가 있는지 확인
+    if sys.stdout and hasattr(sys.stdout, 'buffer'):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    if sys.stderr and hasattr(sys.stderr, 'buffer'):
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+except:
+    # GUI 모드에서는 stdout/stderr가 없을 수 있음
+    pass
 
 
 def check_single_instance():
@@ -173,7 +200,7 @@ def check_single_instance_simple():
 
 # main.py에서 사용할 최종 함수
 def main():
-    """메인 함수 - 개선된 중복 검사"""
+    """메인 함수 - 개선된 중복 검사 및 스플래시 스크린"""
     try:
         print("[START] Hana Studio 시작...")
         
@@ -188,7 +215,7 @@ def main():
         
         # Qt 애플리케이션 생성
         from PySide6.QtWidgets import QApplication
-        from PySide6.QtCore import Qt
+        from PySide6.QtCore import Qt, QTimer
         
         app = QApplication(sys.argv)
         app.setStyle('Fusion')
@@ -196,14 +223,36 @@ def main():
         
         print("[OK] QApplication 생성 완료")
         
-        # AI 모델 백그라운드 로딩 시작
+        # 스플래시 스크린 표시
+        from ui.splash_screen import HanaStudioSplash
+        
+        splash = HanaStudioSplash()
+        splash.show()
+        app.processEvents()  # 즉시 표시되도록
+        
+        # 초기화 단계 1: 환경 설정
+        splash.update_status("환경 설정 중...", 20)
+        QTimer.singleShot(100, app.processEvents)  # UI 업데이트를 위한 짧은 대기
+        
+        # 초기화 단계 2: AI 모델 백그라운드 로딩 시작
+        splash.update_status("AI 모델 준비 중...", 40)
         from core.model_loader import preload_ai_model
         preload_ai_model()
         
-        # 메인 애플리케이션 윈도우 생성 및 표시
+        # 초기화 단계 3: UI 모듈 로드
+        splash.update_status("UI 모듈 로딩 중...", 60)
         from hana_studio import HanaStudio
         
+        # 초기화 단계 4: 메인 윈도우 생성
+        splash.update_status("메인 윈도우 생성 중...", 80)
         main_window = HanaStudio()
+        
+        # 초기화 단계 5: 최종 준비
+        splash.update_status("시작 준비 완료!", 100)
+        QTimer.singleShot(500, app.processEvents)  # 완료 메시지를 보여주기 위한 짧은 대기
+        
+        # 스플래시 종료 및 메인 윈도우 표시
+        splash.finish(main_window)
         main_window.show()
         
         print("[OK] Hana Studio 시작 완료")
@@ -212,7 +261,7 @@ def main():
         # 애플리케이션 실행
         exit_code = app.exec()
         
-        print(f"🔚 Hana Studio 종료 (코드: {exit_code})")
+        print(f"종료 Hana Studio 종료 (코드: {exit_code})")
         sys.exit(exit_code)
         
     except KeyboardInterrupt:

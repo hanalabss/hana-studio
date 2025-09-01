@@ -379,7 +379,7 @@ class R600Printer:
         """마스킹 이미지를 회전시켜 임시 파일로 저장"""
         import cv2
         import numpy as np
-        import tempfile
+        from utils.safe_temp_path import create_safe_temp_file
         
         try:
             print(f"마스킹 이미지 {rotation}도 회전 중: {image_path}")
@@ -407,10 +407,11 @@ class R600Printer:
             else:
                 rotated_image = image
             
-            # 임시 파일로 저장
-            temp_dir = tempfile.gettempdir()
-            temp_name = f"rotated_mask_{int(time.time())}_{rotation}deg.jpg"
-            temp_path = os.path.join(temp_dir, temp_name)
+            # 안전한 임시 파일 경로 생성
+            temp_path = create_safe_temp_file(
+                prefix=f"rotated_mask_{rotation}deg",
+                suffix=".jpg"
+            )
             
             # 높은 품질로 저장
             cv2.imwrite(temp_path, rotated_image, [cv2.IMWRITE_JPEG_QUALITY, 95])
@@ -432,7 +433,7 @@ class R600Printer:
         # 🔧 EXIF 회전을 적용한 후 EXIF 정보 제거
         try:
             from PIL import Image as PILImage, ImageOps
-            import tempfile
+            from utils.safe_temp_path import create_safe_temp_file
             
             print(f"[PRINTER DEBUG] EXIF 회전 적용 후 제거 처리")
             
@@ -471,10 +472,11 @@ class R600Printer:
             
             print(f"  최종 이미지 크기: {clean_image.size}")
             
-            # 임시 파일로 저장 (EXIF 없음, 회전 적용됨)
-            temp_dir = tempfile.gettempdir()
-            temp_name = f"printer_rotated_{int(time.time())}.jpg"
-            temp_path = os.path.join(temp_dir, temp_name)
+            # 안전한 임시 파일로 저장 (EXIF 없음, 회전 적용됨)
+            temp_path = create_safe_temp_file(
+                prefix="printer_rotated",
+                suffix=".jpg"
+            )
             
             # 고품질로 저장 (EXIF 정보는 저장되지 않음)
             clean_image.save(temp_path, 'JPEG', quality=95, optimize=True)

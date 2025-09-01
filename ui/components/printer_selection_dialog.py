@@ -1,6 +1,6 @@
 """
-프린터 선택 다이얼로그 - 전문적이고 깔끔한 디자인
-판매용 소프트웨어 수준의 세련된 UI
+프린터 선택 대화상자 - 프린터 연결 및 선택
+사용 가능한 프린터 목록 표시 UI
 """
 
 from PySide6.QtWidgets import (
@@ -17,7 +17,7 @@ from .modern_button import ModernButton
 
 
 class PrinterDiscoveryThread(QThread):
-    """프린터 탐지 백그라운드 스레드"""
+    """프린터 검색 스레드"""
     printers_found = Signal(list, str)
     progress_update = Signal(str)
     finished_discovery = Signal()
@@ -27,19 +27,19 @@ class PrinterDiscoveryThread(QThread):
         self.dll_path = dll_path
     
     def run(self):
-        """스레드 실행"""
+        """프린터 검색 실행"""
         try:
-            self.progress_update.emit("프린터 탐지 중...")
+            self.progress_update.emit("프린터 검색 중...")
             printers, summary = discover_available_printers(self.dll_path)
             self.printers_found.emit(printers, summary)
         except Exception as e:
-            self.printers_found.emit([], f"탐지 실패: {e}")
+            self.printers_found.emit([], f"검색 오류: {e}")
         finally:
             self.finished_discovery.emit()
 
 
 class PrinterItem(QFrame):
-    """개별 프린터 아이템 위젯"""
+    """프린터 아이템 위젯"""
     
     def __init__(self, printer: PrinterInfo, index: int, parent_dialog):
         super().__init__()
@@ -60,13 +60,13 @@ class PrinterItem(QFrame):
         layout.setSpacing(12)
         
         # 연결 타입 아이콘
-        self.type_label = QLabel("●")
+        self.type_label = QLabel("🔌" if self.printer.connection_type == "USB" else "🌐")
         self.type_label.setFont(QFont("Arial", 8))
         self.type_label.setFixedSize(12, 12)
         if self.printer.connection_type == "TCP":
-            self.type_label.setStyleSheet("color: #10B981; background: transparent;")  # 초록
+            self.type_label.setStyleSheet("color: #10B981; background: transparent;")  # 초록색
         else:
-            self.type_label.setStyleSheet("color: #3B82F6; background: transparent;")  # 파랑
+            self.type_label.setStyleSheet("color: #3B82F6; background: transparent;")  # 파란색
         
         # 프린터 이름
         self.name_label = QLabel(self.printer.name)
@@ -78,7 +78,7 @@ class PrinterItem(QFrame):
         self.connection_label.setFont(QFont("Segoe UI", 9))
         self.connection_label.setStyleSheet("color: #6B7280; background: transparent;")
         
-        # 선택 표시
+        # 선택 체크 마크
         self.check_label = QLabel()
         self.check_label.setFixedSize(16, 16)
         self.check_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -90,7 +90,7 @@ class PrinterItem(QFrame):
         layout.addWidget(self.check_label)
     
     def _apply_style(self, selected: bool):
-        """스타일 적용 - 더 자연스러운 박스"""
+        """스타일 적용 - 간단하고 깔끔한 디자인"""
         if selected:
             self.setStyleSheet("""
                 QFrame {
@@ -115,7 +115,7 @@ class PrinterItem(QFrame):
             self.is_selected = False
     
     def mousePressEvent(self, event):
-        """클릭 이벤트"""
+        """마우스 클릭 처리"""
         self.parent_dialog.select_printer(self.index)
     
     def set_selected(self, selected: bool):
@@ -124,7 +124,7 @@ class PrinterItem(QFrame):
 
 
 class PrinterSelectionDialog(QDialog):
-    """전문적인 프린터 선택 다이얼로그"""
+    """프린터 선택 대화상자"""
     
     def __init__(self, dll_path: str, parent=None):
         super().__init__(parent)
@@ -140,7 +140,7 @@ class PrinterSelectionDialog(QDialog):
         self._start_discovery()
     
     def _setup_dialog(self):
-        """다이얼로그 기본 설정"""
+        """다이얼로그 설정"""
         self.setWindowTitle("프린터 선택 - Hana Studio")
         self.setModal(True)
         self.setFixedSize(460, 380)
@@ -160,29 +160,29 @@ class PrinterSelectionDialog(QDialog):
         # 헤더
         self._create_header(layout)
         
-        # 메인 컨텐츠
+        # 컨텐츠 영역
         content_widget = QWidget()
         content_widget.setStyleSheet("background-color: #FFFFFF;")
         content_layout = QVBoxLayout(content_widget)
         content_layout.setContentsMargins(24, 20, 24, 20)
         content_layout.setSpacing(16)
         
-        # 상태 영역
+        # 상태 섹션
         self._create_status_section(content_layout)
         
-        # 프린터 목록
+        # 프린터 리스트
         self._create_printer_list(content_layout)
         
-        # 진행바
+        # 프로그레스바
         self._create_progress_bar(content_layout)
         
         layout.addWidget(content_widget, 1)
         
-        # 하단 버튼
+        # 푸터 버튼
         self._create_footer(layout)
     
     def _create_header(self, parent_layout):
-        """헤더 생성 - 밑줄 없는 깔끔한 스타일"""
+        """헤더 생성 - 심플하고 모던한 디자인"""
         header = QFrame()
         header.setFixedHeight(70)
         header.setStyleSheet("""
@@ -200,7 +200,7 @@ class PrinterSelectionDialog(QDialog):
         title.setFont(QFont("Segoe UI", 16, QFont.Weight.DemiBold))
         title.setStyleSheet("color: #111827; background: transparent;")
         
-        subtitle = QLabel("사용할 RTAI 프린터를 선택하세요")
+        subtitle = QLabel("사용 가능한 RTAI 프린터 목록")
         subtitle.setFont(QFont("Segoe UI", 10))
         subtitle.setStyleSheet("color: #6B7280; background: transparent;")
         
@@ -210,7 +210,7 @@ class PrinterSelectionDialog(QDialog):
         parent_layout.addWidget(header)
     
     def _create_status_section(self, parent_layout):
-        """상태 섹션 - 더 자연스러운 박스"""
+        """상태 섹션 - 현재 검색 상태 표시"""
         self.status_frame = QFrame()
         self.status_frame.setFixedHeight(36)
         self.status_frame.setStyleSheet("""
@@ -223,11 +223,11 @@ class PrinterSelectionDialog(QDialog):
         status_layout = QHBoxLayout(self.status_frame)
         status_layout.setContentsMargins(12, 8, 12, 8)
         
-        self.status_icon = QLabel("●")
+        self.status_icon = QLabel("⚡")
         self.status_icon.setFont(QFont("Arial", 8))
         self.status_icon.setStyleSheet("color: #F59E0B; background: transparent;")
         
-        self.status_text = QLabel("프린터를 탐지하고 있습니다...")
+        self.status_text = QLabel("프린터 검색 중...")
         self.status_text.setFont(QFont("Segoe UI", 9))
         self.status_text.setStyleSheet("color: #374151; background: transparent;")
         
@@ -238,13 +238,13 @@ class PrinterSelectionDialog(QDialog):
         parent_layout.addWidget(self.status_frame)
     
     def _create_printer_list(self, parent_layout):
-        """프린터 목록 - 더 자연스러운 박스"""
-        # 목록 제목
-        list_label = QLabel("사용 가능한 프린터")
+        """프린터 리스트 - 스크롤 가능한 리스트"""
+        # 리스트 라벨
+        list_label = QLabel("검색된 프린터")
         list_label.setFont(QFont("Segoe UI", 11, QFont.Weight.Medium))
         list_label.setStyleSheet("color: #374151; background: transparent; margin-bottom: 8px;")
         
-        # 목록 컨테이너 - 더 부드러운 스타일
+        # 리스트 컨테이너 - 부드러운 테두리
         self.list_container = QFrame()
         self.list_container.setMinimumHeight(140)
         self.list_container.setMaximumHeight(180)
@@ -259,8 +259,8 @@ class PrinterSelectionDialog(QDialog):
         self.list_layout.setContentsMargins(8, 8, 8, 8)
         self.list_layout.setSpacing(4)
         
-        # 초기 메시지
-        self.loading_label = QLabel("프린터를 탐지하고 있습니다...")
+        # 로딩 메시지
+        self.loading_label = QLabel("프린터 검색 중...")
         self.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.loading_label.setFont(QFont("Segoe UI", 9))
         self.loading_label.setStyleSheet("color: #9CA3AF; background: transparent; padding: 40px;")
@@ -270,7 +270,7 @@ class PrinterSelectionDialog(QDialog):
         parent_layout.addWidget(self.list_container)
     
     def _create_progress_bar(self, parent_layout):
-        """진행바"""
+        """프로그레스바"""
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 0)
         self.progress_bar.setFixedHeight(3)
@@ -289,7 +289,7 @@ class PrinterSelectionDialog(QDialog):
         parent_layout.addWidget(self.progress_bar)
     
     def _create_footer(self, parent_layout):
-        """하단 버튼 영역 - 밑줄 없는 스타일"""
+        """푸터 버튼 영역 - 모던한 버튼 디자인"""
         footer = QFrame()
         footer.setFixedHeight(64)
         footer.setStyleSheet("""
@@ -304,14 +304,14 @@ class PrinterSelectionDialog(QDialog):
         
         # 새로고침 버튼
         self.refresh_btn = ModernButton("새로고침")
-        self.refresh_btn.setFixedSize(110, 32)  # 너비를 80에서 90으로 증가
+        self.refresh_btn.setFixedSize(110, 32)
         self.refresh_btn.setEnabled(False)
         self.refresh_btn.clicked.connect(self._refresh_printers)
         
         footer_layout.addWidget(self.refresh_btn)
         footer_layout.addStretch()
         
-        # 취소/확인 버튼
+        # 취소/선택 버튼
         self.cancel_btn = ModernButton("취소")
         self.cancel_btn.setFixedSize(70, 32)
         self.cancel_btn.clicked.connect(self.reject)
@@ -327,7 +327,7 @@ class PrinterSelectionDialog(QDialog):
         parent_layout.addWidget(footer)
     
     def _start_discovery(self):
-        """프린터 탐지 시작"""
+        """프린터 검색 시작"""
         self.discovery_thread = PrinterDiscoveryThread(self.dll_path)
         self.discovery_thread.printers_found.connect(self._on_printers_found)
         self.discovery_thread.progress_update.connect(self._update_status)
@@ -339,24 +339,24 @@ class PrinterSelectionDialog(QDialog):
         self.status_text.setText(message)
     
     def _on_printers_found(self, printers: List[PrinterInfo], summary: str):
-        """프린터 탐지 완료"""
+        """프린터 발견 시 처리"""
         self.printers = printers
         
-        # 기존 아이템 제거
+        # 기존 리스트 클리어
         self._clear_list()
         
         if printers:
-            # 상태 업데이트
+            # 프린터 발견
             self.status_icon.setStyleSheet("color: #10B981; background: transparent;")
             self.status_text.setText(f"{len(printers)}개의 프린터를 찾았습니다")
             
-            # 프린터 아이템 생성
+            # 프린터 아이템 추가
             for i, printer in enumerate(printers):
                 item = PrinterItem(printer, i, self)
                 self.printer_items.append(item)
                 self.list_layout.addWidget(item)
             
-            # 여백 추가
+            # 스페이서 추가
             spacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
             self.list_layout.addItem(spacer)
             
@@ -366,16 +366,16 @@ class PrinterSelectionDialog(QDialog):
         else:
             # 프린터 없음
             self.status_icon.setStyleSheet("color: #EF4444; background: transparent;")
-            self.status_text.setText("프린터가 발견되지 않았습니다")
+            self.status_text.setText("프린터를 찾을 수 없습니다")
             
-            no_printer_label = QLabel("연결된 프린터가 없습니다\n프린터 연결을 확인하고 새로고침하세요")
+            no_printer_label = QLabel("사용 가능한 프린터가 없습니다\n프린터 연결 상태를 확인해주세요")
             no_printer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             no_printer_label.setFont(QFont("Segoe UI", 9))
             no_printer_label.setStyleSheet("color: #9CA3AF; background: transparent; padding: 30px;")
             self.list_layout.addWidget(no_printer_label)
     
     def _clear_list(self):
-        """목록 클리어"""
+        """리스트 클리어"""
         while self.list_layout.count():
             child = self.list_layout.takeAt(0)
             if child.widget():
@@ -383,7 +383,7 @@ class PrinterSelectionDialog(QDialog):
         self.printer_items.clear()
     
     def _on_discovery_finished(self):
-        """탐지 완료"""
+        """검색 완료"""
         self.progress_bar.setVisible(False)
         self.refresh_btn.setEnabled(True)
         
@@ -391,21 +391,21 @@ class PrinterSelectionDialog(QDialog):
             QMessageBox.information(
                 self, 
                 "알림", 
-                "연결된 프린터가 없습니다.\n\n프린터 전원과 연결 상태를 확인해주세요."
+                "프린터를 찾을 수 없습니다.\n\n프린터 전원과 연결 상태를 확인해주세요."
             )
     
     def select_printer(self, index: int):
         """프린터 선택"""
-        # 기존 선택 해제
+        # 이전 선택 해제
         if self.selected_index >= 0 and self.selected_index < len(self.printer_items):
             self.printer_items[self.selected_index].set_selected(False)
         
-        # 새로운 선택
+        # 새로 선택
         self.selected_index = index
         self.selected_printer = self.printers[index]
         self.printer_items[index].set_selected(True)
         
-        # 버튼 활성화
+        # 선택 버튼 활성화
         self.select_btn.setEnabled(True)
         
         # 상태 업데이트
@@ -420,17 +420,17 @@ class PrinterSelectionDialog(QDialog):
         self.refresh_btn.setEnabled(False)
         self.progress_bar.setVisible(True)
         
-        # 로딩 표시
-        self.loading_label = QLabel("프린터를 탐지하고 있습니다...")
+        # 로딩 메시지
+        self.loading_label = QLabel("프린터 검색 중...")
         self.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.loading_label.setFont(QFont("Segoe UI", 9))
         self.loading_label.setStyleSheet("color: #9CA3AF; background: transparent; padding: 40px;")
         self.list_layout.addWidget(self.loading_label)
         
         self.status_icon.setStyleSheet("color: #F59E0B; background: transparent;")
-        self.status_text.setText("프린터를 탐지하고 있습니다...")
+        self.status_text.setText("프린터 검색 중...")
         
-        # 스레드 재시작
+        # 기존 스레드 정지
         if self.discovery_thread and self.discovery_thread.isRunning():
             self.discovery_thread.quit()
             self.discovery_thread.wait()
@@ -442,7 +442,7 @@ class PrinterSelectionDialog(QDialog):
         return self.selected_printer
     
     def closeEvent(self, event):
-        """종료 시 스레드 정리"""
+        """대화상자 닫기 시 스레드 정리"""
         if self.discovery_thread and self.discovery_thread.isRunning():
             self.discovery_thread.quit()
             self.discovery_thread.wait()
@@ -450,7 +450,7 @@ class PrinterSelectionDialog(QDialog):
 
 
 def show_printer_selection_dialog(dll_path: str, parent=None) -> Optional[PrinterInfo]:
-    """프린터 선택 다이얼로그 표시"""
+    """프린터 선택 대화상자 표시 헬퍼 함수"""
     dialog = PrinterSelectionDialog(dll_path, parent)
     
     if dialog.exec() == QDialog.DialogCode.Accepted:
