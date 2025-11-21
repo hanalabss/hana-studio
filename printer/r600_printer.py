@@ -5,6 +5,7 @@ printer/r600_printer.py 수정
 
 import ctypes
 import os
+import io
 import time
 from typing import List, Optional, Tuple
 from .exceptions import R600PrinterError, PrinterInitializationError, DLLNotFoundError
@@ -24,23 +25,37 @@ class R600Printer:
         self.is_initialized = False
 
         try:
-            print(f"[DEBUG] DLL 경로 시도: {dll_path}")
+            print(f"[R600Printer] DLL 경로 시도: {dll_path}")
+
+            # DLL 경로 유효성 검증
+            if not dll_path:
+                raise DLLNotFoundError("DLL 경로가 제공되지 않았습니다")
+
             if not os.path.exists(dll_path):
                 raise DLLNotFoundError(f"DLL 파일이 존재하지 않음: {dll_path}")
 
+            # ASCII 경로 검증
+            try:
+                dll_path.encode('ascii')
+                print(f"[R600Printer] ✓ ASCII 경로 확인")
+            except UnicodeEncodeError:
+                print(f"[R600Printer] ⚠ 한글 경로 감지: {dll_path}")
+                print(f"[R600Printer] 경고: 이 경로는 이미 안전한 경로여야 합니다")
+                # 한글 경로지만 로딩 시도 (실패할 가능성 높음)
+
             self.lib = ctypes.CDLL(dll_path)
-            print("[DEBUG] DLL 로드 성공")
+            print("[R600Printer] ✓ DLL 로드 성공")
 
             self._setup_function_signatures()
             self._initialize_library()
             self.is_initialized = True
-            
+
             # 선택된 프린터가 있으면 자동으로 설정
             if self.selected_printer_info:
                 self.auto_select_printer()
-            
+
         except Exception as e:
-            print(f"[DEBUG] 예외 발생 위치: {type(e).__name__}: {e}")
+            print(f"[R600Printer] ✗ 초기화 실패: {type(e).__name__}: {e}")
             raise PrinterInitializationError(f"프린터 초기화 실패: {e}")
 
     def _setup_function_signatures(self):
@@ -176,65 +191,105 @@ class R600Printer:
         return all_printers
     
     def _enum_tcp_printers(self) -> List[str]:
-        """TCP 프린터 목록 조회"""
+        """TCP 프린터 목록 조회 - 한글 경로 대응"""
         printers = []
-        
+
+        # 🎯 핵심: 작업 디렉토리를 ASCII 안전 경로로 변경
+        original_cwd = os.getcwd()
+
         try:
+            # ASCII 안전 경로로 변경
+            try:
+                original_cwd.encode('ascii')
+                safe_cwd = original_cwd
+            except UnicodeEncodeError:
+                import tempfile
+                safe_cwd = tempfile.gettempdir()
+                os.chdir(safe_cwd)
+                print(f"[TCP] 작업 디렉토리 변경: {safe_cwd}")
+
             list_buffer_size = 1024
             printer_list_buffer = ctypes.create_string_buffer(list_buffer_size)
             enum_list_len = ctypes.c_uint(list_buffer_size)
             num_printers = ctypes.c_int()
-            
+
             ret = self.lib.R600EnumTcpPrt(
-                printer_list_buffer, 
-                ctypes.byref(enum_list_len), 
+                printer_list_buffer,
+                ctypes.byref(enum_list_len),
                 ctypes.byref(num_printers)
             )
-            
+
             if ret == 0:
                 actual_len = enum_list_len.value
                 printer_count = num_printers.value
-                
+
                 if actual_len > 0 and printer_count > 0:
                     printer_names_str = printer_list_buffer.value.decode('cp949')
                     printer_names = [name.strip() for name in printer_names_str.split('\n') if name.strip()]
                     printers.extend(printer_names)
                     print(f"📡 TCP 프린터 {len(printer_names)}대 발견")
-        
+
         except Exception as e:
             print(f"❌ TCP 프린터 조회 중 오류: {e}")
-        
+
+        finally:
+            # 원래 작업 디렉토리로 복원
+            try:
+                os.chdir(original_cwd)
+            except:
+                pass
+
         return printers
     
     def _enum_usb_printers(self) -> List[str]:
-        """USB 프린터 목록 조회"""
+        """USB 프린터 목록 조회 - 한글 경로 대응"""
         printers = []
-        
+
+        # 🎯 핵심: 작업 디렉토리를 ASCII 안전 경로로 변경
+        original_cwd = os.getcwd()
+
         try:
+            # ASCII 안전 경로로 변경
+            try:
+                original_cwd.encode('ascii')
+                safe_cwd = original_cwd
+            except UnicodeEncodeError:
+                import tempfile
+                safe_cwd = tempfile.gettempdir()
+                os.chdir(safe_cwd)
+                print(f"[USB] 작업 디렉토리 변경: {safe_cwd}")
+
             list_buffer_size = 1024
             printer_list_buffer = ctypes.create_string_buffer(list_buffer_size)
             enum_list_len = ctypes.c_uint(list_buffer_size)
             num_printers = ctypes.c_int()
-            
+
             ret = self.lib.R600EnumUsbPrt(
-                printer_list_buffer, 
-                ctypes.byref(enum_list_len), 
+                printer_list_buffer,
+                ctypes.byref(enum_list_len),
                 ctypes.byref(num_printers)
             )
-            
+
             if ret == 0:
                 actual_len = enum_list_len.value
                 printer_count = num_printers.value
-                
+
                 if actual_len > 0 and printer_count > 0:
                     printer_names_str = printer_list_buffer.value.decode('cp949')
                     printer_names = [name.strip() for name in printer_names_str.split('\n') if name.strip()]
                     printers.extend(printer_names)
                     print(f"🔌 USB 프린터 {len(printer_names)}대 발견")
-        
+
         except Exception as e:
             print(f"❌ USB 프린터 조회 중 오류: {e}")
-        
+
+        finally:
+            # 원래 작업 디렉토리로 복원
+            try:
+                os.chdir(original_cwd)
+            except:
+                pass
+
         return printers
     
     def set_timeout(self, timeout_ms: int = 10000):
@@ -309,9 +364,13 @@ class R600Printer:
                 import tempfile
                 
                 print(f"[PRINTER DEBUG] 워터마크 EXIF 제거 처리")
-                
-                # 원본 워터마크 열기
-                original_watermark = PILImage.open(image_path)
+
+                # 원본 워터마크 열기 (한글 경로 대응)
+                try:
+                    original_watermark = PILImage.open(image_path)
+                except:
+                    with open(image_path, 'rb') as f:
+                        original_watermark = PILImage.open(io.BytesIO(f.read()))
                 print(f"  워터마크 원본 크기: {original_watermark.size}")
                 
                 # RGB 모드로 변환 (EXIF 정보 자동 제거됨)
@@ -436,9 +495,13 @@ class R600Printer:
             from utils.safe_temp_path import create_safe_temp_file
             
             print(f"[PRINTER DEBUG] EXIF 회전 적용 후 제거 처리")
-            
-            # 원본 이미지 열기
-            original_image = PILImage.open(image_path)
+
+            # 원본 이미지 열기 (한글 경로 대응)
+            try:
+                original_image = PILImage.open(image_path)
+            except:
+                with open(image_path, 'rb') as f:
+                    original_image = PILImage.open(io.BytesIO(f.read()))
             print(f"  원본 크기: {original_image.size}")
             
             # EXIF 정보 확인
@@ -483,8 +546,12 @@ class R600Printer:
             
             print(f"  회전+EXIF제거 파일: {temp_path}")
             
-            # 검증: 저장된 파일에 EXIF가 없는지 확인
-            verify_image = PILImage.open(temp_path)
+            # 검증: 저장된 파일에 EXIF가 없는지 확인 (한글 경로 대응)
+            try:
+                verify_image = PILImage.open(temp_path)
+            except:
+                with open(temp_path, 'rb') as f:
+                    verify_image = PILImage.open(io.BytesIO(f.read()))
             if hasattr(verify_image, '_getexif') and verify_image._getexif() is not None:
                 print(f"  ⚠️ EXIF 제거 실패!")
             else:

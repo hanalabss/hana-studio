@@ -1,6 +1,6 @@
 {
   "ai_model": "isnet-general-use",
-  "alpha_threshold": 45,
+  "alpha_threshold": 141,
   "output_quality": 95,
   "max_image_size": 2048,
   "directories": {
@@ -17,8 +17,8 @@
   "window_geometry": {
     "width": 1920,
     "height": 1000,
-    "x": 1372,
-    "y": 215
+    "x": 9,
+    "y": 63
   },
   "printer": {
     "dll_path": "./libDSRetransfer600App.dll",

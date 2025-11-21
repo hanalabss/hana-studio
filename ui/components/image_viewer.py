@@ -1,4 +1,5 @@
 import numpy as np
+import io
 from PySide6.QtWidgets import (
     QLabel, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QFileDialog,
     QSlider, QSizePolicy, QButtonGroup, QRadioButton, QSpacerItem
@@ -414,7 +415,12 @@ class ImageViewer(QWidget):
                 # [SEARCH] EXIF 정보 확인 (참고용)
                 try:
                     from PIL import Image as PILImage
-                    pil_image = PILImage.open(image_path)
+                    # 한글 경로 대응
+                    try:
+                        pil_image = PILImage.open(image_path)
+                    except:
+                        with open(image_path, 'rb') as f:
+                            pil_image = PILImage.open(io.BytesIO(f.read()))
                     if hasattr(pil_image, '_getexif') and pil_image._getexif() is not None:
                         exif_data = pil_image._getexif()
                         orientation = exif_data.get(274, 1)

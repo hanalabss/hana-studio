@@ -7,39 +7,37 @@ import io
 import numpy as np
 import cv2
 from PIL import Image
-from rembg import remove
+# rembg는 지연 import (시작 시간 최적화)
 from config import config
 from .model_loader import get_ai_session
 
 
 class ImageProcessor:
-    """이미지 처리 핵심 클래스 - AI 모델 지연 로딩 적용"""
-    
+    """이미지 처리 핵심 클래스 - 세션을 외부에서 주입받아 사용"""
+
     def __init__(self):
-        self.session = None
-    
-    def _get_session(self):
-        """AI 세션 지연 로딩 (필요 시점에 로드)"""
-        if self.session is None:
-            self.session = get_ai_session()
-        return self.session
-    
+        pass
+
     def is_model_ready(self) -> bool:
-        """모델 준비 상태 확인"""
+        """모델 준비 상태 확인 (세션 생성 안 함)"""
         from .model_loader import is_ai_model_ready
         return is_ai_model_ready()
     
-    def remove_background(self, image_path: str, alpha_threshold: int = None) -> np.ndarray:
+    def remove_background(self, image_path: str, session, alpha_threshold: int = None) -> np.ndarray:
         """
         배경 제거 및 마스크 생성 - EXIF 정보 보존 (자동 회전 방지)
-        
+
         Args:
             image_path: 처리할 이미지 경로
+            session: AI 모델 세션 (필수, 외부에서 전달)
             alpha_threshold: 알파 임계값 (None이면 config에서 가져옴)
+
+        Raises:
+            ValueError: 세션이 None인 경우
+            RuntimeError: 배경 제거 처리 중 오류 발생
         """
-        session = self._get_session()
         if not session:
-            raise RuntimeError("AI 모델이 준비되지 않았습니다.")
+            raise ValueError("AI 세션이 제공되지 않았습니다. ModelLoadingManager에서 세션을 먼저 로딩해야 합니다.")
         
         try:
             # 임계값 설정
@@ -52,7 +50,8 @@ class ImageProcessor:
             with open(image_path, 'rb') as f:
                 input_data = f.read()
             
-            # 배경 제거 수행
+            # 배경 제거 수행 (지연 import)
+            from rembg import remove
             result = remove(input_data, session=session)
             
             # 알파 채널 추출 (EXIF 정보 무시하여 자동 회전 방지)
@@ -102,25 +101,25 @@ class ImageProcessor:
         except Exception as e:
             raise RuntimeError(f"합성 미리보기 생성 중 오류: {e}")
     
-    def analyze_threshold_effectiveness(self, image_path: str, threshold_range: tuple = (50, 250), step: int = 50):
+    def analyze_threshold_effectiveness(self, image_path: str, session, threshold_range: tuple = (50, 250), step: int = 50):
         """
         임계값 자동 분석 (객체/배경 비율)
-        
+
         Args:
             image_path: 분석할 이미지 경로
+            session: AI 모델 세션 (필수, 외부에서 전달)
             threshold_range: 임계값 테스트 범위 (min, max)
             step: 임계값 증가 단계
-            
+
         Returns:
             dict: 각 임계값별 분석 결과
         """
-        session = self._get_session()
         if not session:
-            raise RuntimeError("AI 모델이 준비되지 않았습니다.")
+            raise ValueError("AI 세션이 제공되지 않았습니다.")
         
         try:
             # 원본 이미지 한 번만 처리
-            session = self._get_session()
+            from rembg import remove
             with open(image_path, 'rb') as f:
                 input_data = f.read()
             result = remove(input_data, session=session)
@@ -148,15 +147,19 @@ class ImageProcessor:
         except Exception as e:
             raise RuntimeError(f"임계값 분석 중 오류: {e}")
     
-    def get_recommended_threshold(self, image_path: str) -> int:
+    def get_recommended_threshold(self, image_path: str, session) -> int:
         """
         분석 결과에서 최적 임계값 선택 (명함 기준)
-        
+
+        Args:
+            image_path: 분석할 이미지 경로
+            session: AI 모델 세션
+
         Returns:
             int: 최적 임계값
         """
         try:
-            analysis = self.analyze_threshold_effectiveness(image_path, (100, 250), 25)
+            analysis = self.analyze_threshold_effectiveness(image_path, session, (100, 250), 25)
             
             # 객체 비율이 5-40% 사이인 후보들 찾기
             candidates = []

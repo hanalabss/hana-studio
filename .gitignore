@@ -196,7 +196,8 @@ cython_debug/
 dll/
 *.exe
 release/
-release_fast/
+# Build outputs (no longer using release_fast)
+# release_fast/
 debug/
 installer_output/
 installer_final/

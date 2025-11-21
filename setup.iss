@@ -48,11 +48,12 @@ Name: "quicklaunchicon"; Description: "빠른 실행에 바로가기 만들기";
 
 [Files]
 ; 🔧 메인 실행파일 및 모든 종속 파일들 (recursesubdirs로 전체 복사)
-Source: "release_fast\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Changed from release_fast to dist/HanaStudio
+Source: "dist\HanaStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; 🔧 핵심 DLL들을 명시적으로 추가 (간단하게 처리)
-; Source: "release_fast\libDSRetransfer600App.dll"; DestDir: "{app}"; Flags: ignoreversion
-; Source: "release_fast\Retransfer600_SDKCfg.xml"; DestDir: "{app}"; Flags: ignoreversion
+; Source: "dist\HanaStudio\libDSRetransfer600App.dll"; DestDir: "{app}"; Flags: ignoreversion
+; Source: "dist\HanaStudio\Retransfer600_SDKCfg.xml"; DestDir: "{app}"; Flags: ignoreversion
 
 ; 🔧 원본 DLL 파일들도 백업으로 포함 (dll 폴더에서)
 Source: "dll\libDSRetransfer600App.dll"; DestDir: "{app}\dll"; Flags: ignoreversion skipifsourcedoesntexist

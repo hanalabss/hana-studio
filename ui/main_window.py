@@ -4,10 +4,10 @@ ui/main_window.py 수정
 """
 
 from PySide6.QtWidgets import (
-    QVBoxLayout, QHBoxLayout, QProgressBar, QWidget, 
-    QFrame, QLabel, QSplitter, QScrollArea, QTabWidget
+    QVBoxLayout, QHBoxLayout, QProgressBar, QWidget,
+    QFrame, QLabel, QSplitter, QScrollArea, QTabWidget, QApplication
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QFont
 
 from .components.image_viewer import ImageViewer, UnifiedMaskViewer, UNIFIED_VIEWER_WIDTH, UNIFIED_VIEWER_HEIGHT
@@ -94,20 +94,22 @@ class HanaStudioMainWindow:
         central_widget = QWidget()
         central_widget.setStyleSheet("background-color: #F8F9FA;")
         self.parent.setCentralWidget(central_widget)
-        
+        QApplication.processEvents()
+
         # 메인 레이아웃 (세로)
         main_layout = QVBoxLayout(central_widget)
         main_layout.setSpacing(8)
         main_layout.setContentsMargins(10, 8, 10, 8)
-        
-        # 1. 헤더
-        self.create_header(main_layout)
-        
+
+        # 1. 헤더 제거됨 - 제목표시줄에 프로그램명이 이미 표시됨
+
         # 2. 컨트롤 패널 영역 (위치 조정 패널로 교체)
         self.create_control_area_with_position(main_layout)
-        
+        QApplication.processEvents()
+
         # 3. 탭 기반 이미지 영역
         self.create_tabbed_image_area(main_layout)
+        QApplication.processEvents()
     
     def create_header(self, parent_layout):
         """헤더 생성 - 기존과 동일"""
@@ -140,80 +142,231 @@ class HanaStudioMainWindow:
         parent_layout.addWidget(header_frame)
     
     def create_control_area_with_position(self, parent_layout):
-        """위치 조정 패널이 포함된 컨트롤 영역 - 순서 조정"""
-        control_container = QFrame()
-        control_container.setFixedHeight(240)
-        control_container.setStyleSheet("""
+        """위치 조정 패널이 포함된 컨트롤 영역 - QTimer 지연 초기화"""
+        self.control_container = QFrame()
+        self.control_container.setFixedHeight(240)
+        self.control_container.setStyleSheet("""
             QFrame {
                 border: 2px solid #DEE2E6;
                 border-radius: 10px;
                 background-color: #FFFFFF;
             }
         """)
-        
+
         # 가로 레이아웃
-        control_layout = QHBoxLayout(control_container)
-        control_layout.setSpacing(20)
-        control_layout.setContentsMargins(15, 8, 15, 8)
-        
-        # 각 패널들 생성
-        self.file_panel = FileSelectionPanel()
-        self.print_mode_panel = PrintModePanel()
-        self.position_panel = PositionAdjustPanel()  # 3번째 순서로 이동
-        self.print_quantity_panel = PrintQuantityPanel()
-        self.printer_panel = PrinterPanel()
-        self.progress_panel = ProgressPanel()
-        
-        # 로그 패널은 숨김 처리 (백그라운드에서만 존재)
-        self.log_panel = LogPanel()
-        
-        # 패널들 리스트 - 순서 조정: 파일선택 → 인쇄설정 → 위치조정 → 인쇄매수 → 프린터연동 → 진행상황
-        panels = [
-            self.file_panel,           # 1. 파일 선택
-            self.print_mode_panel,     # 2. 인쇄 설정
-            self.position_panel,       # 3. 위치 조정 (새 위치)
-            self.print_quantity_panel, # 4. 인쇄 매수
-            self.printer_panel,        # 5. 프린터 연동
-            self.progress_panel        # 6. 진행 상황
-        ]
-        
-        # 각 패널별로 개별 너비 설정 - 위치 조정 패널 컴팩트화
-        panel_widths = {
-            self.file_panel: 260,
-            self.print_mode_panel: 220,
-            self.position_panel: 180,      # 컴팩트하게 줄임
-            self.print_quantity_panel: 220,
-            self.printer_panel: 220,
-            self.progress_panel: 220
-        }
-        
-        for panel in panels:
-            panel_width = panel_widths[panel]
-            panel.setFixedWidth(panel_width)
-            control_layout.addWidget(panel)
-        
-        parent_layout.addWidget(control_container)
+        self.control_layout = QHBoxLayout(self.control_container)
+        self.control_layout.setSpacing(20)
+        self.control_layout.setContentsMargins(15, 8, 15, 8)
+
+        # 패널 너비 설정 저장
+        self.panel_widths = [260, 220, 180, 220, 220, 220]
+
+        # 지연 초기화를 위한 상태 변수
+        self._panels_initialized = False
+        self._panel_init_step = 0
+
+        parent_layout.addWidget(self.control_container)
+
+    def initialize_panels_deferred(self):
+        """패널들을 QTimer로 단계별 지연 생성 - 응답없음 방지"""
+        if self._panels_initialized:
+            return
+
+        # 첫 번째 패널 생성 시작
+        self._panel_init_step = 0
+        self._create_next_panel()
+
+    def _create_next_panel(self):
+        """다음 패널 생성 (QTimer 체인)"""
+        step = self._panel_init_step
+
+        if step == 0:
+            self.file_panel = FileSelectionPanel()
+            self.file_panel.setFixedWidth(self.panel_widths[0])
+            self.control_layout.addWidget(self.file_panel)
+            print("[PANEL] 1/7 파일선택 패널 생성")
+        elif step == 1:
+            self.print_mode_panel = PrintModePanel()
+            self.print_mode_panel.setFixedWidth(self.panel_widths[1])
+            self.control_layout.addWidget(self.print_mode_panel)
+            print("[PANEL] 2/7 인쇄설정 패널 생성")
+        elif step == 2:
+            self.position_panel = PositionAdjustPanel()
+            self.position_panel.setFixedWidth(self.panel_widths[2])
+            self.control_layout.addWidget(self.position_panel)
+            print("[PANEL] 3/7 위치조정 패널 생성")
+        elif step == 3:
+            self.print_quantity_panel = PrintQuantityPanel()
+            self.print_quantity_panel.setFixedWidth(self.panel_widths[3])
+            self.control_layout.addWidget(self.print_quantity_panel)
+            print("[PANEL] 4/7 인쇄매수 패널 생성")
+        elif step == 4:
+            self.printer_panel = PrinterPanel()
+            self.printer_panel.setFixedWidth(self.panel_widths[4])
+            self.control_layout.addWidget(self.printer_panel)
+            print("[PANEL] 5/7 프린터연동 패널 생성")
+        elif step == 5:
+            self.progress_panel = ProgressPanel()
+            self.progress_panel.setFixedWidth(self.panel_widths[5])
+            self.control_layout.addWidget(self.progress_panel)
+            print("[PANEL] 6/7 진행상황 패널 생성")
+        elif step == 6:
+            # 로그 패널은 숨김 처리 (백그라운드에서만 존재)
+            self.log_panel = LogPanel()
+            print("[PANEL] 7/7 로그 패널 생성")
+            self._panels_initialized = True
+            print("[OK] 모든 패널 초기화 완료")
+            return  # 완료
+
+        # 다음 패널 생성 예약 (0ms = 이벤트 루프에 양보)
+        self._panel_init_step += 1
+        QTimer.singleShot(0, self._create_next_panel)
     
     def create_tabbed_image_area(self, parent_layout):
-        """탭 기반 이미지 뷰어 영역 - 기존과 동일"""
-        # 탭 위젯 생성
+        """탭 기반 이미지 뷰어 영역 - 지연 초기화 준비"""
+        # 탭 위젯 생성 (가벼움)
         self.image_tab_widget = ImageTabWidget()
-        
-        # 앞면 탭 생성
-        front_tab = self.create_image_tab_content(is_front=True)
-        self.image_tab_widget.addTab(front_tab, "📄 앞면")
-        
-        # 뒷면 탭 생성
-        back_tab = self.create_image_tab_content(is_front=False)
-        self.image_tab_widget.addTab(back_tab, "📄 뒷면")
-        
-        # 초기에는 뒷면 탭 숨김
-        self.image_tab_widget.set_dual_side_enabled(False)
-        
+
         # 탭 변경 시그널 연결
         self.image_tab_widget.tab_changed.connect(self._on_tab_changed)
-        
+
         parent_layout.addWidget(self.image_tab_widget, 1)
+
+        # 이미지 뷰어 초기화 상태
+        self._viewers_initialized = False
+        self._viewer_init_step = 0
+
+    def initialize_viewers_deferred(self):
+        """이미지 뷰어들을 QTimer로 단계별 지연 생성"""
+        if self._viewers_initialized:
+            return
+
+        self._viewer_init_step = 0
+        self._create_next_viewer()
+
+    def _create_next_viewer(self):
+        """다음 이미지 뷰어 생성 (QTimer 체인)"""
+        step = self._viewer_init_step
+
+        if step == 0:
+            # 앞면 탭 컨테이너 생성
+            self._front_tab = QWidget()
+            self._front_tab_layout = QVBoxLayout(self._front_tab)
+            self._front_tab_layout.setContentsMargins(20, 15, 20, 15)
+            self._front_tab_layout.setSpacing(0)
+            self.image_tab_widget.addTab(self._front_tab, "📄 앞면")
+            print("[VIEWER] 1/8 앞면 탭 생성")
+        elif step == 1:
+            # 앞면 원본 뷰어
+            self.front_original_viewer = ImageViewer("원본 이미지", enable_process_button=True)
+            print("[VIEWER] 2/8 앞면 원본 뷰어 생성")
+        elif step == 2:
+            # 앞면 통합 마스킹 뷰어
+            self.front_unified_mask_viewer = UnifiedMaskViewer("마스킹 미리보기")
+            print("[VIEWER] 3/8 앞면 마스킹 뷰어 생성")
+        elif step == 3:
+            # 앞면 수동 마스킹 뷰어
+            self.front_manual_mask_viewer = ImageViewer(
+                "수동 마스킹\n클릭하여 업로드",
+                enable_click_upload=True,
+                show_orientation_buttons=False
+            )
+            print("[VIEWER] 4/8 앞면 수동 마스킹 뷰어 생성")
+            # 앞면 탭 조립
+            self._assemble_front_tab()
+        elif step == 4:
+            # 뒷면 탭 컨테이너 생성
+            self._back_tab = QWidget()
+            self._back_tab_layout = QVBoxLayout(self._back_tab)
+            self._back_tab_layout.setContentsMargins(20, 15, 20, 15)
+            self._back_tab_layout.setSpacing(0)
+            self.image_tab_widget.addTab(self._back_tab, "📄 뒷면")
+            print("[VIEWER] 5/8 뒷면 탭 생성")
+        elif step == 5:
+            # 뒷면 원본 뷰어
+            self.back_original_viewer = ImageViewer("원본 이미지", enable_process_button=True)
+            print("[VIEWER] 6/8 뒷면 원본 뷰어 생성")
+        elif step == 6:
+            # 뒷면 통합 마스킹 뷰어
+            self.back_unified_mask_viewer = UnifiedMaskViewer("마스킹 미리보기")
+            print("[VIEWER] 7/8 뒷면 마스킹 뷰어 생성")
+        elif step == 7:
+            # 뒷면 수동 마스킹 뷰어
+            self.back_manual_mask_viewer = ImageViewer(
+                "수동 마스킹\n클릭하여 업로드",
+                enable_click_upload=True,
+                show_orientation_buttons=False
+            )
+            print("[VIEWER] 8/8 뒷면 수동 마스킹 뷰어 생성")
+            # 뒷면 탭 조립 및 완료
+            self._assemble_back_tab()
+            self.image_tab_widget.set_dual_side_enabled(False)
+            self._viewers_initialized = True
+            print("[OK] 모든 이미지 뷰어 초기화 완료")
+            return
+
+        self._viewer_init_step += 1
+        QTimer.singleShot(0, self._create_next_viewer)
+
+    def _assemble_front_tab(self):
+        """앞면 탭 레이아웃 조립"""
+        row_frame = QFrame()
+        row_frame.setStyleSheet("QFrame { background-color: transparent; border: none; }")
+        row_layout = QHBoxLayout(row_frame)
+        row_layout.setSpacing(20)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+
+        row_layout.addStretch(1)
+
+        # 스타일 적용
+        self.front_original_viewer.setStyleSheet("""
+            QWidget { background-color: #FFFFFF; border: 2px solid #DEE2E6; border-radius: 12px; }
+        """)
+        self.front_unified_mask_viewer.setStyleSheet("""
+            QWidget { background-color: #FFFFFF; border: 2px solid #28A745; border-radius: 12px; }
+        """)
+        self.front_manual_mask_viewer.setStyleSheet("""
+            QWidget { background-color: #FFFFFF; border: 2px solid #6C757D; border-radius: 12px; }
+        """)
+
+        row_layout.addWidget(self.front_original_viewer)
+        row_layout.addWidget(self.create_professional_arrow("→", "#4A90E2"))
+        row_layout.addWidget(self.front_unified_mask_viewer)
+        row_layout.addWidget(self.create_professional_arrow("←", "#28A745"))
+        row_layout.addWidget(self.front_manual_mask_viewer)
+        row_layout.addStretch(1)
+
+        self._front_tab_layout.addWidget(row_frame)
+
+    def _assemble_back_tab(self):
+        """뒷면 탭 레이아웃 조립"""
+        row_frame = QFrame()
+        row_frame.setStyleSheet("QFrame { background-color: transparent; border: none; }")
+        row_layout = QHBoxLayout(row_frame)
+        row_layout.setSpacing(20)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+
+        row_layout.addStretch(1)
+
+        # 스타일 적용
+        self.back_original_viewer.setStyleSheet("""
+            QWidget { background-color: #FFFFFF; border: 2px solid #DEE2E6; border-radius: 12px; }
+        """)
+        self.back_unified_mask_viewer.setStyleSheet("""
+            QWidget { background-color: #FFFFFF; border: 2px solid #28A745; border-radius: 12px; }
+        """)
+        self.back_manual_mask_viewer.setStyleSheet("""
+            QWidget { background-color: #FFFFFF; border: 2px solid #6C757D; border-radius: 12px; }
+        """)
+
+        row_layout.addWidget(self.back_original_viewer)
+        row_layout.addWidget(self.create_professional_arrow("→", "#4A90E2"))
+        row_layout.addWidget(self.back_unified_mask_viewer)
+        row_layout.addWidget(self.create_professional_arrow("←", "#28A745"))
+        row_layout.addWidget(self.back_manual_mask_viewer)
+        row_layout.addStretch(1)
+
+        self._back_tab_layout.addWidget(row_frame)
     
     def create_image_tab_content(self, is_front: bool) -> QWidget:
         """개별 탭 컨텐츠 생성"""

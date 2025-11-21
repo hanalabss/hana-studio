@@ -342,7 +342,7 @@ class FileManager:
             
             # 쓰기 권한 확인
             test_file = os.path.join(directory, "test_write.tmp")
-            with open(test_file, 'w') as f:
+            with open(test_file, 'w', encoding='utf-8') as f:
                 f.write("test")
             os.remove(test_file)
             

@@ -931,7 +931,6 @@ class ProgressPanel(QGroupBox):
             return "🔄 이미지 처리 중..."
         elif "인쇄 준비" in status:
             # 매수 정보만 추출
-            import re
             quantity_match = re.search(r'(\d+)장', result)
             if quantity_match:
                 return f"📋 카드 {quantity_match.group(1)}장 인쇄 준비"

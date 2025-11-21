@@ -1,9 +1,20 @@
+# Hana Studio - 최소 필수 패키지
+# GUI
 PySide6>=6.6.0
-rembg>=2.0.55
-opencv-python>=4.8.0
+
+# Image Processing
 Pillow>=10.0.0
-numpy>=1.24.0
+opencv-python>=4.8.0
+numpy>=1.24.0,<2.1.0
+
+# AI Background Removal
+rembg>=2.0.55
 onnxruntime>=1.16.0
+numba>=0.59.0,<0.60.0  # PyMatting compatibility fix
+
+# System
 cffi
-pyinstaller
 psutil>=5.9.0
+
+# Build (개발용)
+pyinstaller>=6.0.0
