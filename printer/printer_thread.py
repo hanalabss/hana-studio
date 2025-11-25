@@ -20,8 +20,8 @@ class PrinterThread(QThread):
     card_completed = Signal(int)  # 완료된 카드 번호
     
 
-    def __init__(self, dll_path: str, 
-                    front_image_path: str, 
+    def __init__(self, dll_path: str,
+                    front_image_path: str,
                     back_image_path: Optional[str] = None,
                     front_mask_path: Optional[str] = None,
                     back_mask_path: Optional[str] = None,
@@ -31,7 +31,8 @@ class PrinterThread(QThread):
                     front_orientation: str = "portrait",  # 개별 면 방향 추가
                     back_orientation: str = "portrait",   # 개별 면 방향 추가
                     adjusted_x: float = 0.0,              # 위치 조정값 추가
-                    adjusted_y: float = 0.0):             # 위치 조정값 추가
+                    adjusted_y: float = 0.0,              # 위치 조정값 추가
+                    selected_printer = None):             # 선택된 프린터 정보
             super().__init__()
             self.dll_path = dll_path
             self.front_image_path = front_image_path
@@ -45,6 +46,7 @@ class PrinterThread(QThread):
             self.back_orientation = back_orientation    # 개별 면 방향
             self.adjusted_x = adjusted_x                # 위치 조정값
             self.adjusted_y = adjusted_y                # 위치 조정값
+            self.selected_printer = selected_printer    # 선택된 프린터
             self.should_stop = False
 
     
@@ -59,17 +61,29 @@ class PrinterThread(QThread):
         
         try:
             self.progress.emit("프린터 초기화 중...")
-            printer = R600Printer(self.dll_path)
-            
+            printer = R600Printer(self.dll_path, selected_printer=self.selected_printer)
+
+            # 프린터 선택 (enum 후에 해야 안정적)
             self.progress.emit("프린터 목록 조회 중...")
             printers = printer.enum_printers()
-            
+
             if not printers:
                 self.error.emit("사용 가능한 프린터가 없습니다.")
                 return
-            
-            self.progress.emit(f"프린터 선택: {printers[0]}")
-            printer.select_printer(printers[0])
+
+            # selected_printer가 있으면 자동 선택, 없으면 첫 번째 프린터 선택
+            if self.selected_printer:
+                self.progress.emit(f"프린터 자동 선택: {self.selected_printer.name}")
+                success = printer.auto_select_printer()
+                if not success:
+                    # 자동 선택 실패 시 수동 선택으로 폴백
+                    self.progress.emit(f"⚠️ 자동 선택 실패, 수동 선택으로 전환: {printers[0]}")
+                    printer.select_printer(printers[0])
+                else:
+                    self.progress.emit(f"✅ 프린터 자동 선택 성공: {self.selected_printer.name}")
+            else:
+                self.progress.emit(f"프린터 선택: {printers[0]}")
+                printer.select_printer(printers[0])
             
             # 타임아웃 설정
             printer.set_timeout(15000)  # 15초로 증가
@@ -257,6 +271,155 @@ class MultiCardPrintManager:
             'is_printing': self.is_printing,
             'has_thread': self.current_thread is not None
         }
+
+    def generate_print_preview(self,
+                              original_path: str,
+                              mask_path: str,
+                              show_layers: bool = True):
+        """
+        레이아웃 인쇄 미리보기 생성
+
+        Args:
+            original_path: 원본 이미지 경로
+            mask_path: 마스크 이미지 경로
+            show_layers: 레이어 구조 표시 여부
+
+        Returns:
+            미리보기 이미지 (3단계 합성) or None (실패 시)
+        """
+        import numpy as np
+        import cv2
+        from core.file_manager import FileManager
+
+        try:
+            file_mgr = FileManager()
+
+            # 이미지 로드
+            original = file_mgr._safe_imread(original_path)
+            mask = file_mgr._safe_imread(mask_path)
+
+            if original is None or mask is None:
+                raise ValueError("이미지 로드 실패")
+
+            # 크기 검증
+            if original.shape[:2] != mask.shape[:2]:
+                raise ValueError(f"원본과 마스크 크기 불일치: {original.shape[:2]} vs {mask.shape[:2]}")
+
+            if not show_layers:
+                # 단순 합성
+                return self._create_simple_composite(original, mask)
+
+            # 레이어 구조 표시 (3단계)
+            h, w = original.shape[:2]
+
+            # 캔버스 생성 (가로로 3개 배치 + 설명 공간)
+            canvas_h = h + 100  # 상단 설명 공간
+            canvas_w = w * 3 + 100  # 3개 이미지 + 간격
+            canvas = np.ones((canvas_h, canvas_w, 3), dtype=np.uint8) * 255
+
+            # 1단계: 마스크 인쇄 (검은색 부분만)
+            step1 = self._create_mask_print_preview(mask)
+            canvas[100:100+h, 20:20+w] = step1
+
+            # 텍스트 중앙 정렬을 위한 계산
+            text1 = "1. Mask"
+            text1_sub = "(black only)"
+            text_size1 = cv2.getTextSize(text1, cv2.FONT_HERSHEY_SIMPLEX, 0.9, 2)[0]
+            text_size1_sub = cv2.getTextSize(text1_sub, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0]
+            text_x1 = 20 + (w - text_size1[0]) // 2
+            text_x1_sub = 20 + (w - text_size1_sub[0]) // 2
+
+            cv2.putText(canvas, text1, (text_x1, 40),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 0), 2)
+            cv2.putText(canvas, text1_sub, (text_x1_sub, 75),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (80, 80, 80), 2)
+
+            # 2단계: 원본 오버레이
+            step2 = original.copy()
+            canvas[100:100+h, 40+w:40+w+w] = step2
+
+            text2 = "2. Original"
+            text_size2 = cv2.getTextSize(text2, cv2.FONT_HERSHEY_SIMPLEX, 0.9, 2)[0]
+            text_x2 = 40 + w + (w - text_size2[0]) // 2
+
+            cv2.putText(canvas, text2, (text_x2, 40),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 0), 2)
+
+            # 3단계: 최종 결과
+            step3 = self._create_final_composite(original, mask)
+            canvas[100:100+h, 60+w*2:60+w*2+w] = step3
+
+            text3 = "3. Final Result"
+            text3_sub = "(mask + original)"
+            text_size3 = cv2.getTextSize(text3, cv2.FONT_HERSHEY_SIMPLEX, 0.9, 2)[0]
+            text_size3_sub = cv2.getTextSize(text3_sub, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0]
+            text_x3 = 60 + w*2 + (w - text_size3[0]) // 2
+            text_x3_sub = 60 + w*2 + (w - text_size3_sub[0]) // 2
+
+            cv2.putText(canvas, text3, (text_x3, 40),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 0), 2)
+            cv2.putText(canvas, text3_sub, (text_x3_sub, 75),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (80, 80, 80), 2)
+
+            return canvas
+
+        except Exception as e:
+            print(f"[ERROR] 인쇄 미리보기 생성 실패: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    def _create_mask_print_preview(self, mask):
+        """마스크 인쇄 시뮬레이션 (검은색 부분만)"""
+        import numpy as np
+        import cv2
+
+        # 흰색 배경 생성
+        white_bg = np.ones_like(mask) * 255
+
+        # 마스크의 검은색 부분만 표시
+        gray_mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+        object_mask = (gray_mask < 128)
+
+        result = white_bg.copy()
+        result[object_mask] = [0, 0, 0]  # 검은색
+
+        return result
+
+    def _create_final_composite(self, original, mask):
+        """최종 합성 이미지 (실제 인쇄 결과: W레이어 + YMC레이어)"""
+        import numpy as np
+        import cv2
+
+        # 실제 프린터 동작 (YMCW 리본):
+        # 1) W (White) 레이어 먼저 인쇄 - 마스크 검은색 부분만 흰색 베이스
+        # 2) YMC (컬러) 레이어 나중 인쇄 - 원본 이미지 전체
+        #
+        # 결과:
+        # - 마스크 검은색 영역 = W + YMC = 불투명하게 원본 색상 (100%)
+        # - 마스크 흰색 영역 = YMC만 = 반투명하게 원본 색상 (50%)
+
+        # 원본 이미지로 시작
+        result = original.copy().astype(np.float32)
+
+        # 마스크의 검은색/흰색 영역 구분
+        gray_mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+        background_mask = (gray_mask >= 128)  # 흰색 = 배경 = W 레이어 없음
+
+        # 배경 영역(W 레이어 없는 곳)은 반투명 효과
+        # 흰색 배경과 블렌딩하여 반투명 효과 시뮬레이션
+        white_bg = np.ones_like(result) * 255
+        result[background_mask] = cv2.addWeighted(
+            result[background_mask], 0.3,  # 원본 30%
+            white_bg[background_mask], 0.7,  # 흰색 배경 70%
+            0
+        )
+
+        return result.astype(np.uint8)
+
+    def _create_simple_composite(self, original, mask):
+        """단순 합성 (레이어 구조 없이)"""
+        return self._create_final_composite(original, mask)
 
 
 # 전역 인스턴스

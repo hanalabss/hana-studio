@@ -168,26 +168,109 @@ class FileManager:
             print(f"파일명 생성 실패, 랜덤 이름 사용: {random_name}")
             return random_name
     
-    def save_mask_for_printing(self, mask_image: np.ndarray, original_image_path: str, side: str = "front") -> Optional[str]:
-        """프린터용 마스크 이미지 저장 - 한글 파일명 지원"""
+    def save_mask_for_printing(self, mask_image, original_image_path: str, side: str = "front") -> Optional[str]:
+        """프린터용 마스크 이미지 저장 - 한글 파일명 지원 + 원본 크기 강제 일치
+
+        Args:
+            mask_image: numpy 배열 또는 QPixmap
+            original_image_path: 원본 이미지 경로
+            side: "front" 또는 "back"
+        """
         try:
-            # 안전한 파일명 생성
+            # === 0. QPixmap → numpy 변환 (V2 호환) ===
+            if hasattr(mask_image, 'toImage'):  # QPixmap인 경우
+                from PySide6.QtGui import QImage
+
+                qimage = mask_image.toImage()
+                qimage = qimage.convertToFormat(QImage.Format.Format_RGB888)
+
+                width = qimage.width()
+                height = qimage.height()
+                bytes_per_line = qimage.bytesPerLine()
+
+                ptr = qimage.constBits()
+                mask_image = np.array(ptr).reshape(height, bytes_per_line // 3, 3)[:, :width, :]
+                mask_image = cv2.cvtColor(mask_image, cv2.COLOR_RGB2BGR)
+
+                print(f"[MASK SAVE] QPixmap → numpy 변환 완료: {width}x{height}")
+
+            # === 1. 원본 이미지 로드하여 크기 확인 ===
+            original_image = self._safe_imread(original_image_path)
+            if original_image is None:
+                print(f"[ERROR] 원본 이미지 로드 실패: {original_image_path}")
+                print(f"[WARNING] 크기 검증 없이 마스크 저장 시도")
+                # 크기 검증 실패해도 저장은 시도
+            else:
+                orig_h, orig_w = original_image.shape[:2]
+                mask_h, mask_w = mask_image.shape[:2]
+
+                print(f"[MASK SAVE] {side} 크기 검증:")
+                print(f"[MASK SAVE]   원본: {orig_w} x {orig_h}")
+                print(f"[MASK SAVE]   마스크: {mask_w} x {mask_h}")
+
+                # === 2. 크기 불일치 시 강제 리사이즈 ===
+                if mask_h != orig_h or mask_w != orig_w:
+                    print(f"[MASK SAVE] ⚠️ 크기 불일치 감지!")
+                    print(f"[MASK SAVE] 🔧 마스크를 원본 크기로 리사이즈...")
+
+                    mask_image = cv2.resize(
+                        mask_image,
+                        (orig_w, orig_h),
+                        interpolation=cv2.INTER_LANCZOS4  # 고품질 리사이즈
+                    )
+
+                    # 리사이즈 후 크기 재확인
+                    resized_h, resized_w = mask_image.shape[:2]
+                    print(f"[MASK SAVE] ✅ 리사이즈 완료: {resized_w} x {resized_h}")
+
+                    if resized_w == orig_w and resized_h == orig_h:
+                        print(f"[MASK SAVE] ✅ 크기 일치 확인 완료!")
+                    else:
+                        print(f"[MASK SAVE] ⚠️ 리사이즈 후에도 크기 불일치")
+                else:
+                    print(f"[MASK SAVE] ✅ 크기 일치 - 검증 통과!")
+
+            # === 3. 안전한 파일명 생성 및 저장 ===
             mask_filename = self._generate_safe_filename(original_image_path, side, "mask_print")
             mask_path = os.path.join(self.temp_dir, mask_filename)
-            
+
             # 한글 경로를 지원하는 이미지 저장
             quality = config.get('output_quality', 95)
             success = self._safe_imwrite(mask_path, mask_image, quality)
-            
-            if success:
-                print(f"프린터용 {side} 마스크 저장: {mask_path}")
-                return mask_path
-            else:
-                print(f"❌ 프린터용 {side} 마스크 저장 실패")
+
+            if not success:
+                print(f"[ERROR] {side} 마스크 저장 실패")
                 return None
-            
+
+            # === 4. 저장 후 재검증 (파일 로드하여 크기 확인) ===
+            saved_mask = self._safe_imread(mask_path)
+            if saved_mask is not None:
+                saved_h, saved_w = saved_mask.shape[:2]
+                print(f"[MASK SAVE] 저장된 파일 크기: {saved_w} x {saved_h}")
+
+                # 원본 크기와 비교
+                if original_image is not None:
+                    if saved_h == orig_h and saved_w == orig_w:
+                        print(f"[MASK SAVE] ✅ 최종 검증 통과!")
+                        print(f"[MASK SAVE] 💾 저장 경로: {mask_path}")
+                        return mask_path
+                    else:
+                        print(f"[MASK SAVE] ❌ 저장된 파일 크기 불일치!")
+                        print(f"[MASK SAVE]    예상: {orig_w} x {orig_h}")
+                        print(f"[MASK SAVE]    실제: {saved_w} x {saved_h}")
+                        return None
+                else:
+                    # 원본 크기를 확인할 수 없는 경우 저장은 성공으로 처리
+                    print(f"[MASK SAVE] 💾 저장 경로: {mask_path}")
+                    return mask_path
+            else:
+                print(f"[ERROR] 저장된 마스크 재로드 실패")
+                return None
+
         except Exception as e:
-            print(f"❌ {side} 마스크 저장 실패: {e}")
+            print(f"[ERROR] {side} 마스크 저장 실패: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def export_single_result(self, original_image_path: str, mask_image: np.ndarray, 
@@ -350,10 +433,68 @@ class FileManager:
         except Exception:
             return False
 
+    def load_manual_mask(self, mask_path: str, original_path: str) -> Tuple[Optional[np.ndarray], str]:
+        """
+        수동 마스크 이미지 로드 및 검증
+
+        Args:
+            mask_path: 수동 마스크 이미지 경로
+            original_path: 원본 이미지 경로 (크기 비교용)
+
+        Returns:
+            (mask_image or None, message)
+        """
+        try:
+            # 1. 마스크 이미지 로드
+            mask_image = self._safe_imread(mask_path)
+            if mask_image is None:
+                return None, "마스크 이미지를 읽을 수 없습니다."
+
+            # 2. 원본 이미지 크기 확인
+            original_image = self._safe_imread(original_path)
+            if original_image is None:
+                return None, "원본 이미지를 읽을 수 없습니다."
+
+            orig_h, orig_w = original_image.shape[:2]
+            mask_h, mask_w = mask_image.shape[:2]
+
+            # 3. 크기 검증
+            if mask_w != orig_w or mask_h != orig_h:
+                print(f"[MANUAL MASK] 크기 불일치 감지: 원본({orig_w}x{orig_h}) vs 마스크({mask_w}x{mask_h})")
+                print(f"[MANUAL MASK] 자동 리사이즈 수행...")
+
+                mask_image = cv2.resize(
+                    mask_image,
+                    (orig_w, orig_h),
+                    interpolation=cv2.INTER_LANCZOS4
+                )
+
+                return mask_image, f"크기가 자동 조정되었습니다 ({mask_w}x{mask_h} → {orig_w}x{orig_h})"
+
+            # 4. 흑백 검증 (선택적)
+            is_grayscale = self._check_if_grayscale(mask_image)
+            if not is_grayscale:
+                print("[MANUAL MASK] 컬러 이미지 감지 - 흑백 변환 필요할 수 있음")
+                return mask_image, "컬러 마스크가 업로드되었습니다. 흰색=배경, 검은색=객체로 처리됩니다."
+
+            return mask_image, "수동 마스크가 성공적으로 로드되었습니다."
+
+        except Exception as e:
+            return None, f"마스크 로드 실패: {e}"
+
+    def _check_if_grayscale(self, image: np.ndarray) -> bool:
+        """이미지가 흑백인지 확인"""
+        if len(image.shape) == 2:
+            return True
+
+        # BGR 채널이 모두 동일한지 확인
+        b, g, r = cv2.split(image)
+        return np.array_equal(b, g) and np.array_equal(g, r)
+
     def get_saved_files_info(self, output_folder: str, base_name: str) -> List[str]:
         """저장된 파일들의 정보 반환"""
         saved_files = []
-        
+
         try:
             # 저장 폴더의 모든 파일 확인
             if os.path.exists(output_folder):
@@ -365,5 +506,5 @@ class FileManager:
                             saved_files.append(f"{file} ({file_size:.1f}KB)")
         except Exception as e:
             print(f"저장된 파일 정보 조회 실패: {e}")
-        
+
         return saved_files

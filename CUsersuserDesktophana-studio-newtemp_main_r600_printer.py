@@ -50,8 +50,9 @@ class R600Printer:
             self._initialize_library()
             self.is_initialized = True
 
-            # 선택된 프린터가 있으면 나중에 설정 (enum 후에 설정해야 안정적)
-            # auto_select_printer()는 PrinterThread에서 명시적으로 호출됨
+            # 선택된 프린터가 있으면 자동으로 설정
+            if self.selected_printer_info:
+                self.auto_select_printer()
 
         except Exception as e:
             print(f"[R600Printer] ✗ 초기화 실패: {type(e).__name__}: {e}")
@@ -387,8 +388,8 @@ class R600Printer:
                 temp_name = f"watermark_clean_{int(time.time())}.jpg"
                 temp_path = os.path.join(temp_dir, temp_name)
                 
-                # 최고품질로 저장 (손실 최소화)
-                clean_watermark.save(temp_path, 'JPEG', quality=100, subsampling=0)
+                # 고품질로 저장
+                clean_watermark.save(temp_path, 'JPEG', quality=95, optimize=True)
                 
                 print(f"  EXIF 제거된 워터마크: {temp_path}")
                 
@@ -471,8 +472,8 @@ class R600Printer:
                 suffix=".jpg"
             )
             
-            # 최고 품질로 저장 (손실 최소화)
-            cv2.imwrite(temp_path, rotated_image, [cv2.IMWRITE_JPEG_QUALITY, 100])
+            # 높은 품질로 저장
+            cv2.imwrite(temp_path, rotated_image, [cv2.IMWRITE_JPEG_QUALITY, 95])
             
             print(f"회전된 마스킹 이미지 저장: {temp_path}")
             return temp_path
@@ -540,9 +541,8 @@ class R600Printer:
                 suffix=".jpg"
             )
             
-            # 최고품질로 저장 (EXIF 정보는 저장되지 않음)
-            # quality=100으로 JPEG 압축 손실 최소화
-            clean_image.save(temp_path, 'JPEG', quality=100, subsampling=0)
+            # 고품질로 저장 (EXIF 정보는 저장되지 않음)
+            clean_image.save(temp_path, 'JPEG', quality=95, optimize=True)
             
             print(f"  회전+EXIF제거 파일: {temp_path}")
             
@@ -667,21 +667,21 @@ class R600Printer:
     def print_dual_side_card(self, front_image_path: str, back_image_path: Optional[str] = None,
                            front_watermark_path: Optional[str] = None,
                            back_watermark_path: Optional[str] = None,
-                           front_orientation: str = "portrait",
-                           back_orientation: str = "portrait",
+                           front_orientation: str = "portrait",  # 개별 면 방향 추가
+                           back_orientation: str = "portrait",   # 개별 면 방향 추가
                            print_mode: str = "normal"):
         """양면 카드 인쇄 - 개별 면 방향 지원"""
         try:
             front_orientation_text = "세로형" if front_orientation == "portrait" else "가로형"
             back_orientation_text = "세로형" if back_orientation == "portrait" else "가로형"
             print(f"=== 양면 카드 인쇄 시작: 앞면({front_orientation_text}), 뒷면({back_orientation_text}) ===")
-
+            
             # 1. 카드 삽입
             self.inject_card()
-
+            
             # 2. 리본 옵션 설정
             self.set_ribbon_option(ribbon_type=1, key=0, value="2")
-
+            
             # 3. 앞면 캔버스 준비 - 개별 방향 적용
             front_width, front_height = self.get_card_dimensions(front_orientation)
             if print_mode == "layered":
@@ -692,7 +692,7 @@ class R600Printer:
                 front_img_info = self.prepare_front_canvas(
                     front_image_path, None, front_width, front_height, front_orientation
                 )
-
+            
             # 4. 뒷면 캔버스 준비 - 개별 방향 적용
             back_width, back_height = self.get_card_dimensions(back_orientation)
             if print_mode == "layered":
@@ -703,7 +703,7 @@ class R600Printer:
                 back_img_info = self.prepare_back_canvas(
                     back_image_path, None, back_width, back_height, back_orientation
                 )
-
+            
             # 5. 양면 인쇄 실행
             print(f"양면 인쇄 실행 중: 앞면({front_orientation_text}), 뒷면({back_orientation_text})")
             ret = self.lib.R600PrintDraw(
@@ -711,18 +711,18 @@ class R600Printer:
                 back_img_info.encode('cp949') if back_img_info else ctypes.c_char_p(None)
             )
             self._check_result(ret, f"양면 인쇄 실행")
-
+            
             # 6. 인쇄 완료 대기
             time.sleep(1)
-
+            
             # 7. 카드 배출
             self.eject_card()
-
+            
             # 8. 배출 완료 대기
             time.sleep(1)
-
+            
             print(f"=== 양면 카드 인쇄 완료: 앞면({front_orientation_text}), 뒷면({back_orientation_text}) ===")
-
+            
         except R600PrinterError as e:
             print(f"양면 카드 인쇄 중 오류 발생: {e}")
             # 오류 발생 시에도 카드 배출 시도
@@ -733,19 +733,19 @@ class R600Printer:
             raise
         
     def print_single_side_card(self, image_path: str, watermark_path: Optional[str] = None,
-                             card_orientation: str = "portrait",
+                             card_orientation: str = "portrait",  # 개별 면 방향 추가
                              print_mode: str = "normal"):
         """단면 카드 인쇄 - 개별 면 방향 지원"""
         try:
             orientation_text = "세로형" if card_orientation == "portrait" else "가로형"
             print(f"=== {orientation_text} 단면 카드 인쇄 시작 ===")
-
+            
             # 1. 카드 삽입
             self.inject_card()
-
+            
             # 2. 리본 옵션 설정
             self.set_ribbon_option(ribbon_type=1, key=0, value="2")
-
+            
             # 3. 캔버스 준비 - 개별 방향 적용
             card_width, card_height = self.get_card_dimensions(card_orientation)
             if print_mode == "layered":
@@ -756,25 +756,25 @@ class R600Printer:
                 img_info = self.prepare_front_canvas(
                     image_path, None, card_width, card_height, card_orientation
                 )
-
+            
             # 4. 단면 인쇄 실행 (뒷면은 None)
             ret = self.lib.R600PrintDraw(
                 img_info.encode('cp949'),
                 ctypes.c_char_p(None)
             )
             self._check_result(ret, f"{orientation_text} 단면 인쇄 실행")
-
+            
             # 5. 인쇄 완료 대기
             time.sleep(1)
-
+            
             # 6. 카드 배출
             self.eject_card()
-
+            
             # 7. 배출 완료 대기
             time.sleep(1)
-
+            
             print(f"=== {orientation_text} 단면 카드 인쇄 완료 ===")
-
+            
         except R600PrinterError as e:
             print(f"{orientation_text} 단면 카드 인쇄 중 오류 발생: {e}")
             # 오류 발생 시에도 카드 배출 시도
@@ -809,17 +809,15 @@ class R600Printer:
             except:
                 print("[DEBUG] 카드 배출 건너뜀 (정상)")
             
-            # 2. 임시 파일 정리 (레이어 인쇄 임시 파일 포함)
+            # 2. 임시 파일 정리 (회전된 마스킹 파일 포함)
             try:
                 import tempfile
                 import glob
                 temp_dir = tempfile.gettempdir()
                 temp_files = glob.glob(os.path.join(temp_dir, "temp_watermark_*.jpg"))
                 temp_files.extend(glob.glob(os.path.join(temp_dir, "temp_image_*.jpg")))
-                temp_files.extend(glob.glob(os.path.join(temp_dir, "rotated_mask_*.jpg")))
-                temp_files.extend(glob.glob(os.path.join(temp_dir, "watermark_clean_*.jpg")))  # EXIF 제거된 워터마크
-                temp_files.extend(glob.glob(os.path.join(temp_dir, "printer_rotated_*.jpg")))  # EXIF 회전 적용된 이미지
-
+                temp_files.extend(glob.glob(os.path.join(temp_dir, "rotated_mask_*.jpg")))  # 🎯 추가
+                
                 for temp_file in temp_files:
                     try:
                         os.remove(temp_file)
