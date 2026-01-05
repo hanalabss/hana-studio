@@ -6,10 +6,21 @@ Handles license verification through Supabase RPC.
 from typing import Optional
 from dataclasses import dataclass
 
-import httpx
+from supabase import create_client, Client
 
 from .config import SUPABASE_URL, SUPABASE_KEY
 from .device import get_device_hash
+
+
+# 서버 응답 코드 → 한글 메시지 매핑
+MESSAGES = {
+    'ACTIVATED': '라이선스 활성화 완료',
+    'VERIFIED': '인증 성공',
+    'INVALID_KEY': '유효하지 않은 라이선스 키',
+    'REVOKED': '정지된 라이선스',
+    'EXPIRED': '만료된 라이선스',
+    'DEVICE_MISMATCH': '다른 PC에 등록된 라이선스입니다',
+}
 
 
 @dataclass
@@ -17,19 +28,14 @@ class LicenseResult:
     """라이선스 검증 결과"""
     success: bool
     message: str
-    error: Optional[str] = None
+    code: Optional[str] = None
 
 
 class LicenseManager:
     """라이선스 관리 클래스"""
 
     def __init__(self):
-        self._rpc_url = f"{SUPABASE_URL}/rest/v1/rpc/verify_license"
-        self._headers = {
-            "apikey": SUPABASE_KEY,
-            "Authorization": f"Bearer {SUPABASE_KEY}",
-            "Content-Type": "application/json",
-        }
+        self._client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
     def verify_license(self, license_key: str) -> LicenseResult:
         """
@@ -48,45 +54,29 @@ class LicenseManager:
             # 디바이스 해시 생성
             device_hash = get_device_hash()
 
-            # HTTP로 직접 RPC 호출
-            with httpx.Client(timeout=30.0) as client:
-                response = client.post(
-                    self._rpc_url,
-                    headers=self._headers,
-                    json={
-                        "p_license_key": license_key,
-                        "p_device_hash": device_hash
-                    }
-                )
-                response.raise_for_status()
-                data = response.json()
+            # Supabase RPC 호출
+            result = self._client.rpc('verify_license', {
+                'p_license_key': license_key,
+                'p_device_hash': device_hash
+            }).execute()
 
-            if data.get('success'):
-                return LicenseResult(
-                    success=True,
-                    message=data.get('message', '인증 성공')
-                )
-            else:
-                return LicenseResult(
-                    success=False,
-                    message=data.get('message', '인증 실패'),
-                    error=data.get('error')
-                )
+            data = result.data
+            code = data.get('code')
+            success = data.get('success', False)
+            message = MESSAGES.get(code, '알 수 없는 오류')
+
+            return LicenseResult(
+                success=success,
+                message=message,
+                code=code
+            )
 
         except RuntimeError as e:
             # 디바이스 식별자 수집 실패
             return LicenseResult(
                 success=False,
                 message='디바이스 식별 실패',
-                error=str(e)
-            )
-
-        except httpx.HTTPStatusError as e:
-            # HTTP 에러 (4xx, 5xx)
-            return LicenseResult(
-                success=False,
-                message='서버 오류',
-                error=f"HTTP {e.response.status_code}"
+                code='DEVICE_ERROR'
             )
 
         except Exception as e:
@@ -94,7 +84,7 @@ class LicenseManager:
             return LicenseResult(
                 success=False,
                 message='서버 연결 실패',
-                error=str(e)
+                code='CONNECTION_ERROR'
             )
 
 
@@ -130,7 +120,10 @@ if __name__ == "__main__":
     # 테스트용
     test_key = input("License Key: ")
     result = verify_license(test_key)
-    print(f"Success: {result.success}")
-    print(f"Message: {result.message}")
-    if result.error:
-        print(f"Error: {result.error}")
+
+    if result.success:
+        print(f"✅ {result.message}")
+    else:
+        print(f"❌ {result.message}")
+
+    print(f"Code: {result.code}")
