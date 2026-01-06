@@ -193,7 +193,6 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 # Hana Studio specific
-dll/
 *.exe
 release/
 # Build outputs (no longer using release_fast)
@@ -203,7 +202,7 @@ installer_output/
 installer_final/
 models/
 *.onnx
-*.dll
+
 *.EWL
 *.bat
 output/
