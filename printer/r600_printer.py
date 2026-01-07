@@ -410,10 +410,8 @@ class R600Printer:
                     path_encoded = temp_path.encode('cp949')
                     print(f"워터마크 임시 파일 생성: {temp_path}")
 
-        adjusted_x = x - 0  # 좌표 조정 없음
-        adjusted_y = y - 0  # 좌표 조정 없음
-
-        ret = self.lib.R600DrawWaterMark(adjusted_x, adjusted_y, width, height, path_encoded)
+        # 좌표는 상위 레벨에서 offset이 이미 적용된 상태로 전달됨
+        ret = self.lib.R600DrawWaterMark(x, y, width, height, path_encoded)
         self._check_result(ret, f"워터마크 그리기 ({image_path})")
         
     def draw_watermark_rotated(self, x: float, y: float, width: float, height: float, 
@@ -585,9 +583,8 @@ class R600Printer:
                 image_path_for_log = temp_path
                 print(f"임시 파일 생성: {temp_path}")
 
-        adjusted_x = x - 0  # 좌표 조정 없음
-        adjusted_y = y - 0  # 좌표 조정 없음
-        ret = self.lib.R600DrawImage(adjusted_x, adjusted_y, width, height, path_encoded, mode)
+        # 좌표는 상위 레벨에서 offset이 이미 적용된 상태로 전달됨
+        ret = self.lib.R600DrawImage(x, y, width, height, path_encoded, mode)
         self._check_result(ret, f"이미지 그리기 ({image_path_for_log})")
         
     def commit_canvas(self) -> str:
@@ -608,39 +605,45 @@ class R600Printer:
     
     def prepare_front_canvas(self, front_image_path: str, watermark_path: Optional[str] = None,
                            card_width: float = 55, card_height: float = 86.6,
-                           card_orientation: str = "portrait") -> str:
+                           card_orientation: str = "portrait",
+                           offset_x: float = 0.0, offset_y: float = 0.0) -> str:
         """카드 방향을 고려한 앞면 캔버스 준비"""
         print(f"=== 앞면 캔버스 준비 ({card_orientation}) ===")
-        
+        if offset_x != 0.0 or offset_y != 0.0:
+            print(f"  위치 조정: X={offset_x:+.2f}mm, Y={offset_y:+.2f}mm")
+
         # 캔버스 설정 (카드 방향 적용)
         self.setup_canvas(card_orientation)
-        
+
         # 워터마크 그리기 (레이어 모드인 경우)
         if watermark_path:
-            self.draw_watermark(0.0, 0.0, card_width, card_height, watermark_path)
-        
+            self.draw_watermark(offset_x, offset_y, card_width, card_height, watermark_path)
+
         # 앞면 이미지 그리기
-        self.draw_image(0.0, 0.0, card_width, card_height, front_image_path)
+        self.draw_image(offset_x, offset_y, card_width, card_height, front_image_path)
         
         # 캔버스 커밋
         self.front_img_info = self.commit_canvas()
         return self.front_img_info
     
-    def prepare_back_canvas(self, back_image_path: Optional[str] = None, 
+    def prepare_back_canvas(self, back_image_path: Optional[str] = None,
                           watermark_path: Optional[str] = None,
                           card_width: float = 55, card_height: float = 86.6,
-                          card_orientation: str = "portrait") -> str:
+                          card_orientation: str = "portrait",
+                          offset_x: float = 0.0, offset_y: float = 0.0) -> str:
         """카드 방향을 고려한 뒷면 캔버스 준비 - 세로형 마스킹만 추가 회전"""
         print(f"=== 뒷면 캔버스 준비 ({card_orientation}) ===")
-        
+        if offset_x != 0.0 or offset_y != 0.0:
+            print(f"  위치 조정: X={offset_x:+.2f}mm, Y={offset_y:+.2f}mm")
+
         # 캔버스 클리어 및 재설정
         self.clear_canvas()
-        
+
         # 🎯 원본 이미지 회전은 기존 로직 유지
         rotation = 0 if card_orientation == "landscape" else 180
         print(f"뒷면 회전 각도: {rotation}도 (방향: {card_orientation})")
         self.setup_canvas(card_orientation, rotation)
-        
+
         # 뒷면 이미지가 있는 경우
         if back_image_path and os.path.exists(back_image_path):
             # 🎯 워터마크(마스킹) 그리기 - 세로형일 때만 추가 180도 회전
@@ -648,14 +651,14 @@ class R600Printer:
                 if card_orientation == "portrait":
                     # 세로형: 마스킹을 180도 더 회전 (총 360도 = 0도와 동일한 효과)
                     print("세로형 뒷면: 마스킹 이미지 180도 추가 회전 적용")
-                    self.draw_watermark_rotated(0.0, 0.0, card_width, card_height, watermark_path, 180)
+                    self.draw_watermark_rotated(offset_x, offset_y, card_width, card_height, watermark_path, 180)
                 else:
                     # 가로형: 마스킹 회전 없음 (현재 상태 유지)
                     print("가로형 뒷면: 마스킹 이미지 회전 없음")
-                    self.draw_watermark(0.0, 0.0, card_width, card_height, watermark_path)
-            
+                    self.draw_watermark(offset_x, offset_y, card_width, card_height, watermark_path)
+
             # 뒷면 이미지 그리기 (기존과 동일)
-            self.draw_image(0.0, 0.0, card_width, card_height, back_image_path)
+            self.draw_image(offset_x, offset_y, card_width, card_height, back_image_path)
         else:
             # 뒷면 이미지가 없으면 빈 캔버스 또는 기본 이미지
             print("뒷면 이미지가 없습니다. 빈 뒷면으로 설정합니다.")
@@ -669,12 +672,15 @@ class R600Printer:
                            back_watermark_path: Optional[str] = None,
                            front_orientation: str = "portrait",
                            back_orientation: str = "portrait",
-                           print_mode: str = "normal"):
-        """양면 카드 인쇄 - 개별 면 방향 지원"""
+                           print_mode: str = "normal",
+                           offset_x: float = 0.0, offset_y: float = 0.0):
+        """양면 카드 인쇄 - 개별 면 방향 지원 및 위치 조정"""
         try:
             front_orientation_text = "세로형" if front_orientation == "portrait" else "가로형"
             back_orientation_text = "세로형" if back_orientation == "portrait" else "가로형"
             print(f"=== 양면 카드 인쇄 시작: 앞면({front_orientation_text}), 뒷면({back_orientation_text}) ===")
+            if offset_x != 0.0 or offset_y != 0.0:
+                print(f"  위치 조정: X={offset_x:+.2f}mm, Y={offset_y:+.2f}mm")
 
             # 1. 카드 삽입
             self.inject_card()
@@ -686,22 +692,26 @@ class R600Printer:
             front_width, front_height = self.get_card_dimensions(front_orientation)
             if print_mode == "layered":
                 front_img_info = self.prepare_front_canvas(
-                    front_image_path, front_watermark_path, front_width, front_height, front_orientation
+                    front_image_path, front_watermark_path, front_width, front_height, front_orientation,
+                    offset_x, offset_y
                 )
             else:
                 front_img_info = self.prepare_front_canvas(
-                    front_image_path, None, front_width, front_height, front_orientation
+                    front_image_path, None, front_width, front_height, front_orientation,
+                    offset_x, offset_y
                 )
 
             # 4. 뒷면 캔버스 준비 - 개별 방향 적용
             back_width, back_height = self.get_card_dimensions(back_orientation)
             if print_mode == "layered":
                 back_img_info = self.prepare_back_canvas(
-                    back_image_path, back_watermark_path, back_width, back_height, back_orientation
+                    back_image_path, back_watermark_path, back_width, back_height, back_orientation,
+                    offset_x, offset_y
                 )
             else:
                 back_img_info = self.prepare_back_canvas(
-                    back_image_path, None, back_width, back_height, back_orientation
+                    back_image_path, None, back_width, back_height, back_orientation,
+                    offset_x, offset_y
                 )
 
             # 5. 양면 인쇄 실행
@@ -734,11 +744,14 @@ class R600Printer:
         
     def print_single_side_card(self, image_path: str, watermark_path: Optional[str] = None,
                              card_orientation: str = "portrait",
-                             print_mode: str = "normal"):
-        """단면 카드 인쇄 - 개별 면 방향 지원"""
+                             print_mode: str = "normal",
+                             offset_x: float = 0.0, offset_y: float = 0.0):
+        """단면 카드 인쇄 - 개별 면 방향 지원 및 위치 조정"""
         try:
             orientation_text = "세로형" if card_orientation == "portrait" else "가로형"
             print(f"=== {orientation_text} 단면 카드 인쇄 시작 ===")
+            if offset_x != 0.0 or offset_y != 0.0:
+                print(f"  위치 조정: X={offset_x:+.2f}mm, Y={offset_y:+.2f}mm")
 
             # 1. 카드 삽입
             self.inject_card()
@@ -750,11 +763,13 @@ class R600Printer:
             card_width, card_height = self.get_card_dimensions(card_orientation)
             if print_mode == "layered":
                 img_info = self.prepare_front_canvas(
-                    image_path, watermark_path, card_width, card_height, card_orientation
+                    image_path, watermark_path, card_width, card_height, card_orientation,
+                    offset_x, offset_y
                 )
             else:
                 img_info = self.prepare_front_canvas(
-                    image_path, None, card_width, card_height, card_orientation
+                    image_path, None, card_width, card_height, card_orientation,
+                    offset_x, offset_y
                 )
 
             # 4. 단면 인쇄 실행 (뒷면은 None)

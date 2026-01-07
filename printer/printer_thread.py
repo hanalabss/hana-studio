@@ -166,7 +166,9 @@ class PrinterThread(QThread):
                     back_watermark_path=self.back_mask_path,
                     front_orientation=self.front_orientation,  # 개별 면 방향
                     back_orientation=self.back_orientation,    # 개별 면 방향
-                    print_mode="layered"
+                    print_mode="layered",
+                    offset_x=self.adjusted_x,
+                    offset_y=self.adjusted_y
                 )
             else:
                 printer.print_dual_side_card(
@@ -176,26 +178,32 @@ class PrinterThread(QThread):
                     back_watermark_path=None,
                     front_orientation=self.front_orientation,  # 개별 면 방향
                     back_orientation=self.back_orientation,    # 개별 면 방향
-                    print_mode="normal"
+                    print_mode="normal",
+                    offset_x=self.adjusted_x,
+                    offset_y=self.adjusted_y
                 )
         else:
             # 단면 인쇄 - 앞면 방향만 전달
             if self.print_mode == "layered":
                 if not self.front_mask_path:
                     raise R600PrinterError("레이어 인쇄를 위해서는 마스크 이미지가 필요합니다.")
-                
+
                 printer.print_single_side_card(
                     image_path=self.front_image_path,
                     watermark_path=self.front_mask_path,
                     card_orientation=self.front_orientation,  # 앞면 방향
-                    print_mode="layered"
+                    print_mode="layered",
+                    offset_x=self.adjusted_x,
+                    offset_y=self.adjusted_y
                 )
             else:
                 printer.print_single_side_card(
                     image_path=self.front_image_path,
                     watermark_path=None,
                     card_orientation=self.front_orientation,  # 앞면 방향
-                    print_mode="normal"
+                    print_mode="normal",
+                    offset_x=self.adjusted_x,
+                    offset_y=self.adjusted_y
                 )
                 
     def _handle_card_error(self, card_num: int, error: R600PrinterError) -> bool:
