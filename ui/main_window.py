@@ -542,7 +542,6 @@ class HanaStudioMainWindow:
             'image_tab_widget': self.image_tab_widget,
             
             # 기타
-            'progress_bar': self.progress_panel.progress_bar,
             'status_label': self.progress_panel.status_label,
             'log_text': self.log_panel.log_text
         }

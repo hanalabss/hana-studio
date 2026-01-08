@@ -54,24 +54,28 @@ class PrintTimeTracker:
         except Exception as e:
             print(f"[PrintTimeTracker] 기록 저장 실패: {e}")
 
-    def start_print(self, is_duplex: bool = False, print_mode: str = "normal"):
+    def start_print(self, is_duplex: bool = False, print_mode: str = "normal", quantity: int = 1):
         """인쇄 시작 시간 기록"""
         self._current_print_start = time.time()
         self._current_print_info = {
             'is_duplex': is_duplex,
-            'print_mode': print_mode
+            'print_mode': print_mode,
+            'quantity': quantity
         }
 
     def end_print(self, success: bool = True):
-        """인쇄 완료 - 실제 소요 시간 기록"""
+        """인쇄 완료 - 1장당 소요 시간 기록"""
         if self._current_print_start is None:
             return
 
         if success:
-            duration = time.time() - self._current_print_start
+            total_duration = time.time() - self._current_print_start
+            quantity = self._current_print_info.get('quantity', 1)
+            per_card_duration = total_duration / quantity  # 1장당 시간
+
             record = {
                 'timestamp': int(time.time()),
-                'duration': round(duration, 1),
+                'duration': round(per_card_duration, 1),  # 1장당 시간으로 저장
                 'is_duplex': self._current_print_info.get('is_duplex', False),
                 'print_mode': self._current_print_info.get('print_mode', 'normal')
             }

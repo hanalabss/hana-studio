@@ -428,12 +428,14 @@ class HanaStudio(QMainWindow):
             # 인쇄 시간 측정 시작
             print_time_tracker.start_print(
                 is_duplex=self.is_dual_side,
-                print_mode=self.print_mode
+                print_mode=self.print_mode,
+                quantity=self.print_quantity
             )
 
             # [TARGET] 진행 상황 표시 시작
             self.ui.components['progress_panel'].show_progress()
             self.ui.components['printer_panel'].set_print_enabled(False)
+            self.ui.components['print_quantity_panel'].show_print_progress(self.print_quantity)
 
             # [TARGET] 사용자 친화적 인쇄 시작 메시지
             if self.print_quantity > 1:
@@ -1410,7 +1412,10 @@ class HanaStudio(QMainWindow):
     def on_card_completed(self, card_num):
         """개별 카드 완료 - 단순화"""
         self.log(f"[OK] {card_num}번째 카드 인쇄 완료!")
-        
+
+        # 매수 진행률 업데이트
+        self.ui.components['print_quantity_panel'].update_print_progress(card_num, self.print_quantity)
+
         if card_num < self.print_quantity:
             # 사용자에게는 간단한 메시지만 표시
             self.ui.components['progress_panel'].update_status(f"[PRINTER] 카드 인쇄 중... ({card_num}/{self.print_quantity})")
@@ -1423,6 +1428,7 @@ class HanaStudio(QMainWindow):
 
         self.ui.components['progress_panel'].hide_progress()
         self.ui.components['printer_panel'].set_print_enabled(True)
+        self.ui.components['print_quantity_panel'].hide_print_progress()
 
         if success:
             # 단순한 성공 메시지
@@ -1446,7 +1452,8 @@ class HanaStudio(QMainWindow):
 
         self.ui.components['progress_panel'].hide_progress()
         self.ui.components['printer_panel'].set_print_enabled(True)
-        
+        self.ui.components['print_quantity_panel'].hide_print_progress()
+
         self.log(f"[ERROR] 프린터 오류: {error_message}")
         self.ui.components['progress_panel'].update_status("[ERROR] 인쇄 오류 발생")
         QMessageBox.critical(self, "인쇄 오류", f"카드 인쇄 중 오류가 발생했습니다:\n\n{error_message}")
