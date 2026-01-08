@@ -5,9 +5,9 @@ ui/components/control_panels.py 수정
 
 import re
 from PySide6.QtWidgets import (
-    QSizePolicy, QVBoxLayout, QHBoxLayout, QGroupBox, 
+    QSizePolicy, QVBoxLayout, QHBoxLayout, QGroupBox, QWidget,
     QLabel, QRadioButton, QButtonGroup, QProgressBar, QTextEdit, QCheckBox,
-    QDoubleSpinBox,QSpinBox,QFrame
+    QDoubleSpinBox, QSpinBox, QFrame
 )
 from PySide6.QtCore import Signal,Qt
 from .modern_button import ModernButton
@@ -595,10 +595,15 @@ class PrintModePanel(QGroupBox):
 class PrintQuantityPanel(QGroupBox):
     """인쇄 매수 선택 패널 - 통일된 컨트롤 버튼 스타일"""
     quantity_changed = Signal(int)
-    
+
     def __init__(self):
         super().__init__("[DATA] 인쇄 매수")
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+
+        # 예상 시간 계산용 상태
+        self._is_dual_side = False
+        self._print_mode = "normal"
+
         self._setup_ui()
     
     def _setup_ui(self):
@@ -713,8 +718,14 @@ class PrintQuantityPanel(QGroupBox):
         quantity_layout.addWidget(unit_label)
         quantity_layout.addStretch()
         
-        # 예상 시간 표시
-        self.time_estimate_label = QLabel("[TIME] 예상 시간: 약 30초")
+        # 예상 시간 표시 (동적 계산)
+        from printer.print_time_tracker import print_time_tracker
+        initial_time = print_time_tracker.get_estimated_time_formatted(
+            quantity=1,
+            is_duplex=self._is_dual_side,
+            print_mode=self._print_mode
+        )
+        self.time_estimate_label = QLabel(f"[TIME] 예상 시간: {initial_time}")
         self.time_estimate_label.setStyleSheet("""
             color: #6C757D; 
             font-size: 13px;
@@ -724,10 +735,50 @@ class PrintQuantityPanel(QGroupBox):
             border-radius: 4px;
         """)
         self.time_estimate_label.setWordWrap(True)
-        
+
+        # 매수 진행률 프로그레스바
+        self.quantity_progress_container = QWidget()
+        progress_layout = QHBoxLayout(self.quantity_progress_container)
+        progress_layout.setContentsMargins(0, 0, 0, 0)
+        progress_layout.setSpacing(8)
+
+        self.quantity_progress_bar = QProgressBar()
+        self.quantity_progress_bar.setFixedHeight(20)
+        self.quantity_progress_bar.setRange(0, 100)
+        self.quantity_progress_bar.setValue(0)
+        self.quantity_progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #DEE2E6;
+                border-radius: 4px;
+                background-color: #F8F9FA;
+                text-align: center;
+                font-size: 11px;
+                font-weight: 600;
+                color: #495057;
+            }
+            QProgressBar::chunk {
+                background-color: #4A90E2;
+                border-radius: 3px;
+            }
+        """)
+
+        self.quantity_progress_label = QLabel("0/1 장")
+        self.quantity_progress_label.setFixedWidth(60)
+        self.quantity_progress_label.setStyleSheet("""
+            font-size: 12px;
+            font-weight: 600;
+            color: #495057;
+        """)
+
+        progress_layout.addWidget(self.quantity_progress_bar)
+        progress_layout.addWidget(self.quantity_progress_label)
+        self.quantity_progress_container.setVisible(False)  # 초기에는 숨김
+
         layout.addLayout(quantity_layout)
         layout.addSpacing(8)  # 간격 추가
         layout.addWidget(self.time_estimate_label)
+        layout.addSpacing(4)
+        layout.addWidget(self.quantity_progress_container)
         layout.addStretch()
         
         # 시그널 연결
@@ -749,20 +800,27 @@ class PrintQuantityPanel(QGroupBox):
     
     def _on_quantity_changed(self, value):
         """매수 변경 시 예상 시간 업데이트"""
-        estimated_seconds = value * 30
-        
-        if estimated_seconds < 60:
-            time_text = f"[TIME] 예상 시간: 약 {estimated_seconds}초"
-        else:
-            minutes = estimated_seconds // 60
-            seconds = estimated_seconds % 60
-            if seconds == 0:
-                time_text = f"[TIME] 예상 시간: 약 {minutes}분"
-            else:
-                time_text = f"[TIME] 예상 시간: 약 {minutes}분 {seconds}초"
-        
-        self.time_estimate_label.setText(time_text)
+        self._update_time_estimate()
         self.quantity_changed.emit(value)
+
+    def _update_time_estimate(self):
+        """예상 시간 라벨 업데이트"""
+        from printer.print_time_tracker import print_time_tracker
+        quantity = self.quantity_spinbox.value()
+        time_str = print_time_tracker.get_estimated_time_formatted(
+            quantity=quantity,
+            is_duplex=self._is_dual_side,
+            print_mode=self._print_mode
+        )
+        self.time_estimate_label.setText(f"[TIME] 예상 시간: {time_str}")
+
+    def set_print_settings(self, is_dual_side: bool = None, print_mode: str = None):
+        """인쇄 설정 변경 시 예상 시간 업데이트"""
+        if is_dual_side is not None:
+            self._is_dual_side = is_dual_side
+        if print_mode is not None:
+            self._print_mode = print_mode
+        self._update_time_estimate()
     
     def get_quantity(self) -> int:
         """선택된 매수 반환"""
@@ -771,6 +829,23 @@ class PrintQuantityPanel(QGroupBox):
     def set_quantity(self, quantity: int):
         """매수 설정"""
         self.quantity_spinbox.setValue(quantity)
+
+    def show_print_progress(self, total: int):
+        """인쇄 진행률 표시 시작"""
+        self.quantity_progress_bar.setRange(0, 100)
+        self.quantity_progress_bar.setValue(0)
+        self.quantity_progress_label.setText(f"0/{total} 장")
+        self.quantity_progress_container.setVisible(True)
+
+    def update_print_progress(self, current: int, total: int):
+        """인쇄 진행률 업데이트"""
+        percent = int((current / total) * 100) if total > 0 else 0
+        self.quantity_progress_bar.setValue(percent)
+        self.quantity_progress_label.setText(f"{current}/{total} 장")
+
+    def hide_print_progress(self):
+        """인쇄 진행률 숨기기"""
+        self.quantity_progress_container.setVisible(False)
 
 class PrinterPanel(QGroupBox):
     """프린터 연동 패널 - 개별 면 방향 지원"""
@@ -859,11 +934,7 @@ class ProgressPanel(QGroupBox):
         layout = QVBoxLayout(self)
         layout.setSpacing(4)
         layout.setContentsMargins(8, 8, 8, 8)
-        
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setVisible(False)
-        self.progress_bar.setFixedHeight(25)
-        
+
         self.status_label = QLabel("[PAUSE] 대기 중...")
         self.status_label.setStyleSheet("""
             font-size: 14px; 
@@ -873,20 +944,19 @@ class ProgressPanel(QGroupBox):
             border-radius: 3px;
         """)
         self.status_label.setWordWrap(True)
-        
+
         # 인쇄 진행상황 표시용 라벨
         self.print_progress_label = QLabel("")
         self.print_progress_label.setStyleSheet("""
-            color: #4A90E2; 
-            font-size: 14px; 
+            color: #4A90E2;
+            font-size: 14px;
             font-weight: 600;
             padding: 4px;
             background-color: rgba(74, 144, 226, 0.1);
             border-radius: 3px;
         """)
         self.print_progress_label.setVisible(False)
-        
-        layout.addWidget(self.progress_bar)
+
         layout.addWidget(self.status_label)
         layout.addWidget(self.print_progress_label)
 
@@ -964,14 +1034,11 @@ class ProgressPanel(QGroupBox):
         return result[:30]  # 최대 30자 제한
 
     def show_progress(self, indeterminate=True):
-        """진행바 표시"""
-        if indeterminate:
-            self.progress_bar.setRange(0, 0)
-        self.progress_bar.setVisible(True)
-    
+        """진행 표시 시작"""
+        pass  # progress_bar 제거됨
+
     def hide_progress(self):
-        """진행바 숨기기"""
-        self.progress_bar.setVisible(False)
+        """진행 표시 숨기기"""
         self.print_progress_label.setVisible(False)
     
     def update_status(self, status: str):
@@ -985,9 +1052,6 @@ class ProgressPanel(QGroupBox):
         progress_text = f"📄 {current}/{total} 장"
         self.print_progress_label.setText(progress_text)
         self.print_progress_label.setVisible(True)
-        
-        self.progress_bar.setRange(0, total)
-        self.progress_bar.setValue(current)
     
     def update_print_status(self, current: int, total: int, status: str):
         """인쇄 상태와 진행률 동시 업데이트 - 단순화"""
