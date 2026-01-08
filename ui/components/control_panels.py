@@ -595,10 +595,15 @@ class PrintModePanel(QGroupBox):
 class PrintQuantityPanel(QGroupBox):
     """인쇄 매수 선택 패널 - 통일된 컨트롤 버튼 스타일"""
     quantity_changed = Signal(int)
-    
+
     def __init__(self):
         super().__init__("[DATA] 인쇄 매수")
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+
+        # 예상 시간 계산용 상태
+        self._is_dual_side = False
+        self._print_mode = "normal"
+
         self._setup_ui()
     
     def _setup_ui(self):
@@ -713,8 +718,14 @@ class PrintQuantityPanel(QGroupBox):
         quantity_layout.addWidget(unit_label)
         quantity_layout.addStretch()
         
-        # 예상 시간 표시
-        self.time_estimate_label = QLabel("[TIME] 예상 시간: 약 30초")
+        # 예상 시간 표시 (동적 계산)
+        from printer.print_time_tracker import print_time_tracker
+        initial_time = print_time_tracker.get_estimated_time_formatted(
+            quantity=1,
+            is_duplex=self._is_dual_side,
+            print_mode=self._print_mode
+        )
+        self.time_estimate_label = QLabel(f"[TIME] 예상 시간: {initial_time}")
         self.time_estimate_label.setStyleSheet("""
             color: #6C757D; 
             font-size: 13px;
@@ -749,20 +760,27 @@ class PrintQuantityPanel(QGroupBox):
     
     def _on_quantity_changed(self, value):
         """매수 변경 시 예상 시간 업데이트"""
-        estimated_seconds = value * 30
-        
-        if estimated_seconds < 60:
-            time_text = f"[TIME] 예상 시간: 약 {estimated_seconds}초"
-        else:
-            minutes = estimated_seconds // 60
-            seconds = estimated_seconds % 60
-            if seconds == 0:
-                time_text = f"[TIME] 예상 시간: 약 {minutes}분"
-            else:
-                time_text = f"[TIME] 예상 시간: 약 {minutes}분 {seconds}초"
-        
-        self.time_estimate_label.setText(time_text)
+        self._update_time_estimate()
         self.quantity_changed.emit(value)
+
+    def _update_time_estimate(self):
+        """예상 시간 라벨 업데이트"""
+        from printer.print_time_tracker import print_time_tracker
+        quantity = self.quantity_spinbox.value()
+        time_str = print_time_tracker.get_estimated_time_formatted(
+            quantity=quantity,
+            is_duplex=self._is_dual_side,
+            print_mode=self._print_mode
+        )
+        self.time_estimate_label.setText(f"[TIME] 예상 시간: {time_str}")
+
+    def set_print_settings(self, is_dual_side: bool = None, print_mode: str = None):
+        """인쇄 설정 변경 시 예상 시간 업데이트"""
+        if is_dual_side is not None:
+            self._is_dual_side = is_dual_side
+        if print_mode is not None:
+            self._print_mode = print_mode
+        self._update_time_estimate()
     
     def get_quantity(self) -> int:
         """선택된 매수 반환"""

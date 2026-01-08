@@ -423,11 +423,18 @@ class HanaStudio(QMainWindow):
         """여러장 인쇄 시작 - 위치 조정값 포함 (float)"""
         try:
             from printer.printer_thread import print_manager
-            
+            from printer.print_time_tracker import print_time_tracker
+
+            # 인쇄 시간 측정 시작
+            print_time_tracker.start_print(
+                is_duplex=self.is_dual_side,
+                print_mode=self.print_mode
+            )
+
             # [TARGET] 진행 상황 표시 시작
             self.ui.components['progress_panel'].show_progress()
             self.ui.components['printer_panel'].set_print_enabled(False)
-            
+
             # [TARGET] 사용자 친화적 인쇄 시작 메시지
             if self.print_quantity > 1:
                 self.log(f"📄 카드 {self.print_quantity}장 인쇄 시작!")
@@ -555,13 +562,14 @@ class HanaStudio(QMainWindow):
         if self.adjusted_x != 0.0 or self.adjusted_y != 0.0:
             detail_text += f"위치 조정: X{self.adjusted_x:+.1f}mm, Y{self.adjusted_y:+.1f}mm\n"
         
-        # 예상 시간 계산
-        estimated_minutes = (self.print_quantity * 30) // 60
-        estimated_seconds = (self.print_quantity * 30) % 60
-        if estimated_minutes > 0:
-            time_text = f"예상 시간: 약 {estimated_minutes}분 {estimated_seconds}초"
-        else:
-            time_text = f"예상 시간: 약 {self.print_quantity * 30}초"
+        # 예상 시간 계산 (동적)
+        from printer.print_time_tracker import print_time_tracker
+        time_str = print_time_tracker.get_estimated_time_formatted(
+            quantity=self.print_quantity,
+            is_duplex=self.is_dual_side,
+            print_mode=self.print_mode
+        )
+        time_text = f"예상 시간: {time_str}"
         
         reply = QMessageBox.question(
             self,
@@ -972,7 +980,10 @@ class HanaStudio(QMainWindow):
     def on_dual_side_toggled(self, checked):
         """양면 인쇄 토글"""
         self.is_dual_side = checked
-        
+
+        # 예상 시간 업데이트
+        self.ui.components['print_quantity_panel'].set_print_settings(is_dual_side=checked)
+
         # 파일선택 패널에 양면 상태 전달
         self.ui.components['file_panel'].set_dual_side_enabled(checked)
         
@@ -1006,11 +1017,15 @@ class HanaStudio(QMainWindow):
     def on_print_mode_changed(self, mode):
         """인쇄 모드 변경"""
         self.print_mode = mode
+
+        # 예상 시간 업데이트
+        self.ui.components['print_quantity_panel'].set_print_settings(print_mode=mode)
+
         self.ui.components['printer_panel'].update_print_button_text(
             mode, self.is_dual_side, self.print_quantity
         )
         self._update_print_button_state()
-        
+
         mode_text = '일반 인쇄' if mode == 'normal' else '레이어 인쇄(YMCW)'
         self.log(f"인쇄 모드 변경: {mode_text}")
     
@@ -1402,22 +1417,33 @@ class HanaStudio(QMainWindow):
     
     def on_printer_finished(self, success):
         """프린터 작업 완료 - 단순화"""
+        # 인쇄 시간 기록
+        from printer.print_time_tracker import print_time_tracker
+        print_time_tracker.end_print(success=success)
+
         self.ui.components['progress_panel'].hide_progress()
         self.ui.components['printer_panel'].set_print_enabled(True)
-        
+
         if success:
             # 단순한 성공 메시지
             self.log(f"[OK] 카드 {self.print_quantity}장 인쇄 완료!")
             self.ui.components['progress_panel'].update_status("[SUCCESS] 인쇄 완료!")
             QMessageBox.information(self, "성공", f"카드 {self.print_quantity}장이 완료되었습니다!")
+
+            # 예상 시간 갱신 (새 기록 반영)
+            self.ui.components['print_quantity_panel']._update_time_estimate()
         else:
             self.log(f"[ERROR] 카드 인쇄 실패")
             self.ui.components['progress_panel'].update_status("[ERROR] 인쇄 실패")
-        
+
         self._update_print_button_state()
 
     def on_printer_error(self, error_message):
         """프린터 오류 처리 - 단순화"""
+        # 인쇄 시간 기록 (실패)
+        from printer.print_time_tracker import print_time_tracker
+        print_time_tracker.end_print(success=False)
+
         self.ui.components['progress_panel'].hide_progress()
         self.ui.components['printer_panel'].set_print_enabled(True)
         
