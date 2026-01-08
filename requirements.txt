@@ -16,5 +16,8 @@ numba>=0.59.0,<0.60.0  # PyMatting compatibility fix
 cffi
 psutil>=5.9.0
 
+# Licensing (라이선스 인증)
+supabase>=2.0.0
+
 # Build (개발용)
 pyinstaller>=6.0.0
