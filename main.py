@@ -114,6 +114,14 @@ def main():
 
         print("[OK] QApplication 생성 완료")
 
+        # 라이선스 인증
+        from licensing.dialog import check_license
+        if not check_license():
+            print("[EXIT] 라이선스 인증 실패")
+            sys.exit(0)
+
+        print("[OK] 라이선스 인증 완료")
+
         # 매우 심플한 로딩 화면
         loading = QWidget()
         loading.setWindowTitle("Hana Studio")
