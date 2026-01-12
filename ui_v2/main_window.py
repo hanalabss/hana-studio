@@ -1448,3 +1448,11 @@ class HanaStudioMainWindowV2(QMainWindow):
             print(f"[ERROR] 프린터 선택 대화상자 실패: {e}")
             import traceback
             traceback.print_exc()
+
+    def closeEvent(self, event):
+        """종료 시 시그널 정리 (C++ 객체 삭제 에러 방지)"""
+        try:
+            self.canvas.scene.blockSignals(True)
+        except:
+            pass
+        event.accept()
