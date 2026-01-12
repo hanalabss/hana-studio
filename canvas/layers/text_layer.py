@@ -162,7 +162,22 @@ class TextLayer(BaseLayer):
         if not self.resize_handle_active or not self.resize_start_rect:
             return
 
+        # 핸들에서 시작한 경우 _handle_resize_with_delta 사용
+        if hasattr(self, '_resize_start_screen_pos'):
+            return
+
         delta = pos - self.resize_start_pos
+        self._apply_font_resize(delta)
+
+    def _handle_resize_with_delta(self, delta):
+        """delta 기반 크기 조절 처리 (핸들에서 호출)"""
+        if not self.resize_handle_active or not self.resize_start_rect:
+            return
+
+        self._apply_font_resize(delta)
+
+    def _apply_font_resize(self, delta):
+        """실제 폰트 크기 조절 로직"""
         handle = self.resize_handle_active
 
         # 초기 폰트 크기 저장 (처음 한 번만)
