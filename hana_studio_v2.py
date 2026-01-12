@@ -285,18 +285,15 @@ def main():
     # 종료 시 정리 등록
     atexit.register(cleanup_on_exit)
 
-    # Qt import (단일 인스턴스 확인 후)
+    # High DPI 설정 (QApplication 생성 전에 환경변수 설정)
+    os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
+    os.environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "Floor"
+
+    # Qt import
     from PySide6.QtWidgets import QApplication
-    from PySide6.QtCore import Qt
 
     # Qt 애플리케이션 생성
     app = QApplication(sys.argv)
-
-    # 고해상도 디스플레이 지원
-    app.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
-    QApplication.setHighDpiScaleFactorRoundingPolicy(
-        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
-    )
 
     # 애플리케이션 정보
     app.setOrganizationName("Hana Studio")
