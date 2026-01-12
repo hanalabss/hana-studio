@@ -279,6 +279,15 @@ class PropertyPanel(QWidget):
 
     def set_layer(self, layer):
         """선택된 레이어 설정"""
+        # 이전 레이어 시그널 연결 해제
+        if self.current_layer is not None:
+            try:
+                self.current_layer.signals.transform_changed.disconnect(
+                    self._on_layer_transform_changed
+                )
+            except (RuntimeError, TypeError):
+                pass  # 연결 안 되어 있거나 이미 해제됨
+
         self.current_layer = layer
 
         if layer is None:
@@ -319,6 +328,9 @@ class PropertyPanel(QWidget):
             self.aspect_ratio_check.setChecked(layer.keep_aspect_ratio)
             self.aspect_ratio_check.blockSignals(False)
 
+            # 레이어 변형 시 속성 패널 갱신
+            layer.signals.transform_changed.connect(self._on_layer_transform_changed)
+
         # 텍스트 레이어인 경우
         elif isinstance(layer, TextLayer):
             self.text_group.setVisible(True)
@@ -346,9 +358,40 @@ class PropertyPanel(QWidget):
             self.underline_check.blockSignals(True)
             self.underline_check.setChecked(layer.get_underline())
             self.underline_check.blockSignals(False)
+
+            # 레이어 변형 시 속성 패널 갱신
+            layer.signals.transform_changed.connect(self._on_layer_transform_changed)
         else:
             self.text_group.setVisible(False)
             self.image_group.setVisible(False)
+
+    def _on_layer_transform_changed(self):
+        """레이어 변형 시 속성 패널 갱신"""
+        if not self.current_layer:
+            return
+
+        # 위치 갱신
+        self.x_spinbox.blockSignals(True)
+        self.y_spinbox.blockSignals(True)
+        self.x_spinbox.setValue(self.current_layer.pos().x())
+        self.y_spinbox.setValue(self.current_layer.pos().y())
+        self.x_spinbox.blockSignals(False)
+        self.y_spinbox.blockSignals(False)
+
+        # 텍스트 레이어인 경우 폰트 크기 등 갱신
+        from canvas.layers import TextLayer
+        if isinstance(self.current_layer, TextLayer):
+            self.font_size_spinbox.blockSignals(True)
+            self.font_size_spinbox.setValue(self.current_layer.get_font_size())
+            self.font_size_spinbox.blockSignals(False)
+
+            self.bold_check.blockSignals(True)
+            self.bold_check.setChecked(self.current_layer.get_bold())
+            self.bold_check.blockSignals(False)
+
+            self.italic_check.blockSignals(True)
+            self.italic_check.setChecked(self.current_layer.get_italic())
+            self.italic_check.blockSignals(False)
 
     def _on_position_changed(self):
         """위치 변경"""

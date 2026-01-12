@@ -112,6 +112,7 @@ class TextLayer(BaseLayer):
         self._update_bounding_rect()
         self._update_handle_positions()
         self.update()
+        self.signals.transform_changed.emit()
 
     def get_font_size(self):
         """폰트 크기 반환"""
