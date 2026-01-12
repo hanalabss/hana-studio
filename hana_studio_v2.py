@@ -13,6 +13,41 @@ import os
 import tempfile
 from pathlib import Path
 
+
+# ============================================================
+# 안전한 로깅 시스템 (PyInstaller --windowed 모드 대응)
+# ============================================================
+
+def _setup_safe_logging():
+    """
+    PyInstaller --windowed 모드에서 안전한 로깅 설정
+
+    문제: --windowed 옵션으로 빌드하면 콘솔이 없어서
+          sys.stdout/stderr가 None이 됨 → print() 크래시
+
+    해결: 파일로 리다이렉트하여 디버깅 가능하게 유지
+    """
+    if sys.stdout is None or sys.stderr is None:
+        log_path = os.path.join(os.getcwd(), "hana_studio_v2_debug.log")
+        try:
+            log_file = open(log_path, "w", encoding="utf-8", buffering=1)
+            if sys.stdout is None:
+                sys.stdout = log_file
+            if sys.stderr is None:
+                sys.stderr = log_file
+        except Exception:
+            # 파일 생성 실패 시 devnull로 폴백
+            devnull = open(os.devnull, 'w', encoding='utf-8')
+            if sys.stdout is None:
+                sys.stdout = devnull
+            if sys.stderr is None:
+                sys.stderr = devnull
+
+
+# 모듈 로드 시 즉시 실행
+_setup_safe_logging()
+
+
 # 프로젝트 루트를 path에 추가
 sys.path.insert(0, str(Path(__file__).parent))
 
