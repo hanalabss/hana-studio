@@ -56,6 +56,14 @@ def main():
     print("=" * 60)
     print()
 
+    # 라이선스 인증
+    from licensing.dialog import check_license
+    if not check_license():
+        print("[EXIT] 라이선스 인증 실패")
+        sys.exit(0)
+
+    print("[OK] 라이선스 인증 완료")
+
     # 메인 윈도우 생성 및 표시
     window = HanaStudioMainWindowV2()
     window.show()
