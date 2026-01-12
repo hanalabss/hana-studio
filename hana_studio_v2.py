@@ -146,6 +146,98 @@ def cleanup_on_exit():
             pass
 
 
+def create_loading_screen(app):
+    """로딩 화면 생성"""
+    from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QProgressBar
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QFont
+
+    loading = QWidget()
+    loading.setWindowTitle("Hana Studio v2")
+    loading.setFixedSize(360, 160)
+    loading.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+    loading.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+    loading.setStyleSheet("""
+        QWidget {
+            background-color: #1a1a2e;
+            border-radius: 12px;
+        }
+    """)
+
+    layout = QVBoxLayout(loading)
+    layout.setContentsMargins(32, 28, 32, 28)
+    layout.setSpacing(16)
+
+    # 타이틀
+    title = QLabel("Hana Studio v2")
+    title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    title.setFont(QFont("Segoe UI", 18, QFont.Weight.DemiBold))
+    title.setStyleSheet("color: #eef1ff; background: transparent;")
+    layout.addWidget(title)
+
+    # 상태 텍스트
+    status = QLabel("시작하는 중...")
+    status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    status.setFont(QFont("Segoe UI", 10))
+    status.setStyleSheet("color: #a0a0b0; background: transparent;")
+    layout.addWidget(status)
+
+    # 프로그레스 바
+    progress = QProgressBar()
+    progress.setFixedHeight(4)
+    progress.setTextVisible(False)
+    progress.setRange(0, 100)
+    progress.setValue(0)
+    progress.setStyleSheet("""
+        QProgressBar {
+            background-color: #2a2a4e;
+            border: none;
+            border-radius: 2px;
+        }
+        QProgressBar::chunk {
+            background-color: #6c63ff;
+            border-radius: 2px;
+        }
+    """)
+    layout.addWidget(progress)
+
+    # 화면 중앙 배치
+    screen = app.primaryScreen().geometry()
+    x = (screen.width() - loading.width()) // 2
+    y = (screen.height() - loading.height()) // 2
+    loading.move(x, y)
+
+    return loading, status, progress
+
+
+def run_loading_sequence(app, loading, status, progress):
+    """단계별 로딩 실행"""
+    steps = [
+        ("NumPy 로딩...", 15, lambda: __import__('numpy')),
+        ("OpenCV 로딩...", 35, lambda: __import__('cv2')),
+        ("ONNX Runtime 로딩...", 55, lambda: __import__('onnxruntime')),
+        ("UI 모듈 로딩...", 75, lambda: __import__('ui_v2')),
+        ("메인 윈도우 준비...", 90, None),
+    ]
+
+    for msg, prog, loader in steps:
+        status.setText(msg)
+        progress.setValue(prog)
+        app.processEvents()
+
+        if loader:
+            try:
+                loader()
+                print(f"[OK] {msg.replace('...', '')}")
+            except Exception as e:
+                print(f"[WARN] {msg} 실패: {e}")
+
+        app.processEvents()
+
+    progress.setValue(100)
+    app.processEvents()
+
+
 def main():
     """메인 함수"""
     import atexit
@@ -179,24 +271,8 @@ def main():
     print("=" * 60)
     print(" Hana Studio v2 - RTAI 카드 디자인 툴")
     print("=" * 60)
-    print()
-    print("MVP 기능:")
-    print("  ✅ RTAI 규격 캔버스 (600 DPI)")
-    print("  ✅ 이미지 레이어 (드래그, 크기 조절, 회전)")
-    print("  ✅ 텍스트 레이어 (폰트, 색상, 크기)")
-    print("  ✅ Canva 스타일 UI")
-    print("  ✅ 줌/팬 기능")
-    print()
-    print("다음 단계:")
-    print("  ⬜ 600DPI 인쇄 렌더링")
-    print("  ⬜ 프린터 모듈 통합")
-    print("  ⬜ AI 배경제거 통합")
-    print("  ⬜ 템플릿/프리셋 시스템")
-    print()
-    print("=" * 60)
-    print()
 
-    # 라이선스 인증
+    # 라이선스 인증 (로딩 화면 전에)
     from licensing.dialog import check_license
     if not check_license():
         print("[EXIT] 라이선스 인증 실패")
@@ -204,10 +280,23 @@ def main():
 
     print("[OK] 라이선스 인증 완료")
 
-    # 메인 윈도우 생성 및 표시
+    # 로딩 화면 표시
+    loading, status, progress = create_loading_screen(app)
+    loading.show()
+    app.processEvents()
+
+    # 단계별 로딩
+    run_loading_sequence(app, loading, status, progress)
+
+    # 메인 윈도우 생성
     from ui_v2 import HanaStudioMainWindowV2
     window = HanaStudioMainWindowV2()
+
+    # 로딩 화면 닫고 메인 윈도우 표시
+    loading.close()
     window.show()
+
+    print("[OK] Hana Studio v2 시작 완료")
 
     # 이벤트 루프 실행
     sys.exit(app.exec())
