@@ -11,7 +11,8 @@ from .control_panels import (
     PrinterPanel,
     ProgressPanel,
     LogPanel,
-    PositionAdjustPanel  # [EMOJI] [EMOJI]
+    PositionAdjustPanel,
+    QueueListDialog
 )
 from .printer_selection_dialog import PrinterSelectionDialog, show_printer_selection_dialog
 
@@ -26,5 +27,6 @@ __all__ = [
     'LogPanel',
     'PositionAdjustPanel',
     'PrinterSelectionDialog',
-    'show_printer_selection_dialog'
+    'show_printer_selection_dialog',
+    'QueueListDialog'
 ]

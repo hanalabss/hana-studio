@@ -75,6 +75,7 @@ class LicenseDialog(QDialog):
         super().__init__(parent)
         self.verify_thread: Optional[VerifyThread] = None
         self.is_verified = False
+        self.license_result: Optional[LicenseResult] = None
 
         self._setup_dialog()
         self._setup_ui()
@@ -312,6 +313,7 @@ class LicenseDialog(QDialog):
         """인증 완료"""
         self._set_loading(False)
         self._show_status(result.success, result.message)
+        self.license_result = result
 
         if result.success:
             # 키 저장
@@ -330,13 +332,14 @@ class LicenseDialog(QDialog):
         event.accept()
 
 
-def check_license(parent=None) -> bool:
+def check_license(parent=None) -> tuple:
     """
     라이선스 확인 (앱 시작 시 호출)
 
     Returns:
-        True: 인증 성공 (앱 실행 가능)
-        False: 인증 실패 또는 취소 (앱 종료)
+        tuple: (success: bool, is_admin: bool)
+            - success: 인증 성공 여부
+            - is_admin: Admin 권한 여부
     """
     # 저장된 키 확인
     saved_key = load_license_key()
@@ -345,13 +348,13 @@ def check_license(parent=None) -> bool:
         # 자동 인증 시도
         result = verify_license(saved_key)
         if result.success:
-            return True
+            return (True, result.is_admin)
         # 실패 시 저장된 키 삭제
         clear_license_key()
 
     # 다이얼로그 표시
     dialog = LicenseDialog(parent)
     if dialog.exec() == QDialog.DialogCode.Accepted and dialog.is_verified:
-        return True
+        return (True, dialog.license_result.is_admin if dialog.license_result else False)
 
-    return False
+    return (False, False)

@@ -18,6 +18,7 @@ class PrinterThread(QThread):
     error = Signal(str)
     print_progress = Signal(int, int)  # 현재 장수, 전체 장수
     card_completed = Signal(int)  # 완료된 카드 번호
+    step_progress = Signal(int, str)  # 전체 진행률(%), 상태 메시지
     
 
     def __init__(self, dll_path: str, 
@@ -91,13 +92,16 @@ class PrinterThread(QThread):
                     break
                 
                 try:
-                    # 진행상황 시그널 발송
+                    # 인쇄 시작 전 진행상황 시그널 발송
                     self.print_progress.emit(card_num - 1, self.quantity)
-                    
+
                     # 카드별 인쇄 실행 - 개별 면 방향 전달
                     self._print_single_card(printer, card_num)
-                    
+
                     successful_prints += 1
+
+                    # 인쇄 완료 후 진행상황 업데이트
+                    self.print_progress.emit(card_num, self.quantity)
                     self.card_completed.emit(card_num)
                     
                     # 마지막 카드가 아닌 경우 잠시 대기
@@ -131,28 +135,37 @@ class PrinterThread(QThread):
                     print(f"리소스 정리 중 오류: {cleanup_error}")
                     
     def _print_single_card(self, printer: R600Printer, card_num: int):
-        """단일 카드 인쇄 - 개별 면 방향 정보 포함"""
+        """단일 카드 인쇄 - 개별 면 방향 정보 포함 + 진행률 콜백"""
         front_orientation_text = "세로형" if self.front_orientation == "portrait" else "가로형"
         back_orientation_text = "세로형" if self.back_orientation == "portrait" else "가로형"
         side_text = "양면" if self.is_dual_side else "단면"
         mode_text = "레이어" if self.print_mode == "layered" else "일반"
-        
+
         if self.is_dual_side:
             self.progress.emit(f"📄 {card_num}번째 {side_text} {mode_text} 카드 인쇄 중 (앞면:{front_orientation_text}, 뒷면:{back_orientation_text})")
         else:
             self.progress.emit(f"📄 {card_num}번째 {side_text} {mode_text} 카드 인쇄 중 (앞면:{front_orientation_text})")
-        
+
+        # 진행률 콜백 함수 생성
+        # 전체 진행률 = (완료된 카드 수 + 현재 카드 진행률/100) / 전체 카드 수 * 100
+        def progress_callback(card_progress: int, message: str):
+            completed_cards = card_num - 1  # 현재 카드는 아직 미완료
+            overall_progress = int((completed_cards + card_progress / 100) / self.quantity * 100)
+            status_message = f"[{card_num}/{self.quantity}] {message}"
+            self.step_progress.emit(overall_progress, status_message)
+
         if self.is_dual_side:
-            # 양면 인쇄 - 개별 면 방향 전달
+            # 양면 인쇄 - 개별 면 방향 전달 + 콜백
             if self.print_mode == "layered":
                 printer.print_dual_side_card(
                     front_image_path=self.front_image_path,
                     back_image_path=self.back_image_path,
                     front_watermark_path=self.front_mask_path,
                     back_watermark_path=self.back_mask_path,
-                    front_orientation=self.front_orientation,  # 개별 면 방향
-                    back_orientation=self.back_orientation,    # 개별 면 방향
-                    print_mode="layered"
+                    front_orientation=self.front_orientation,
+                    back_orientation=self.back_orientation,
+                    print_mode="layered",
+                    progress_callback=progress_callback
                 )
             else:
                 printer.print_dual_side_card(
@@ -160,28 +173,31 @@ class PrinterThread(QThread):
                     back_image_path=self.back_image_path,
                     front_watermark_path=None,
                     back_watermark_path=None,
-                    front_orientation=self.front_orientation,  # 개별 면 방향
-                    back_orientation=self.back_orientation,    # 개별 면 방향
-                    print_mode="normal"
+                    front_orientation=self.front_orientation,
+                    back_orientation=self.back_orientation,
+                    print_mode="normal",
+                    progress_callback=progress_callback
                 )
         else:
-            # 단면 인쇄 - 앞면 방향만 전달
+            # 단면 인쇄 - 앞면 방향만 전달 + 콜백
             if self.print_mode == "layered":
                 if not self.front_mask_path:
                     raise R600PrinterError("레이어 인쇄를 위해서는 마스크 이미지가 필요합니다.")
-                
+
                 printer.print_single_side_card(
                     image_path=self.front_image_path,
                     watermark_path=self.front_mask_path,
-                    card_orientation=self.front_orientation,  # 앞면 방향
-                    print_mode="layered"
+                    card_orientation=self.front_orientation,
+                    print_mode="layered",
+                    progress_callback=progress_callback
                 )
             else:
                 printer.print_single_side_card(
                     image_path=self.front_image_path,
                     watermark_path=None,
-                    card_orientation=self.front_orientation,  # 앞면 방향
-                    print_mode="normal"
+                    card_orientation=self.front_orientation,
+                    print_mode="normal",
+                    progress_callback=progress_callback
                 )
                 
     def _handle_card_error(self, card_num: int, error: R600PrinterError) -> bool:
@@ -194,20 +210,23 @@ class PrinterThread(QThread):
     
     def _handle_final_result(self, successful_prints: int):
         """최종 결과 처리 - 사용자 친화적 메시지"""
+        # 최종 진행률 100% 발송
+        self.step_progress.emit(100, "인쇄 완료")
+
         if self.should_stop:
-            self.progress.emit(f"⏹️ 인쇄 중단됨 - 완료: {successful_prints}/{self.quantity}장")
+            self.progress.emit(f"⏹️ 인쇄 중단됨 ({successful_prints}장 완료)")
             self.finished.emit(successful_prints > 0)
         elif successful_prints == self.quantity:
-            # 모든 카드 성공 - 단순화
-            self.progress.emit(f"🎉 모든 카드 인쇄 완료! ({self.quantity}장)")
+            # 모든 카드 성공
+            self.progress.emit(f"🎉 {self.quantity}장 인쇄 완료!")
             self.finished.emit(True)
         elif successful_prints > 0:
             # 일부 성공
-            self.progress.emit(f"⚠️ 일부 완료 - 성공: {successful_prints}/{self.quantity}장")
+            self.progress.emit(f"⚠️ {self.quantity}장 중 {successful_prints}장 인쇄됨")
             self.finished.emit(True)
         else:
             # 모두 실패
-            self.progress.emit("❌ 카드 인쇄 실패")
+            self.progress.emit("❌ 인쇄 실패")
             self.finished.emit(False)
 
 

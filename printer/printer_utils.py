@@ -25,25 +25,37 @@ def get_executable_dir() -> str:
 def get_default_dll_paths() -> List[str]:
     """기본 DLL 경로 목록 반환 - PyInstaller 호환"""
     base_dir = get_executable_dir()
-    
-    # PyInstaller 빌드된 경우 _internal 폴더도 확인
-    paths = [
-        os.path.join(base_dir, 'libDSRetransfer600App.dll'),
-        os.path.join(base_dir, '_internal', 'libDSRetransfer600App.dll'),
-        os.path.join(base_dir, '_internal', 'dll', 'libDSRetransfer600App.dll'),
-        os.path.join(base_dir, 'dll', 'libDSRetransfer600App.dll'),
-        os.path.join(base_dir, 'lib', 'libDSRetransfer600App.dll'),
-        config.get('printer.dll_path', os.path.join(base_dir, 'libDSRetransfer600App.dll'))
-    ]
-    
-    # 개발 환경에서도 dist 폴더 확인
-    if not getattr(sys, 'frozen', False):
-        dist_paths = [
-            os.path.join(base_dir, 'dist', 'HanaStudio', '_internal', 'libDSRetransfer600App.dll'),
-            os.path.join(base_dir, 'dist', 'HanaStudio', '_internal', 'dll', 'libDSRetransfer600App.dll')
+
+    # config 경로 처리 (상대 경로인 경우 base_dir 기준으로 변환)
+    config_dll_path = config.get('printer.dll_path', '')
+    if config_dll_path:
+        if not os.path.isabs(config_dll_path):
+            config_dll_path = os.path.join(base_dir, config_dll_path)
+
+    # PyInstaller 빌드 vs 개발 환경에 따라 검색 순서 조정
+    if getattr(sys, 'frozen', False):
+        # PyInstaller 빌드: _internal 폴더 우선
+        paths = [
+            os.path.join(base_dir, '_internal', 'dll', 'libDSRetransfer600App.dll'),
+            os.path.join(base_dir, '_internal', 'libDSRetransfer600App.dll'),
+            os.path.join(base_dir, 'dll', 'libDSRetransfer600App.dll'),
+            os.path.join(base_dir, 'libDSRetransfer600App.dll'),
         ]
-        paths.extend(dist_paths)
-    
+    else:
+        # 개발 환경: dll/ 폴더 우선
+        paths = [
+            os.path.join(base_dir, 'dll', 'libDSRetransfer600App.dll'),
+            os.path.join(base_dir, 'dist', 'HanaStudio', '_internal', 'dll', 'libDSRetransfer600App.dll'),
+            os.path.join(base_dir, 'dist', 'HanaStudio', '_internal', 'libDSRetransfer600App.dll'),
+            os.path.join(base_dir, '_internal', 'dll', 'libDSRetransfer600App.dll'),
+            os.path.join(base_dir, '_internal', 'libDSRetransfer600App.dll'),
+            os.path.join(base_dir, 'libDSRetransfer600App.dll'),
+        ]
+
+    # config 경로 추가 (유효한 경우)
+    if config_dll_path and config_dll_path not in paths:
+        paths.insert(0, config_dll_path)  # 최우선 검색
+
     return paths
 
 def find_printer_dll() -> Optional[str]:
