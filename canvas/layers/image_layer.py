@@ -78,9 +78,15 @@ class ImageLayer(BaseLayer):
         if not self.resize_handle_active or not self.resize_start_rect:
             return
 
+        # 핸들에서 시작한 경우 _handle_resize_with_delta 사용
+        if hasattr(self, '_resize_start_screen_pos'):
+            return
+
         delta = pos - self.resize_start_pos
         new_width = self.resize_start_rect.width()
         new_height = self.resize_start_rect.height()
+        dx = 0  # x 위치 변화량
+        dy = 0  # y 위치 변화량
 
         handle = self.resize_handle_active
 
@@ -89,25 +95,97 @@ class ImageLayer(BaseLayer):
             new_width = max(50, self.resize_start_rect.width() + delta.x())
         elif 'l' in handle:  # 왼쪽 (tl, bl, l)
             new_width = max(50, self.resize_start_rect.width() - delta.x())
+            dx = delta.x()  # 왼쪽으로 드래그하면 위치도 이동
 
         if 'b' in handle:  # 하단 (bl, br, b)
             new_height = max(50, self.resize_start_rect.height() + delta.y())
         elif 't' in handle:  # 상단 (tl, tr, t)
             new_height = max(50, self.resize_start_rect.height() - delta.y())
+            dy = delta.y()  # 위로 드래그하면 위치도 이동
 
         # 비율 유지
         if self.keep_aspect_ratio:
             aspect_ratio = self.pixmap.width() / self.pixmap.height()
             if abs(new_width - self.resize_start_rect.width()) > abs(new_height - self.resize_start_rect.height()):
                 new_height = new_width / aspect_ratio
+                # 상단 핸들이면 높이 변화에 따라 dy 재계산
+                if 't' in handle:
+                    dy = self.resize_start_rect.height() - new_height
             else:
                 new_width = new_height * aspect_ratio
+                # 왼쪽 핸들이면 너비 변화에 따라 dx 재계산
+                if 'l' in handle:
+                    dx = self.resize_start_rect.width() - new_width
 
         # 크기가 실제로 변경된 경우에만 업데이트
         if abs(new_width - self.image_width) > 0.5 or abs(new_height - self.image_height) > 0.5:
             self.prepareGeometryChange()
             self.image_width = new_width
             self.image_height = new_height
+
+            # 좌측/상단 핸들인 경우 위치 이동
+            if dx != 0 or dy != 0:
+                if not hasattr(self, '_resize_start_item_pos'):
+                    self._resize_start_item_pos = self.pos()
+                self.setPos(self._resize_start_item_pos.x() + dx,
+                           self._resize_start_item_pos.y() + dy)
+
+            self._update_handle_positions()
+            self.update()
+
+    def _handle_resize_with_delta(self, delta):
+        """delta 기반 크기 조절 처리 (핸들에서 호출)"""
+        if not self.resize_handle_active or not self.resize_start_rect:
+            return
+
+        start_width = self.resize_start_rect.width()
+        start_height = self.resize_start_rect.height()
+        new_width = start_width
+        new_height = start_height
+
+        handle = self.resize_handle_active
+
+        # 각 핸들에 따른 크기 조정
+        if 'r' in handle:  # 오른쪽 (tr, br, r)
+            new_width = max(50, start_width + delta.x())
+        elif 'l' in handle:  # 왼쪽 (tl, bl, l)
+            new_width = max(50, start_width - delta.x())
+
+        if 'b' in handle:  # 하단 (bl, br, b)
+            new_height = max(50, start_height + delta.y())
+        elif 't' in handle:  # 상단 (tl, tr, t)
+            new_height = max(50, start_height - delta.y())
+
+        # 비율 유지 - 핸들 위치에 따라 기준 축 고정 (튀는 현상 방지)
+        if self.keep_aspect_ratio:
+            aspect_ratio = self.pixmap.width() / self.pixmap.height()
+
+            if handle in ['t', 'b']:
+                # 상/하 핸들: height 기준으로 width 계산
+                new_width = new_height * aspect_ratio
+            else:
+                # 그 외 (l, r, tl, tr, bl, br): width 기준으로 height 계산
+                new_height = new_width / aspect_ratio
+
+        # 실제 크기 변화량으로 위치 이동량 계산 (delta가 아닌 크기 변화 기준)
+        dx = 0
+        dy = 0
+        if 'l' in handle:
+            dx = start_width - new_width  # 크기가 줄면 dx > 0 (오른쪽으로 이동)
+        if 't' in handle:
+            dy = start_height - new_height  # 크기가 줄면 dy > 0 (아래로 이동)
+
+        # 크기가 실제로 변경된 경우에만 업데이트
+        if abs(new_width - self.image_width) > 0.5 or abs(new_height - self.image_height) > 0.5:
+            self.prepareGeometryChange()
+            self.image_width = new_width
+            self.image_height = new_height
+
+            # 좌측/상단 핸들인 경우 위치 이동
+            if dx != 0 or dy != 0:
+                self.setPos(self._resize_start_item_pos.x() + dx,
+                           self._resize_start_item_pos.y() + dy)
+
             self._update_handle_positions()
             self.update()
 
@@ -158,12 +236,8 @@ class ImageLayer(BaseLayer):
 
         # 상하 반전
         if self.flip_vertical_enabled:
-            if self.flip_horizontal_enabled:
-                transform.scale(1, -1)
-                transform.translate(0, -self.original_pixmap.height())
-            else:
-                transform.scale(1, -1)
-                transform.translate(0, -self.original_pixmap.height())
+            transform.scale(1, -1)
+            transform.translate(0, -self.original_pixmap.height())
 
         # 변환 적용
         self.pixmap = self.original_pixmap.transformed(transform, Qt.TransformationMode.SmoothTransformation)
