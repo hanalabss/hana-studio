@@ -275,63 +275,88 @@ def run_loading_sequence(app, loading, status, progress):
 
 def main():
     """메인 함수"""
-    import atexit
+    try:
+        import atexit
 
-    # 단일 인스턴스 확인
-    if not check_single_instance():
-        print("[EXIT] 이미 실행 중인 Hana Studio v2가 있습니다.")
-        sys.exit(0)
+        print("[START] Hana Studio v2 시작...")
 
-    # 종료 시 정리 등록
-    atexit.register(cleanup_on_exit)
+        # 단일 인스턴스 확인
+        if not check_single_instance():
+            print("[EXIT] 이미 실행 중인 Hana Studio v2가 있습니다.")
+            sys.exit(0)
 
-    # High DPI 설정 (QApplication 생성 전에 환경변수 설정)
-    os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
-    os.environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "Floor"
+        # 종료 시 정리 등록
+        atexit.register(cleanup_on_exit)
 
-    # Qt import
-    from PySide6.QtWidgets import QApplication
+        # High DPI 설정 (QApplication 생성 전에 환경변수 설정)
+        os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
+        os.environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "Floor"
 
-    # Qt 애플리케이션 생성
-    app = QApplication(sys.argv)
+        # Qt import
+        from PySide6.QtWidgets import QApplication
 
-    # 애플리케이션 정보
-    app.setOrganizationName("Hana Studio")
-    app.setApplicationName("Hana Studio v2")
-    app.setApplicationVersion("2.0.0-MVP")
+        # Qt 애플리케이션 생성
+        app = QApplication(sys.argv)
 
-    print("=" * 60)
-    print(" Hana Studio v2 - RTAI 카드 디자인 툴")
-    print("=" * 60)
+        # 애플리케이션 정보
+        app.setOrganizationName("Hana Studio")
+        app.setApplicationName("Hana Studio v2")
+        app.setApplicationVersion("2.0.0-MVP")
 
-    # 라이선스 인증 (로딩 화면 전에)
-    from licensing.dialog import check_license
-    if not check_license():
-        print("[EXIT] 라이선스 인증 실패")
-        sys.exit(0)
+        print("=" * 60)
+        print(" Hana Studio v2 - RTAI 카드 디자인 툴")
+        print("=" * 60)
 
-    print("[OK] 라이선스 인증 완료")
+        # 라이선스 인증 (로딩 화면 전에)
+        from licensing.dialog import check_license
+        if not check_license():
+            print("[EXIT] 라이선스 인증 실패")
+            sys.exit(0)
 
-    # 로딩 화면 표시
-    loading, status, progress = create_loading_screen(app)
-    loading.show()
-    app.processEvents()
+        print("[OK] 라이선스 인증 완료")
 
-    # 단계별 로딩
-    run_loading_sequence(app, loading, status, progress)
+        # 로딩 화면 표시
+        loading, status, progress = create_loading_screen(app)
+        loading.show()
+        app.processEvents()
 
-    # 메인 윈도우 생성
-    from ui_v2 import HanaStudioMainWindowV2
-    window = HanaStudioMainWindowV2()
+        # 단계별 로딩
+        run_loading_sequence(app, loading, status, progress)
 
-    # 로딩 화면 닫고 메인 윈도우 표시
-    loading.close()
-    window.show()
+        # 메인 윈도우 생성
+        from ui_v2 import HanaStudioMainWindowV2
+        window = HanaStudioMainWindowV2()
 
-    print("[OK] Hana Studio v2 시작 완료")
+        # 로딩 화면 닫고 메인 윈도우 표시
+        loading.close()
+        window.show()
 
-    # 이벤트 루프 실행
-    sys.exit(app.exec())
+        print("[OK] Hana Studio v2 시작 완료")
+
+        # 이벤트 루프 실행
+        exit_code = app.exec()
+        print(f"[EXIT] Hana Studio v2 종료 (코드: {exit_code})")
+        sys.exit(exit_code)
+
+    except Exception as e:
+        print(f"[ERROR] 시작 오류: {e}")
+        import traceback
+        traceback.print_exc()
+
+        # 사용자 친화적 에러 다이얼로그 (Qt가 초기화된 경우)
+        try:
+            from PySide6.QtWidgets import QMessageBox, QApplication
+            if QApplication.instance():
+                QMessageBox.critical(
+                    None,
+                    "Hana Studio v2 오류",
+                    f"프로그램 시작 중 오류가 발생했습니다.\n\n{e}\n\n"
+                    "자세한 내용은 hana_studio_v2_debug.log를 확인해주세요."
+                )
+        except:
+            pass
+
+        sys.exit(1)
 
 
 if __name__ == "__main__":
