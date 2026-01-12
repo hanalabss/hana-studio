@@ -5,11 +5,12 @@ ui/components/control_panels.py 수정
 
 import re
 from PySide6.QtWidgets import (
-    QSizePolicy, QVBoxLayout, QHBoxLayout, QGroupBox, 
+    QSizePolicy, QVBoxLayout, QHBoxLayout, QGroupBox,
     QLabel, QRadioButton, QButtonGroup, QProgressBar, QTextEdit, QCheckBox,
-    QDoubleSpinBox,QSpinBox,QFrame
+    QDoubleSpinBox, QSpinBox, QFrame, QDialog, QTableWidget, QTableWidgetItem,
+    QHeaderView, QPushButton
 )
-from PySide6.QtCore import Signal,Qt
+from PySide6.QtCore import Signal, Qt
 from .modern_button import ModernButton
 
 
@@ -34,15 +35,15 @@ class PositionAdjustPanel(QGroupBox):
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(25)  # 8 → 12로 증가 (세로 간격)
-        layout.setContentsMargins(8, 16, 8, 12)  # 상단 여백 12 → 16으로 증가
-        
+        layout.setSpacing(8)
+        layout.setContentsMargins(8, 12, 8, 12)  # 상하 여백 동일
+
         # X축 조정
         x_layout = QHBoxLayout()
         x_layout.setSpacing(5)
         x_layout.setContentsMargins(0, 0, 0, 0)
         
-        x_label = QLabel("[X] X:")
+        x_label = QLabel("X")
         x_label.setFixedWidth(32)
         x_label.setStyleSheet("""
             QLabel {
@@ -82,6 +83,7 @@ class PositionAdjustPanel(QGroupBox):
         self.x_spinbox.setSingleStep(0.01)
         self.x_spinbox.setDecimals(2)
         self.x_spinbox.setFixedSize(62, 24)
+        self.x_spinbox.setAlignment(Qt.AlignCenter)  # 가운데 정렬
         self.x_spinbox.setStyleSheet("""
             QDoubleSpinBox {
                 background-color: #FFFFFF;
@@ -152,7 +154,7 @@ class PositionAdjustPanel(QGroupBox):
         y_layout.setSpacing(5)
         y_layout.setContentsMargins(0, 0, 0, 0)
         
-        y_label = QLabel("[Y] Y:")
+        y_label = QLabel("Y")
         y_label.setFixedWidth(32)
         y_label.setStyleSheet("""
             QLabel {
@@ -192,6 +194,7 @@ class PositionAdjustPanel(QGroupBox):
         self.y_spinbox.setSingleStep(0.01)
         self.y_spinbox.setDecimals(2)
         self.y_spinbox.setFixedSize(62, 24)
+        self.y_spinbox.setAlignment(Qt.AlignCenter)  # 가운데 정렬
         self.y_spinbox.setStyleSheet("""
             QDoubleSpinBox {
                 background-color: #FFFFFF;
@@ -259,7 +262,7 @@ class PositionAdjustPanel(QGroupBox):
         
         # 리셋 버튼 - 여백 추가
         reset_container = QHBoxLayout()
-        reset_container.setContentsMargins(0, 8, 0, 0)  # 상단 여백 4 → 8로 증가
+        reset_container.setContentsMargins(0, 0, 0, 0)
         
         self.reset_btn = ModernButton("초기화")
         self.reset_btn.setFixedHeight(42)
@@ -287,13 +290,10 @@ class PositionAdjustPanel(QGroupBox):
         reset_container.addWidget(self.reset_btn)
         reset_container.addStretch()
         
-        # 레이아웃에 추가 - 여백 조정
+        # 레이아웃에 추가
         layout.addLayout(x_layout)
-        layout.addSpacing(8)  # X, Y축 사이 추가 여백 4 → 8로 증가
         layout.addLayout(y_layout)
-        layout.addSpacing(10)  # Y축과 리셋 버튼 사이 여백 6 → 10으로 증가
         layout.addLayout(reset_container)
-        layout.addStretch()
         
         # 시그널 연결
         self.x_spinbox.valueChanged.connect(self._on_x_changed)
@@ -358,9 +358,9 @@ class FileSelectionPanel(QGroupBox):
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(5)
-        layout.setContentsMargins(6, 6, 6, 6)
-        
+        layout.setSpacing(8)
+        layout.setContentsMargins(8, 12, 8, 12)  # 상하 여백 동일
+
         # 앞면 이미지 선택
         self.front_btn = ModernButton("앞면 이미지 선택", primary=True)
         self.front_btn.setFixedHeight(35)
@@ -440,8 +440,8 @@ class PrintModePanel(QGroupBox):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
-        layout.setContentsMargins(8, 8, 8, 8)
-        
+        layout.setContentsMargins(8, 12, 8, 12)  # 상하 여백 동일
+
         # 양면 인쇄 체크박스
         self.dual_side_check = QCheckBox("양면 인쇄 사용")
         self.dual_side_check.setStyleSheet("""
@@ -507,7 +507,7 @@ class PrintModePanel(QGroupBox):
         """)
         
         # 라디오 버튼들
-        self.normal_radio = QRadioButton("[PRINTER] 일반")
+        self.normal_radio = QRadioButton("🖨️ 일반")
         self.layered_radio = QRadioButton("🎭 레이어(YMCW)")
         self.normal_radio.setChecked(True)
         
@@ -593,25 +593,26 @@ class PrintModePanel(QGroupBox):
 
 
 class PrintQuantityPanel(QGroupBox):
-    """인쇄 매수 선택 패널 - 통일된 컨트롤 버튼 스타일"""
+    """인쇄 매수 선택 패널 + 인쇄 버튼 통합"""
     quantity_changed = Signal(int)
-    
+    print_requested = Signal()  # 인쇄 버튼 시그널 추가
+
     def __init__(self):
-        super().__init__("[DATA] 인쇄 매수")
+        super().__init__("📊 인쇄")
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         self._setup_ui()
-    
+
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
-        layout.setContentsMargins(8, 16, 8, 12)
-        
-        # 매수 선택 영역 - 위치 조정 패널과 동일한 스타일
+        layout.setContentsMargins(8, 12, 8, 12)  # 상하 여백 동일
+
+        # 매수 선택 영역
         quantity_layout = QHBoxLayout()
         quantity_layout.setSpacing(5)
         quantity_layout.setContentsMargins(0, 0, 0, 0)
-        
-        quantity_label = QLabel("📄 매수:")
+
+        quantity_label = QLabel("📄 매수")
         quantity_label.setFixedWidth(52)
         quantity_label.setStyleSheet("""
             QLabel {
@@ -622,8 +623,8 @@ class PrintQuantityPanel(QGroupBox):
                 color: #495057;
             }
         """)
-        
-        # 감소 버튼 - 위치 조정과 동일한 스타일
+
+        # 감소 버튼
         self.minus_btn = ModernButton("-")
         self.minus_btn.setFixedSize(24, 24)
         self.minus_btn.setStyleSheet("""
@@ -635,34 +636,28 @@ class PrintQuantityPanel(QGroupBox):
                 font-size: 13px;
                 font-weight: bold;
             }
-            QPushButton:hover {
-                background-color: #C82333;
-            }
-            QPushButton:pressed {
-                background-color: #A71E2A;
-            }
+            QPushButton:hover { background-color: #C82333; }
+            QPushButton:pressed { background-color: #A71E2A; }
         """)
-        
-        # 매수 SpinBox - 위치 조정과 동일한 스타일
+
+        # 매수 SpinBox
         self.quantity_spinbox = QSpinBox()
         self.quantity_spinbox.setMinimum(1)
         self.quantity_spinbox.setMaximum(99999)
         self.quantity_spinbox.setValue(1)
         self.quantity_spinbox.setFixedSize(62, 24)
+        self.quantity_spinbox.setAlignment(Qt.AlignCenter)  # 가운데 정렬
         self.quantity_spinbox.setStyleSheet("""
             QSpinBox {
                 background-color: #FFFFFF;
                 border: 1px solid #DEE2E6;
                 border-radius: 4px;
-                padding: 2px 4px;
-                font-size: 11px;
-                color: #495057;
-                font-weight: 600;
+                padding: 2px 2px;
+                font-size: 13px;
+                color: #333333;
+                font-weight: 700;
             }
-            QSpinBox:focus {
-                border-color: #4A90E2;
-                border-width: 2px;
-            }
+            QSpinBox:focus { border-color: #4A90E2; border-width: 2px; }
             QSpinBox::up-button, QSpinBox::down-button {
                 width: 14px;
                 border: none;
@@ -672,8 +667,8 @@ class PrintQuantityPanel(QGroupBox):
                 background-color: #E9ECEF;
             }
         """)
-        
-        # 증가 버튼 - 위치 조정과 동일한 스타일
+
+        # 증가 버튼
         self.plus_btn = ModernButton("+")
         self.plus_btn.setFixedSize(24, 24)
         self.plus_btn.setStyleSheet("""
@@ -685,14 +680,10 @@ class PrintQuantityPanel(QGroupBox):
                 font-size: 13px;
                 font-weight: bold;
             }
-            QPushButton:hover {
-                background-color: #218838;
-            }
-            QPushButton:pressed {
-                background-color: #1E7E34;
-            }
+            QPushButton:hover { background-color: #218838; }
+            QPushButton:pressed { background-color: #1E7E34; }
         """)
-        
+
         # 단위 라벨
         unit_label = QLabel("장")
         unit_label.setFixedWidth(20)
@@ -705,35 +696,27 @@ class PrintQuantityPanel(QGroupBox):
                 font-weight: 500;
             }
         """)
-        
+
         quantity_layout.addWidget(quantity_label)
         quantity_layout.addWidget(self.minus_btn)
         quantity_layout.addWidget(self.quantity_spinbox)
         quantity_layout.addWidget(self.plus_btn)
         quantity_layout.addWidget(unit_label)
         quantity_layout.addStretch()
-        
-        # 예상 시간 표시
-        self.time_estimate_label = QLabel("[TIME] 예상 시간: 약 30초")
-        self.time_estimate_label.setStyleSheet("""
-            color: #6C757D; 
-            font-size: 13px;
-            padding: 6px;
-            background-color: #F8F9FA;
-            border-left: 3px solid #28A745;
-            border-radius: 4px;
-        """)
-        self.time_estimate_label.setWordWrap(True)
-        
+
+        # 인쇄 버튼 (PrinterPanel에서 이동)
+        self.print_card_btn = ModernButton("카드 인쇄", primary=True)
+        self.print_card_btn.setEnabled(False)
+        self.print_card_btn.setFixedHeight(45)
+
         layout.addLayout(quantity_layout)
-        layout.addSpacing(8)  # 간격 추가
-        layout.addWidget(self.time_estimate_label)
-        layout.addStretch()
-        
+        layout.addWidget(self.print_card_btn)
+
         # 시그널 연결
         self.quantity_spinbox.valueChanged.connect(self._on_quantity_changed)
         self.minus_btn.clicked.connect(self._decrease_quantity)
         self.plus_btn.clicked.connect(self._increase_quantity)
+        self.print_card_btn.clicked.connect(self.print_requested.emit)
     
     def _decrease_quantity(self):
         """매수 감소"""
@@ -748,147 +731,175 @@ class PrintQuantityPanel(QGroupBox):
             self.quantity_spinbox.setValue(current_value + 1)
     
     def _on_quantity_changed(self, value):
-        """매수 변경 시 예상 시간 업데이트"""
-        estimated_seconds = value * 30
-        
-        if estimated_seconds < 60:
-            time_text = f"[TIME] 예상 시간: 약 {estimated_seconds}초"
-        else:
-            minutes = estimated_seconds // 60
-            seconds = estimated_seconds % 60
-            if seconds == 0:
-                time_text = f"[TIME] 예상 시간: 약 {minutes}분"
-            else:
-                time_text = f"[TIME] 예상 시간: 약 {minutes}분 {seconds}초"
-        
-        self.time_estimate_label.setText(time_text)
+        """매수 변경 시 시그널 발송"""
         self.quantity_changed.emit(value)
     
     def get_quantity(self) -> int:
         """선택된 매수 반환"""
         return self.quantity_spinbox.value()
-    
+
     def set_quantity(self, quantity: int):
         """매수 설정"""
         self.quantity_spinbox.setValue(quantity)
 
-class PrinterPanel(QGroupBox):
-    """프린터 연동 패널 - 개별 면 방향 지원"""
-    test_requested = Signal()
-    print_requested = Signal()
-    
-    def __init__(self):
-        super().__init__("[PRINTER] 프린터 연동")
-        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
-        self._setup_ui()
-    
-    def _setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(5)
-        layout.setContentsMargins(8, 8, 8, 8)
-        
-        # 상태 라벨
-        self.printer_status_label = QLabel("프린터 상태 확인 중...")
-        self.printer_status_label.setStyleSheet("""
-            font-size: 14px; 
-            color: #6C757D;
-            padding: 4px;
-            background-color: #F8F9FA;
-            border-radius: 3px;
-        """)
-        self.printer_status_label.setWordWrap(True)
-        
-        # 버튼들
-        self.test_printer_btn = ModernButton("프린터 연결 테스트")
-        self.test_printer_btn.setFixedHeight(45)
-        
-        # 기본 버튼 텍스트 단순화
-        self.print_card_btn = ModernButton("카드 인쇄", primary=True)
-        self.print_card_btn.setEnabled(False)
-        self.print_card_btn.setFixedHeight(50)
-        
-        layout.addWidget(self.printer_status_label)
-        layout.addWidget(self.test_printer_btn)
-        layout.addWidget(self.print_card_btn)
-        
-        # 신호 연결
-        self.test_printer_btn.clicked.connect(self.test_requested.emit)
-        self.print_card_btn.clicked.connect(self.print_requested.emit)
-    
-    def update_status(self, status: str):
-        """프린터 상태 업데이트"""
-        truncated_status = truncate_text(status, 40)
-        self.printer_status_label.setText(truncated_status)
-    
-    def set_test_enabled(self, enabled: bool):
-        """테스트 버튼 활성화/비활성화"""
-        self.test_printer_btn.setEnabled(enabled)
-    
     def set_print_enabled(self, enabled: bool):
         """인쇄 버튼 활성화/비활성화"""
         self.print_card_btn.setEnabled(enabled)
-    
+
     def update_print_button_text(self, mode: str, is_dual: bool = False, quantity: int = 1, orientation: str = "portrait"):
-        """인쇄 버튼 텍스트 업데이트 - 개별 면 방향이므로 단순화"""
-        # 인쇄 모드 텍스트
+        """인쇄 버튼 텍스트 업데이트"""
         if mode == "normal":
             base_text = "양면 일반 인쇄" if is_dual else "단면 일반 인쇄"
         else:
             base_text = "양면 레이어 인쇄" if is_dual else "단면 레이어 인쇄"
-        
-        # 매수 추가
+
         if quantity > 1:
             text = f"{base_text} ({quantity}장)"
         else:
             text = base_text
-        
-        # 텍스트 길이 제한
+
         text = truncate_text(text, 20)
         self.print_card_btn.setText(text)
 
 
-class ProgressPanel(QGroupBox):
-    """진행 상황 패널"""
-    
+class PrinterPanel(QGroupBox):
+    """프린터 연동 패널 - 상태 및 테스트만"""
+    test_requested = Signal()
+
     def __init__(self):
-        super().__init__("[DATA] 진행 상황")
+        super().__init__("🖨️ 프린터 연동")
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         self._setup_ui()
-    
+
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(4)
-        layout.setContentsMargins(8, 8, 8, 8)
-        
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setVisible(False)
-        self.progress_bar.setFixedHeight(25)
-        
-        self.status_label = QLabel("[PAUSE] 대기 중...")
-        self.status_label.setStyleSheet("""
-            font-size: 14px; 
-            color: #495057;
-            padding: 4px;
+        layout.setSpacing(12)
+        layout.setContentsMargins(8, 12, 8, 12)  # 상하 여백 동일
+
+        # 상태 라벨
+        self.printer_status_label = QLabel("프린터 상태 확인 중...")
+        self.printer_status_label.setStyleSheet("""
+            font-size: 13px;
+            color: #6C757D;
+            padding: 6px 8px;
             background-color: #F8F9FA;
-            border-radius: 3px;
+            border-radius: 4px;
+        """)
+        self.printer_status_label.setWordWrap(True)
+
+        # 테스트 버튼
+        self.test_printer_btn = ModernButton("프린터 연결 테스트")
+        self.test_printer_btn.setFixedHeight(40)
+
+        layout.addWidget(self.printer_status_label)
+        layout.addWidget(self.test_printer_btn)
+
+        # 신호 연결
+        self.test_printer_btn.clicked.connect(self.test_requested.emit)
+
+    def update_status(self, status: str):
+        """프린터 상태 업데이트"""
+        truncated_status = truncate_text(status, 40)
+        self.printer_status_label.setText(truncated_status)
+
+    def set_test_enabled(self, enabled: bool):
+        """테스트 버튼 활성화/비활성화"""
+        self.test_printer_btn.setEnabled(enabled)
+
+
+class ProgressPanel(QGroupBox):
+    """진행 상황 패널 - 현대적 UI 스타일"""
+
+    def __init__(self):
+        super().__init__("진행 상황")
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(8)
+        layout.setContentsMargins(8, 12, 8, 12)  # 상하 여백 동일
+
+        # 진행바 + 퍼센트 가로 배치
+        progress_row = QHBoxLayout()
+        progress_row.setSpacing(8)
+        progress_row.setContentsMargins(0, 0, 0, 0)
+
+        # 얇은 진행바 (8px) - 항상 표시
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setFixedHeight(8)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: none;
+                border-radius: 4px;
+                background-color: #E9ECEF;
+            }
+            QProgressBar::chunk {
+                border-radius: 4px;
+                background-color: #4A90E2;
+            }
+        """)
+
+        # 퍼센트 라벨 (진행바 오른쪽에 표시) - 항상 표시, 테두리 없음
+        self.percent_label = QLabel("0%")
+        self.percent_label.setFixedSize(32, 16)
+        self.percent_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.percent_label.setStyleSheet("""
+            QLabel {
+                font-size: 11px;
+                font-weight: 600;
+                color: #4A90E2;
+                background: transparent;
+                border: none;
+                padding: 0px;
+                margin: 0px;
+            }
+        """)
+
+        progress_row.addWidget(self.progress_bar, 1)  # 진행바가 늘어남
+        progress_row.addWidget(self.percent_label)
+
+        # 통합 상태 라벨 (상태 + 매수 정보)
+        self.status_label = QLabel("⏸️ 대기 중...")
+        self.status_label.setStyleSheet("""
+            font-size: 13px;
+            color: #495057;
+            padding: 6px 8px;
+            background-color: #F8F9FA;
+            border-radius: 4px;
         """)
         self.status_label.setWordWrap(True)
-        
-        # 인쇄 진행상황 표시용 라벨
-        self.print_progress_label = QLabel("")
-        self.print_progress_label.setStyleSheet("""
-            color: #4A90E2; 
-            font-size: 14px; 
-            font-weight: 600;
-            padding: 4px;
-            background-color: rgba(74, 144, 226, 0.1);
-            border-radius: 3px;
+
+        # 대기열 보기 버튼 (하단 배치)
+        self.queue_btn = QPushButton("📋 대기열 보기")
+        self.queue_btn.setToolTip("인쇄 대기열 목록 보기")
+        self.queue_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #E9ECEF;
+                border: none;
+                border-radius: 4px;
+                padding: 8px 12px;
+                font-size: 12px;
+                color: #495057;
+            }
+            QPushButton:hover {
+                background-color: #DEE2E6;
+            }
+            QPushButton:pressed {
+                background-color: #CED4DA;
+            }
         """)
+
+        # 레거시 호환용 (기존 코드와의 호환성)
+        self.print_progress_label = QLabel("")
         self.print_progress_label.setVisible(False)
-        
-        layout.addWidget(self.progress_bar)
+
+        layout.addLayout(progress_row)
         layout.addWidget(self.status_label)
-        layout.addWidget(self.print_progress_label)
+        layout.addWidget(self.queue_btn)
 
     def _get_user_friendly_status(self, technical_status: str) -> str:
         """사용자 친화적 상태 메시지로 변환"""
@@ -937,20 +948,20 @@ class ProgressPanel(QGroupBox):
             else:
                 return "📋 카드 인쇄 준비"
         elif "인쇄 진행" in status or "인쇄 중" in status:
-            return "[PRINTER] 카드 인쇄 중..."
+            return "🖨️ 카드 인쇄 중..."
         elif "인쇄 완료" in status or "완료" in status:
-            return "[OK] 인쇄 완료!"
+            return "✅ 인쇄 완료!"
         elif "실패" in status or "오류" in status:
             return "❌ 작업 실패"
         elif "테스트" in status:
             if "성공" in status:
-                return "[OK] 프린터 연결 확인됨"
+                return "✅ 프린터 연결 확인됨"
             elif "실패" in status:
                 return "❌ 프린터 연결 실패"
             else:
-                return "[SEARCH] 프린터 확인 중..."
+                return "🔍 프린터 확인 중..."
         elif "대기" in status:
-            return "[PAUSE] 대기 중..."
+            return "⏸️ 대기 중..."
         
         # 🎯 괄호와 상세 정보 제거
         result = re.sub(r'\(.*?\)', '', result)  # 모든 괄호 내용 제거
@@ -959,40 +970,53 @@ class ProgressPanel(QGroupBox):
         
         # 빈 문자열이면 기본값 반환
         if not result or len(result.strip()) < 3:
-            return "[CONFIG] 작업 중..."
+            return "⚙️ 작업 중..."
             
         return result[:30]  # 최대 30자 제한
 
     def show_progress(self, indeterminate=True):
-        """진행바 표시"""
+        """진행바 시작 - 항상 0%에서 시작 (진행바는 항상 표시됨)"""
+        self.progress_bar.setValue(0)
+        self.percent_label.setText("0%")
+
         if indeterminate:
             self.progress_bar.setRange(0, 0)
-        self.progress_bar.setVisible(True)
-    
+        else:
+            self.progress_bar.setRange(0, 100)
+
     def hide_progress(self):
-        """진행바 숨기기"""
-        self.progress_bar.setVisible(False)
-        self.print_progress_label.setVisible(False)
-    
+        """진행바 초기화 (진행바는 항상 표시됨, 값만 0%로 리셋)"""
+        self.progress_bar.setValue(0)
+        self.progress_bar.setRange(0, 100)
+        self.percent_label.setText("0%")
+        self.status_label.setText("⏸️ 대기 중...")
+        self.print_progress_label.setText("")
+
     def update_status(self, status: str):
         """상태 메시지 업데이트 - 사용자 친화적으로 변환"""
         user_friendly_status = self._get_user_friendly_status(status)
-        truncated_status = truncate_text(user_friendly_status, 30)
+        truncated_status = truncate_text(user_friendly_status, 40)
         self.status_label.setText(truncated_status)
-    
+
     def show_print_progress(self, current: int, total: int):
-        """인쇄 진행상황 표시 - 단순화"""
-        progress_text = f"📄 {current}/{total} 장"
-        self.print_progress_label.setText(progress_text)
-        self.print_progress_label.setVisible(True)
-        
-        self.progress_bar.setRange(0, total)
-        self.progress_bar.setValue(current)
-    
+        """인쇄 진행상황 표시 (진행바는 항상 표시됨)"""
+        # 항상 0-100 범위 사용
+        self.progress_bar.setRange(0, 100)
+        percent = int(current / total * 100) if total > 0 else 0
+        self.progress_bar.setValue(percent)
+        self.percent_label.setText(f"{percent}%")
+
     def update_print_status(self, current: int, total: int, status: str):
-        """인쇄 상태와 진행률 동시 업데이트 - 단순화"""
-        self.update_status("[PRINTER] 카드 인쇄 중...")
+        """인쇄 상태와 진행률 동시 업데이트"""
+        self.update_status(f"🖨️ 카드 인쇄 중... ({current}/{total}장)")
         self.show_print_progress(current, total)
+
+    def update_step_progress(self, percent: int):
+        """단계별 진행률 업데이트 (0-100%) - 진행바는 항상 표시됨"""
+        # 항상 determinate 모드로 설정
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(percent)
+        self.percent_label.setText(f"{percent}%")
 
 
 class LogPanel(QGroupBox):
@@ -1025,3 +1049,166 @@ class LogPanel(QGroupBox):
     def clear_log(self):
         """로그 클리어 - 아무것도 하지 않음"""
         pass
+
+
+class QueueListDialog(QDialog):
+    """인쇄 대기열 목록 다이얼로그"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("인쇄 대기열")
+        self.setMinimumSize(400, 300)
+        self.setModal(True)
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(16, 16, 16, 16)
+
+        # 제목
+        title_label = QLabel("📋 인쇄 대기열 목록")
+        title_label.setStyleSheet("""
+            font-size: 16px;
+            font-weight: bold;
+            color: #333;
+            padding-bottom: 8px;
+        """)
+        layout.addWidget(title_label)
+
+        # 테이블
+        self.table = QTableWidget()
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(["작업 #", "매수", "진행", "상태"])
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.table.setAlternatingRowColors(True)
+        self.table.setStyleSheet("""
+            QTableWidget {
+                border: 1px solid #DEE2E6;
+                border-radius: 4px;
+                background-color: white;
+                gridline-color: #E9ECEF;
+            }
+            QTableWidget::item {
+                padding: 8px;
+            }
+            QHeaderView::section {
+                background-color: #F8F9FA;
+                padding: 8px;
+                border: none;
+                border-bottom: 2px solid #DEE2E6;
+                font-weight: bold;
+            }
+        """)
+        layout.addWidget(self.table)
+
+        # 요약 라벨
+        self.summary_label = QLabel("")
+        self.summary_label.setStyleSheet("""
+            font-size: 12px;
+            color: #6C757D;
+            padding: 8px;
+            background-color: #F8F9FA;
+            border-radius: 4px;
+        """)
+        layout.addWidget(self.summary_label)
+
+        # 닫기 버튼
+        close_btn = QPushButton("닫기")
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #6C757D;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 10px 24px;
+                font-size: 13px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #5A6268;
+            }
+        """)
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn, alignment=Qt.AlignRight)
+
+    def update_queue_list(self, jobs: list):
+        """대기열 목록 업데이트"""
+        self.table.setRowCount(len(jobs))
+
+        completed_count = 0
+        failed_count = 0
+        pending_count = 0
+        printing_count = 0
+        total_cards = 0
+
+        for row, job in enumerate(jobs):
+            job_id = job['job_id']
+            quantity = job['quantity']
+            completed_cards = job.get('completed_cards', 0)
+            status = job['status']
+            display_status = job['display_status']
+            total_cards += quantity
+
+            # 작업 번호
+            id_item = QTableWidgetItem(f"#{job_id}")
+            id_item.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(row, 0, id_item)
+
+            # 매수
+            qty_item = QTableWidgetItem(f"{quantity}장")
+            qty_item.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(row, 1, qty_item)
+
+            # 진행 (완료된 카드 / 전체 카드)
+            if status == 'completed':
+                progress_text = f"{quantity}/{quantity}"
+            elif status == 'failed':
+                progress_text = f"{completed_cards}/{quantity}"
+            elif status == 'printing':
+                progress_text = f"{completed_cards}/{quantity}"
+            else:
+                progress_text = f"0/{quantity}"
+            progress_item = QTableWidgetItem(progress_text)
+            progress_item.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(row, 2, progress_item)
+
+            # 상태 (색상 구분)
+            status_item = QTableWidgetItem(display_status)
+            status_item.setTextAlignment(Qt.AlignCenter)
+
+            if status == 'completed':
+                status_item.setForeground(Qt.darkGreen)
+                completed_count += 1
+            elif status == 'failed':
+                status_item.setForeground(Qt.red)
+                failed_count += 1
+            elif status == 'printing':
+                status_item.setForeground(Qt.blue)
+                printing_count += 1
+            else:
+                status_item.setForeground(Qt.gray)
+                pending_count += 1
+
+            self.table.setItem(row, 3, status_item)
+
+        # 요약 업데이트
+        summary_parts = []
+        if completed_count > 0:
+            summary_parts.append(f"✅ 완료: {completed_count}")
+        if failed_count > 0:
+            summary_parts.append(f"❌ 실패: {failed_count}")
+        if printing_count > 0:
+            summary_parts.append(f"🔄 작업중: {printing_count}")
+        if pending_count > 0:
+            summary_parts.append(f"⏳ 대기: {pending_count}")
+
+        if summary_parts:
+            self.summary_label.setText(f"전체 {len(jobs)}개 작업 ({total_cards}장) | " + " | ".join(summary_parts))
+        else:
+            self.summary_label.setText("대기열이 비어있습니다.")

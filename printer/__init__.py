@@ -11,6 +11,7 @@ from .exceptions import (
 )
 from .r600_printer import R600Printer
 from .printer_thread import PrinterThread
+from .print_queue import PrintQueueManager, print_queue
 from .printer_utils import (
     check_printer_dll,
     get_default_dll_paths,
@@ -36,6 +37,8 @@ __all__ = [
     # [EMOJI] [EMOJI]
     'R600Printer',
     'PrinterThread',
+    'PrintQueueManager',
+    'print_queue',
     
     # [EMOJI] [EMOJI]
     'check_printer_dll',

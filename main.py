@@ -93,10 +93,10 @@ def main():
     try:
         print("[START] Hana Studio 시작...")
 
-        # 중복 실행 방지
-        if not check_single_instance():
-            print("[INFO] 이미 실행 중인 인스턴스가 있습니다.")
-            sys.exit(0)
+        # 중복 실행 방지 (임시 비활성화)
+        # if not check_single_instance():
+        #     print("[INFO] 이미 실행 중인 인스턴스가 있습니다.")
+        #     sys.exit(0)
 
         # Qt 환경 변수 설정
         os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
@@ -116,11 +116,12 @@ def main():
 
         # 라이선스 인증
         from licensing.dialog import check_license
-        if not check_license():
+        license_success, is_admin = check_license()
+        if not license_success:
             print("[EXIT] 라이선스 인증 실패")
             sys.exit(0)
 
-        print("[OK] 라이선스 인증 완료")
+        print(f"[OK] 라이선스 인증 완료 (Admin: {is_admin})")
 
         # 매우 심플한 로딩 화면
         loading = QWidget()
@@ -160,7 +161,8 @@ def main():
         # 상태 변수
         state = {
             'step': 0,
-            'main_window': None
+            'main_window': None,
+            'is_admin': is_admin
         }
 
         def do_loading_step():
@@ -206,8 +208,8 @@ def main():
                     status.setText("HanaStudio 생성 중...")
                     app.processEvents()
                     from hana_studio import HanaStudio
-                    state['main_window'] = HanaStudio()
-                    print("[INIT] HanaStudio 생성")
+                    state['main_window'] = HanaStudio(is_admin=state['is_admin'])
+                    print(f"[INIT] HanaStudio 생성 (Admin: {state['is_admin']})")
 
                 elif step == 6:
                     status.setText("패널 초기화...")

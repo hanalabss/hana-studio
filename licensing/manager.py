@@ -29,6 +29,8 @@ class LicenseResult:
     success: bool
     message: str
     code: Optional[str] = None
+    is_admin: bool = False
+    expires_at: Optional[str] = None
 
 
 class LicenseManager:
@@ -63,12 +65,16 @@ class LicenseManager:
             data = result.data
             code = data.get('code')
             success = data.get('success', False)
+            is_admin = data.get('is_admin', False)
+            expires_at = data.get('expires_at')
             message = MESSAGES.get(code, '알 수 없는 오류')
 
             return LicenseResult(
                 success=success,
                 message=message,
-                code=code
+                code=code,
+                is_admin=is_admin,
+                expires_at=expires_at
             )
 
         except RuntimeError as e:
