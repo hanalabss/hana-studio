@@ -19,13 +19,42 @@ class ResizeHandle(QGraphicsEllipseItem):
     """크기 조절 핸들"""
 
     def __init__(self, position, parent=None):
-        super().__init__(-4, -4, 8, 8, parent)
+        super().__init__(-4, -4, 8, 8, parent)  # 시각적 크기: 8x8px
         self.position = position  # 'tl', 'tr', 'bl', 'br' 등
         self.setBrush(QBrush(QColor("#4A90E2")))
         self.setPen(QPen(QColor("#FFFFFF"), 2))
         self.setZValue(1000)
         self.setCursor(self._get_cursor())
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
+        self.setAcceptedMouseButtons(Qt.MouseButton.LeftButton)
+
+    def shape(self):
+        """클릭 판정 영역 확장"""
+        from PySide6.QtGui import QPainterPath
+        path = QPainterPath()
+        path.addEllipse(-10, -10, 20, 20)  # 클릭 판정: 20x20px
+        return path
+
+    def mousePressEvent(self, event):
+        """핸들 클릭 시 부모에게 리사이즈 시작 알림"""
+        parent = self.parentItem()
+        if parent and hasattr(parent, '_start_resize_from_handle'):
+            parent._start_resize_from_handle(self.position, event)
+        event.accept()
+
+    def mouseMoveEvent(self, event):
+        """드래그 시 부모에게 전달"""
+        parent = self.parentItem()
+        if parent and hasattr(parent, '_handle_resize_from_handle'):
+            parent._handle_resize_from_handle(event)
+        event.accept()
+
+    def mouseReleaseEvent(self, event):
+        """릴리즈 시 부모에게 전달"""
+        parent = self.parentItem()
+        if parent and hasattr(parent, '_end_resize_from_handle'):
+            parent._end_resize_from_handle(event)
+        event.accept()
 
     def _get_cursor(self):
         """위치에 따른 커서 설정"""
@@ -56,12 +85,41 @@ class RotateHandle(QGraphicsEllipseItem):
     """회전 핸들"""
 
     def __init__(self, parent=None):
-        super().__init__(-5, -5, 10, 10, parent)
+        super().__init__(-5, -5, 10, 10, parent)  # 시각적 크기: 10x10px
         self.setBrush(QBrush(QColor("#28A745")))
         self.setPen(QPen(QColor("#FFFFFF"), 2))
         self.setZValue(1000)
         self.setCursor(Qt.CursorShape.CrossCursor)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
+        self.setAcceptedMouseButtons(Qt.MouseButton.LeftButton)
+
+    def shape(self):
+        """클릭 판정 영역 확장"""
+        from PySide6.QtGui import QPainterPath
+        path = QPainterPath()
+        path.addEllipse(-10, -10, 20, 20)  # 클릭 판정: 20x20px
+        return path
+
+    def mousePressEvent(self, event):
+        """핸들 클릭 시 부모에게 회전 시작 알림"""
+        parent = self.parentItem()
+        if parent and hasattr(parent, '_start_rotate_from_handle'):
+            parent._start_rotate_from_handle(event)
+        event.accept()
+
+    def mouseMoveEvent(self, event):
+        """드래그 시 부모에게 전달"""
+        parent = self.parentItem()
+        if parent and hasattr(parent, '_handle_rotate_from_handle'):
+            parent._handle_rotate_from_handle(event)
+        event.accept()
+
+    def mouseReleaseEvent(self, event):
+        """릴리즈 시 부모에게 전달"""
+        parent = self.parentItem()
+        if parent and hasattr(parent, '_end_rotate_from_handle'):
+            parent._end_rotate_from_handle(event)
+        event.accept()
 
     def paint(self, painter, option, widget):
         """핸들 그리기 - 인쇄 모드에서는 렌더링하지 않음"""
@@ -246,6 +304,62 @@ class BaseLayer(QGraphicsItem):
 
         self.setRotation(self.rotation() + delta_angle)
         self.rotate_start_angle = current_angle
+
+    # ============================================================
+    # 핸들에서 직접 호출하는 메서드들 (이미지 밖에서도 동작)
+    # ============================================================
+
+    def _start_resize_from_handle(self, position, event):
+        """핸들에서 리사이즈 시작"""
+        if self.layer_locked:
+            return
+        self.is_resizing = True
+        self.resize_handle_active = position
+        self.resize_start_rect = self.boundingRect()
+        # 핸들의 로컬 좌표를 부모(레이어) 좌표로 변환
+        self.resize_start_pos = self.resize_handles[position].mapToParent(event.pos())
+
+    def _handle_resize_from_handle(self, event):
+        """핸들에서 리사이즈 처리"""
+        if not self.is_resizing:
+            return
+        # 핸들의 로컬 좌표를 부모(레이어) 좌표로 변환
+        handle = self.resize_handles.get(self.resize_handle_active)
+        if handle:
+            pos = handle.mapToParent(event.pos())
+            self._handle_resize(pos)
+
+    def _end_resize_from_handle(self, event):
+        """핸들에서 리사이즈 종료"""
+        if self.is_resizing:
+            self.is_resizing = False
+            self.resize_handle_active = None
+            self._cleanup_resize()
+            self.signals.transform_changed.emit()
+
+    def _start_rotate_from_handle(self, event):
+        """핸들에서 회전 시작"""
+        if self.layer_locked:
+            return
+        self.is_rotating = True
+        center = self.boundingRect().center()
+        # 핸들의 로컬 좌표를 부모(레이어) 좌표로 변환
+        pos = self.rotate_handle.mapToParent(event.pos())
+        self.rotate_start_angle = self._calculate_angle(center, pos)
+
+    def _handle_rotate_from_handle(self, event):
+        """핸들에서 회전 처리"""
+        if not self.is_rotating:
+            return
+        # 핸들의 로컬 좌표를 부모(레이어) 좌표로 변환
+        pos = self.rotate_handle.mapToParent(event.pos())
+        self._handle_rotation(pos)
+
+    def _end_rotate_from_handle(self, event):
+        """핸들에서 회전 종료"""
+        if self.is_rotating:
+            self.is_rotating = False
+            self.signals.transform_changed.emit()
 
     def _handle_resize(self, pos):
         """크기 조절 처리 - 서브클래스에서 구현"""
