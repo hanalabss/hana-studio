@@ -184,19 +184,60 @@ class TextLayer(BaseLayer):
         if not hasattr(self, 'resize_start_font_size'):
             self.resize_start_font_size = self.text_font.pointSize()
 
-        # 오른쪽 또는 하단 핸들로 크기 조절
-        scale_factor = 1.0
-        if 'r' in handle or 'b' in handle:
-            scale_factor = 1.0 + (delta.x() + delta.y()) / 200.0
-        elif 'l' in handle or 't' in handle:
-            scale_factor = 1.0 - (delta.x() + delta.y()) / 200.0
+        # 각 핸들의 "바깥쪽" 방향으로 드래그하면 커지도록 계산
+        # br: +x, +y → 커짐 / bl: -x, +y → 커짐 / tr: +x, -y → 커짐 / tl: -x, -y → 커짐
+        outward_x = 0
+        outward_y = 0
+        if 'r' in handle:
+            outward_x = delta.x()
+        elif 'l' in handle:
+            outward_x = -delta.x()
+        if 'b' in handle:
+            outward_y = delta.y()
+        elif 't' in handle:
+            outward_y = -delta.y()
+
+        scale_factor = 1.0 + (outward_x + outward_y) / 200.0
 
         # 폰트 크기 변경 (시작 크기 기준으로 계산하여 부드럽게)
         new_size = max(8, min(200, int(self.resize_start_font_size * scale_factor)))
         current_size = self.text_font.pointSize()
 
         if new_size != current_size:
+            # 변경 전 바운딩 박스와 앵커 포인트 계산
+            old_rect = self.boundingRect()
+
+            # 각 핸들의 반대쪽(고정될 곳) 좌표 저장
+            if 'l' in handle and 't' in handle:  # tl → 우하단 고정
+                anchor = old_rect.bottomRight()
+            elif 'r' in handle and 't' in handle:  # tr → 좌하단 고정
+                anchor = old_rect.bottomLeft()
+            elif 'l' in handle and 'b' in handle:  # bl → 우상단 고정
+                anchor = old_rect.topRight()
+            else:  # br → 좌상단 고정
+                anchor = old_rect.topLeft()
+
+            # 폰트 크기 변경
             self.set_font_size(new_size)
+
+            # 변경 후 바운딩 박스
+            new_rect = self.boundingRect()
+
+            # 새로운 앵커 위치 계산
+            if 'l' in handle and 't' in handle:
+                new_anchor = new_rect.bottomRight()
+            elif 'r' in handle and 't' in handle:
+                new_anchor = new_rect.bottomLeft()
+            elif 'l' in handle and 'b' in handle:
+                new_anchor = new_rect.topRight()
+            else:
+                new_anchor = new_rect.topLeft()
+
+            # 앵커가 제자리에 있도록 위치 보정
+            dx = anchor.x() - new_anchor.x()
+            dy = anchor.y() - new_anchor.y()
+            if dx != 0 or dy != 0:
+                self.setPos(self.pos().x() + dx, self.pos().y() + dy)
 
     def get_layer_data(self):
         """레이어 데이터"""
