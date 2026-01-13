@@ -1,12 +1,12 @@
 """
 MaskingDialog - 마스킹 처리 미리보기 및 임계값 조정 다이얼로그
-원본/마스크/오버레이 탭으로 사용자가 마스킹 결과를 명확히 확인 가능
+원본/마스크 탭과 레이아웃 인쇄 시뮬레이션 탭으로 마스킹 결과 확인 가능
 """
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QSlider, QPushButton, QMessageBox, QTabWidget,
-    QWidget, QComboBox
+    QWidget
 )
 from PySide6.QtCore import Qt, Signal, QThread
 from PySide6.QtGui import QPixmap, QImage
@@ -85,15 +85,11 @@ class MaskingDialog(QDialog):
         # === 탭 위젯 추가 ===
         self.tab_widget = QTabWidget()
 
-        # 탭 1: 원본 vs 마스크 (기존)
+        # 탭 1: 원본 vs 마스크
         self.separate_tab = self._create_separate_view()
         self.tab_widget.addTab(self.separate_tab, "원본 / 마스크")
 
-        # 탭 2: 오버레이 뷰
-        self.overlay_tab = self._create_overlay_view()
-        self.tab_widget.addTab(self.overlay_tab, "오버레이 미리보기")
-
-        # 탭 3: 레이아웃 인쇄 시뮬레이션 (NEW)
+        # 탭 2: 레이아웃 인쇄 시뮬레이션
         self.print_preview_tab = self._create_print_preview_view()
         self.tab_widget.addTab(self.print_preview_tab, "레이아웃 인쇄 시뮬레이션")
 
@@ -179,44 +175,6 @@ class MaskingDialog(QDialog):
         mask_group.addWidget(self.mask_preview)
 
         layout.addLayout(mask_group)
-
-        return widget
-
-    def _create_overlay_view(self):
-        """오버레이 뷰 생성"""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-
-        # 오버레이 이미지 표시
-        self.overlay_preview = QLabel()
-        self.overlay_preview.setMinimumSize(1000, 500)
-        self.overlay_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.overlay_preview.setStyleSheet("border: 1px solid #ccc; background: white;")
-        layout.addWidget(self.overlay_preview)
-
-        # 오버레이 모드 선택
-        mode_layout = QHBoxLayout()
-        mode_layout.addWidget(QLabel("표시 모드:"))
-
-        self.overlay_mode_combo = QComboBox()
-        self.overlay_mode_combo.addItems(["컬러 오버레이", "빨간색 하이라이트", "경계선만"])
-        self.overlay_mode_combo.currentTextChanged.connect(self._update_overlay_preview)
-        mode_layout.addWidget(self.overlay_mode_combo)
-
-        # 투명도 슬라이더
-        mode_layout.addWidget(QLabel("투명도:"))
-        self.opacity_slider = QSlider(Qt.Orientation.Horizontal)
-        self.opacity_slider.setRange(0, 100)
-        self.opacity_slider.setValue(50)
-        self.opacity_slider.setMaximumWidth(200)
-        self.opacity_slider.valueChanged.connect(self._update_overlay_preview)
-        mode_layout.addWidget(self.opacity_slider)
-
-        self.opacity_value_label = QLabel("50%")
-        mode_layout.addWidget(self.opacity_value_label)
-
-        mode_layout.addStretch()
-        layout.addLayout(mode_layout)
 
         return widget
 
@@ -464,9 +422,6 @@ class MaskingDialog(QDialog):
                 Qt.TransformationMode.SmoothTransformation
             ))
 
-            # 오버레이 미리보기 업데이트
-            self._update_overlay_preview()
-
             # 인쇄 미리보기 업데이트
             self._update_print_preview()
 
@@ -509,52 +464,6 @@ class MaskingDialog(QDialog):
         elif value == self.applied_threshold:
             self.reprocess_btn.setEnabled(False)
             self.reprocess_btn.setStyleSheet("background-color: #e0e0e0; padding: 8px 16px;")
-
-    def _update_overlay_preview(self):
-        """오버레이 미리보기 업데이트"""
-        if self.current_mask_rgb is None or self.original_image is None:
-            return
-
-        try:
-            # 모드 맵핑
-            mode_map = {
-                "컬러 오버레이": "color",
-                "빨간색 하이라이트": "red",
-                "경계선만": "outline"
-            }
-            mode = mode_map[self.overlay_mode_combo.currentText()]
-            opacity = self.opacity_slider.value() / 100.0
-
-            # 투명도 레이블 업데이트
-            self.opacity_value_label.setText(f"{self.opacity_slider.value()}%")
-
-            # 오버레이 생성
-            from core.image_processor import ImageProcessor
-            processor = ImageProcessor()
-            overlay = processor.create_overlay_preview(
-                self.original_image,
-                self.current_mask_rgb,
-                opacity=opacity,
-                mode=mode
-            )
-
-            # BGR to RGB 변환 (Qt는 RGB 사용)
-            overlay_rgb = cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB)
-
-            # QPixmap으로 변환하여 표시
-            height, width, channel = overlay_rgb.shape
-            bytes_per_line = 3 * width
-            q_image = QImage(overlay_rgb.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
-            pixmap = QPixmap.fromImage(q_image)
-
-            self.overlay_preview.setPixmap(pixmap.scaled(
-                1000, 500,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation
-            ))
-
-        except Exception as e:
-            print(f"[ERROR] 오버레이 업데이트 실패: {e}")
 
     def _on_reprocess(self):
         """재처리 버튼 클릭 - 새로운 임계값으로 배경 제거"""
