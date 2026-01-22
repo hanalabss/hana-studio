@@ -19,13 +19,49 @@ class ResizeHandle(QGraphicsEllipseItem):
     """크기 조절 핸들"""
 
     def __init__(self, position, parent=None):
-        super().__init__(-4, -4, 8, 8, parent)
+        super().__init__(-4, -4, 8, 8, parent)  # 시각적 크기: 8x8px
         self.position = position  # 'tl', 'tr', 'bl', 'br' 등
+        self._is_dragging = False
         self.setBrush(QBrush(QColor("#4A90E2")))
         self.setPen(QPen(QColor("#FFFFFF"), 2))
         self.setZValue(1000)
         self.setCursor(self._get_cursor())
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
+        self.setAcceptedMouseButtons(Qt.MouseButton.LeftButton)
+
+    def shape(self):
+        """클릭 판정 영역 확장"""
+        from PySide6.QtGui import QPainterPath
+        path = QPainterPath()
+        path.addEllipse(-10, -10, 20, 20)  # 클릭 판정: 20x20px
+        return path
+
+    def mousePressEvent(self, event):
+        """핸들 클릭 시 부모에게 리사이즈 시작 알림"""
+        self._is_dragging = True
+        self.grabMouse()  # 마우스 캡처 - 다른 아이템이 간섭 못함
+        parent = self.parentItem()
+        if parent and hasattr(parent, '_start_resize_from_handle'):
+            parent._start_resize_from_handle(self.position, event)
+        event.accept()
+
+    def mouseMoveEvent(self, event):
+        """드래그 시 부모에게 전달"""
+        if not self._is_dragging:
+            return
+        parent = self.parentItem()
+        if parent and hasattr(parent, '_handle_resize_from_handle'):
+            parent._handle_resize_from_handle(event)
+        event.accept()
+
+    def mouseReleaseEvent(self, event):
+        """릴리즈 시 부모에게 전달"""
+        self._is_dragging = False
+        self.ungrabMouse()  # 마우스 릴리즈
+        parent = self.parentItem()
+        if parent and hasattr(parent, '_end_resize_from_handle'):
+            parent._end_resize_from_handle(event)
+        event.accept()
 
     def _get_cursor(self):
         """위치에 따른 커서 설정"""
@@ -56,12 +92,48 @@ class RotateHandle(QGraphicsEllipseItem):
     """회전 핸들"""
 
     def __init__(self, parent=None):
-        super().__init__(-5, -5, 10, 10, parent)
+        super().__init__(-5, -5, 10, 10, parent)  # 시각적 크기: 10x10px
+        self._is_dragging = False
         self.setBrush(QBrush(QColor("#28A745")))
         self.setPen(QPen(QColor("#FFFFFF"), 2))
         self.setZValue(1000)
         self.setCursor(Qt.CursorShape.CrossCursor)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
+        self.setAcceptedMouseButtons(Qt.MouseButton.LeftButton)
+
+    def shape(self):
+        """클릭 판정 영역 확장"""
+        from PySide6.QtGui import QPainterPath
+        path = QPainterPath()
+        path.addEllipse(-10, -10, 20, 20)  # 클릭 판정: 20x20px
+        return path
+
+    def mousePressEvent(self, event):
+        """핸들 클릭 시 부모에게 회전 시작 알림"""
+        self._is_dragging = True
+        self.grabMouse()  # 마우스 캡처
+        parent = self.parentItem()
+        if parent and hasattr(parent, '_start_rotate_from_handle'):
+            parent._start_rotate_from_handle(event)
+        event.accept()
+
+    def mouseMoveEvent(self, event):
+        """드래그 시 부모에게 전달"""
+        if not self._is_dragging:
+            return
+        parent = self.parentItem()
+        if parent and hasattr(parent, '_handle_rotate_from_handle'):
+            parent._handle_rotate_from_handle(event)
+        event.accept()
+
+    def mouseReleaseEvent(self, event):
+        """릴리즈 시 부모에게 전달"""
+        self._is_dragging = False
+        self.ungrabMouse()  # 마우스 릴리즈
+        parent = self.parentItem()
+        if parent and hasattr(parent, '_end_rotate_from_handle'):
+            parent._end_rotate_from_handle(event)
+        event.accept()
 
     def paint(self, painter, option, widget):
         """핸들 그리기 - 인쇄 모드에서는 렌더링하지 않음"""
@@ -186,6 +258,8 @@ class BaseLayer(QGraphicsItem):
             self.is_rotating = True
             center = self.boundingRect().center()
             self.rotate_start_angle = self._calculate_angle(center, event.pos())
+            # 회전 중에는 드래그 비활성화
+            self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
             event.accept()
             return
 
@@ -195,7 +269,10 @@ class BaseLayer(QGraphicsItem):
                 self.is_resizing = True
                 self.resize_handle_active = pos
                 self.resize_start_rect = self.boundingRect()
+                self._resize_start_item_pos = self.pos()  # 초기 위치 저장
                 self.resize_start_pos = event.pos()
+                # 리사이징 중에는 드래그 비활성화
+                self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
                 event.accept()
                 return
 
@@ -226,6 +303,10 @@ class BaseLayer(QGraphicsItem):
             # 크기 조절 정리 (서브클래스에서 사용)
             self._cleanup_resize()
 
+            # 드래그 다시 활성화 (잠금 상태가 아닌 경우)
+            if not self.layer_locked:
+                self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
+
             self.signals.transform_changed.emit()
             event.accept()
             return
@@ -237,6 +318,12 @@ class BaseLayer(QGraphicsItem):
         # 텍스트 레이어에서 사용하는 임시 속성 정리
         if hasattr(self, 'resize_start_font_size'):
             delattr(self, 'resize_start_font_size')
+        # 리사이즈 시작 위치 정리
+        if hasattr(self, '_resize_start_item_pos'):
+            delattr(self, '_resize_start_item_pos')
+        # 화면 좌표 정리
+        if hasattr(self, '_resize_start_screen_pos'):
+            delattr(self, '_resize_start_screen_pos')
 
     def _handle_rotation(self, pos):
         """회전 처리 - 서브클래스에서 구현 가능"""
@@ -247,8 +334,81 @@ class BaseLayer(QGraphicsItem):
         self.setRotation(self.rotation() + delta_angle)
         self.rotate_start_angle = current_angle
 
+    # ============================================================
+    # 핸들에서 직접 호출하는 메서드들 (이미지 밖에서도 동작)
+    # ============================================================
+
+    def _start_resize_from_handle(self, position, event):
+        """핸들에서 리사이즈 시작"""
+        if self.layer_locked:
+            return
+        self.is_resizing = True
+        self.resize_handle_active = position
+        self.resize_start_rect = self.boundingRect()
+        self._resize_start_item_pos = self.pos()  # 초기 위치 저장
+        # 화면 절대 좌표 저장 (어떤 변환도 거치지 않음)
+        self._resize_start_screen_pos = event.screenPos()
+        # 리사이징 중에는 드래그 비활성화
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
+
+    def _handle_resize_from_handle(self, event):
+        """핸들에서 리사이즈 처리"""
+        if not self.is_resizing:
+            return
+        # 화면 절대 좌표로 delta 계산 (어떤 좌표 변환도 없음)
+        current_screen = event.screenPos()
+        dx = current_screen.x() - self._resize_start_screen_pos.x()
+        dy = current_screen.y() - self._resize_start_screen_pos.y()
+        from PySide6.QtCore import QPointF
+        delta = QPointF(dx, dy)
+        self._handle_resize_with_delta(delta)
+
+    def _end_resize_from_handle(self, event):
+        """핸들에서 리사이즈 종료"""
+        if self.is_resizing:
+            self.is_resizing = False
+            self.resize_handle_active = None
+            self._cleanup_resize()
+            # 드래그 다시 활성화 (잠금 상태가 아닌 경우)
+            if not self.layer_locked:
+                self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
+            self.signals.transform_changed.emit()
+
+    def _start_rotate_from_handle(self, event):
+        """핸들에서 회전 시작"""
+        if self.layer_locked:
+            return
+        self.is_rotating = True
+        center = self.boundingRect().center()
+        # scene 좌표를 레이어 로컬 좌표로 변환
+        pos = self.mapFromScene(event.scenePos())
+        self.rotate_start_angle = self._calculate_angle(center, pos)
+        # 회전 중에는 드래그 비활성화
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
+
+    def _handle_rotate_from_handle(self, event):
+        """핸들에서 회전 처리"""
+        if not self.is_rotating:
+            return
+        # scene 좌표를 레이어 로컬 좌표로 변환
+        pos = self.mapFromScene(event.scenePos())
+        self._handle_rotation(pos)
+
+    def _end_rotate_from_handle(self, event):
+        """핸들에서 회전 종료"""
+        if self.is_rotating:
+            self.is_rotating = False
+            # 드래그 다시 활성화 (잠금 상태가 아닌 경우)
+            if not self.layer_locked:
+                self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
+            self.signals.transform_changed.emit()
+
     def _handle_resize(self, pos):
         """크기 조절 처리 - 서브클래스에서 구현"""
+        pass
+
+    def _handle_resize_with_delta(self, delta):
+        """delta 기반 크기 조절 처리 - 서브클래스에서 구현"""
         pass
 
     def _calculate_angle(self, center, point):
