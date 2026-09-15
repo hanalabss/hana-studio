@@ -6,6 +6,7 @@
 
 import json
 import os
+import sys
 from typing import Optional
 from dataclasses import dataclass
 
@@ -19,40 +20,68 @@ from PySide6.QtGui import QFont
 from .manager import verify_license, LicenseResult
 
 
-# 라이선스 파일 경로 (프로젝트 루트)
-LICENSE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "license.json")
+def _get_app_dir() -> str:
+    """exe 폴더 (빌드) 또는 프로젝트 루트 (개발)"""
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+# 라이선스 파일 경로 (exe 옆 / 프로젝트 루트)
+LICENSE_FILE = os.path.join(_get_app_dir(), "license.json")
+
+# 이전 버전 경로 (빌드 시 _internal 폴더 안에 저장되던 위치)
+LEGACY_LICENSE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "license.json")
+
+# 키 자체의 문제가 아닌 실패 → 저장된 키 유지
+KEEP_KEY_CODES = {'CONNECTION_ERROR', 'DEVICE_ERROR'}
+
+
+def _is_same_path(a: str, b: str) -> bool:
+    return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
 
 
 def load_license_key() -> Optional[str]:
-    """저장된 라이선스 키 로드"""
-    try:
-        if os.path.exists(LICENSE_FILE):
-            with open(LICENSE_FILE, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return data.get('license_key')
-    except Exception:
-        pass
+    """저장된 라이선스 키 로드 (새 경로 → 이전 경로 순)"""
+    for path in (LICENSE_FILE, LEGACY_LICENSE_FILE):
+        try:
+            if os.path.exists(path):
+                with open(path, 'r', encoding='utf-8') as f:
+                    key = json.load(f).get('license_key')
+                if key:
+                    return key
+        except Exception as e:
+            print(f"[LICENSE] 라이선스 파일 읽기 실패 ({path}): {type(e).__name__}: {e}")
     return None
 
 
 def save_license_key(license_key: str) -> bool:
-    """라이선스 키 저장"""
+    """라이선스 키 저장 (이전 경로 파일은 정리)"""
     try:
         with open(LICENSE_FILE, 'w', encoding='utf-8') as f:
             json.dump({'license_key': license_key}, f, indent=2)
-        return True
-    except Exception:
+    except Exception as e:
+        print(f"[LICENSE] 라이선스 파일 저장 실패 ({LICENSE_FILE}): {type(e).__name__}: {e}")
         return False
+
+    if not _is_same_path(LICENSE_FILE, LEGACY_LICENSE_FILE) and os.path.exists(LEGACY_LICENSE_FILE):
+        try:
+            os.remove(LEGACY_LICENSE_FILE)
+        except Exception:
+            pass
+    return True
 
 
 def clear_license_key() -> bool:
-    """저장된 라이선스 키 삭제"""
-    try:
-        if os.path.exists(LICENSE_FILE):
-            os.remove(LICENSE_FILE)
-        return True
-    except Exception:
-        return False
+    """저장된 라이선스 키 삭제 (새 경로 + 이전 경로)"""
+    success = True
+    for path in {LICENSE_FILE, LEGACY_LICENSE_FILE}:
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            success = False
+    return success
 
 
 class VerifyThread(QThread):
@@ -343,17 +372,30 @@ def check_license(parent=None) -> tuple:
     """
     # 저장된 키 확인
     saved_key = load_license_key()
+    failed_result: Optional[LicenseResult] = None
 
     if saved_key:
         # 자동 인증 시도
         result = verify_license(saved_key)
         if result.success:
+            # 이전 경로(_internal)에 있던 키는 새 경로로 이동
+            if not os.path.exists(LICENSE_FILE):
+                save_license_key(saved_key)
             return (True, result.is_admin)
-        # 실패 시 저장된 키 삭제
-        clear_license_key()
+
+        print(f"[LICENSE] 자동 인증 실패: {result.code}")
+        failed_result = result
+        # 키 자체가 무효한 경우에만 삭제 (네트워크/디바이스 오류는 유지)
+        if result.code not in KEEP_KEY_CODES:
+            clear_license_key()
 
     # 다이얼로그 표시
     dialog = LicenseDialog(parent)
+    if failed_result:
+        # 실패 사유 표시, 유지된 키는 미리 채워서 재시도만 누르면 되도록
+        if failed_result.code in KEEP_KEY_CODES:
+            dialog.key_input.setText(saved_key)
+        dialog._show_status(False, failed_result.message)
     if dialog.exec() == QDialog.DialogCode.Accepted and dialog.is_verified:
         return (True, dialog.license_result.is_admin if dialog.license_result else False)
 
