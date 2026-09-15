@@ -79,6 +79,7 @@ class LicenseManager:
 
         except RuntimeError as e:
             # 디바이스 식별자 수집 실패
+            print(f"[LICENSE] DEVICE_ERROR: {e}")
             return LicenseResult(
                 success=False,
                 message='디바이스 식별 실패',
@@ -87,6 +88,7 @@ class LicenseManager:
 
         except Exception as e:
             # 네트워크 오류 등
+            print(f"[LICENSE] CONNECTION_ERROR: {type(e).__name__}: {e}")
             return LicenseResult(
                 success=False,
                 message='서버 연결 실패',
