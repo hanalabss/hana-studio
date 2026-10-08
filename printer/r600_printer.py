@@ -8,6 +8,8 @@ import os
 import io
 import time
 from typing import List, Optional, Tuple
+from config import config
+from utils.bleed_crop import crop_bleed
 from .exceptions import R600PrinterError, PrinterInitializationError, DLLNotFoundError
 from .printer_discovery import PrinterInfo
 
@@ -23,6 +25,8 @@ class R600Printer:
         self.front_img_info = None
         self.back_img_info = None
         self.is_initialized = False
+        self.offset_x = 0.0  # 인쇄 위치 조정값 (mm)
+        self.offset_y = 0.0
 
         try:
             print(f"[R600Printer] DLL 경로 시도: {dll_path}")
@@ -349,12 +353,20 @@ class R600Printer:
         self._check_result(ret, f"이미지 파라미터 설정 (회전 {rotation}도)")
 
         
+    def set_position_offset(self, x: float, y: float):
+        """인쇄 위치 조정값 설정 (mm). 이후 앞/뒷면 이미지와 마스크에 동일하게 적용"""
+        self.offset_x = float(x)
+        self.offset_y = float(y)
+        print(f"[PRINTER] 위치 조정 적용: X={self.offset_x:+.2f}mm, Y={self.offset_y:+.2f}mm")
+
     def get_card_dimensions(self, orientation: str) -> tuple:
-        """카드 방향에 따른 크기 반환"""
+        """카드 방향에 따른 인쇄 영역 크기 반환 (config.json printer.card_width/height)"""
+        short = float(config.get("printer.card_width", 55))
+        long_ = float(config.get("printer.card_height", 86.6))
         if orientation == "portrait":
-            return 55, 86.6  # 세로형
+            return short, long_  # 세로형
         else:
-            return 86.6, 55  # 가로형
+            return long_, short  # 가로형
         
     def clear_canvas(self):
         """캔버스 클리어"""
@@ -383,6 +395,7 @@ class R600Printer:
                     with open(image_path, 'rb') as f:
                         original_watermark = PILImage.open(io.BytesIO(f.read()))
                 print(f"  워터마크 원본 크기: {original_watermark.size}")
+                original_watermark = crop_bleed(original_watermark)
                 
                 # RGB 모드로 변환 (EXIF 정보 자동 제거됨)
                 if original_watermark.mode in ('RGBA', 'LA', 'P'):
@@ -526,6 +539,7 @@ class R600Printer:
             
             # 🎯 핵심: EXIF 회전을 실제 픽셀에 적용
             rotated_image = ImageOps.exif_transpose(original_image)
+            rotated_image = crop_bleed(rotated_image)  # 도련(58x90) -> 칼선(54x86)
             print(f"  EXIF 회전 적용 후 크기: {rotated_image.size}")
             
             # 회전이 적용되었는지 확인
@@ -628,10 +642,10 @@ class R600Printer:
         
         # 워터마크 그리기 (레이어 모드인 경우)
         if watermark_path:
-            self.draw_watermark(0.0, 0.0, card_width, card_height, watermark_path)
+            self.draw_watermark(self.offset_x, self.offset_y, card_width, card_height, watermark_path)
         
         # 앞면 이미지 그리기
-        self.draw_image(0.0, 0.0, card_width, card_height, front_image_path)
+        self.draw_image(self.offset_x, self.offset_y, card_width, card_height, front_image_path)
         
         # 캔버스 커밋
         self.front_img_info = self.commit_canvas()
@@ -659,14 +673,14 @@ class R600Printer:
                 if card_orientation == "portrait":
                     # 세로형: 마스킹을 180도 더 회전 (총 360도 = 0도와 동일한 효과)
                     print("세로형 뒷면: 마스킹 이미지 180도 추가 회전 적용")
-                    self.draw_watermark_rotated(0.0, 0.0, card_width, card_height, watermark_path, 180)
+                    self.draw_watermark_rotated(self.offset_x, self.offset_y, card_width, card_height, watermark_path, 180)
                 else:
                     # 가로형: 마스킹 회전 없음 (현재 상태 유지)
                     print("가로형 뒷면: 마스킹 이미지 회전 없음")
-                    self.draw_watermark(0.0, 0.0, card_width, card_height, watermark_path)
+                    self.draw_watermark(self.offset_x, self.offset_y, card_width, card_height, watermark_path)
             
             # 뒷면 이미지 그리기 (기존과 동일)
-            self.draw_image(0.0, 0.0, card_width, card_height, back_image_path)
+            self.draw_image(self.offset_x, self.offset_y, card_width, card_height, back_image_path)
         else:
             # 뒷면 이미지가 없으면 빈 캔버스 또는 기본 이미지
             print("뒷면 이미지가 없습니다. 빈 뒷면으로 설정합니다.")

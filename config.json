@@ -24,6 +24,10 @@
     "dll_path": "./libDSRetransfer600App.dll",
     "card_width": 55,
     "card_height": 86.6,
+    "bleed_crop_enabled": true,
+    "design_width_mm": 58,
+    "design_height_mm": 90,
+    "bleed_mm": 2,
     "timeout_ms": 10000,
     "auto_detect": true
   }

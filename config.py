@@ -28,6 +28,12 @@ class Config:
             "output": "output",
             "masks": "masks",
             "temp": "temp"
+        },
+        "printer": {
+            "bleed_crop_enabled": True,
+            "design_width_mm": 58.0,
+            "design_height_mm": 90.0,
+            "bleed_mm": 2.0
         }
     }
     

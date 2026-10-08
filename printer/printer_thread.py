@@ -71,6 +71,7 @@ class PrinterThread(QThread):
             
             self.progress.emit(f"프린터 선택: {printers[0]}")
             printer.select_printer(printers[0])
+            printer.set_position_offset(self.adjusted_x, self.adjusted_y)
             
             # 타임아웃 설정
             printer.set_timeout(15000)  # 15초로 증가
