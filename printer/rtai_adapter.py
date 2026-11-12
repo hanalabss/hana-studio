@@ -35,6 +35,9 @@ _CODE_PATTERN = re.compile(r"(?:오류 코드|실패:)\s*(-?\d+)")
 
 # SDK가 주는 영문/중문 문구에서 원인을 짚어 한국어 안내로 바꾼다: (키워드들, 안내, 재시도 가능)
 _HINTS: Tuple[Tuple[Tuple[str, ...], str, bool], ...] = (
+    # 실기에서 확인한 문구(배출할 카드가 없을 때). '공급함이 비었다'와 다른 상황이므로 먼저 걸러 낸다.
+    (("no card in the printer", "no card inside"),
+     "프린터 안에 카드가 없습니다. 꺼낼 카드가 없거나, 카드가 센서에 잡히지 않는 자리에 걸려 있을 수 있습니다.", True),
     (("feeder", "hopper", "no card", "card empty", "out of card", "卡盒", "无卡", "缺卡"),
      "카드 공급함이 비어 있습니다. 카드를 넣어 주세요.", True),
     (("ribbon", "色带"), "리본을 확인해 주세요. 다 썼다면 교체가 필요합니다.", True),

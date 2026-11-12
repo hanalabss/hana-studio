@@ -543,3 +543,12 @@ def test_remaining_units_are_marked_unknown_for_rtai(adapter, r600_lib):
     assert (status.ribbon_remaining, status.film_remaining) == (250, 480)
     assert (status.ribbon_unit, status.film_unit) == ("unknown", "unknown")
     assert status.ribbon_cards_left is None and status.film_cards_left is None
+
+
+def test_no_card_in_printer_is_not_reported_as_empty_feeder():
+    """실기 문구 'No card in the printer'(배출할 카드 없음)를 '공급함이 비었다'로 안내하면 안 된다."""
+    from printer.rtai_adapter import hint_for
+
+    hint, recoverable = hint_for("No card in the printer")
+    assert "프린터 안에 카드가 없습니다" in hint and "공급함" not in hint and recoverable
+    assert "공급함" in hint_for("Card feeder is empty")[0]
