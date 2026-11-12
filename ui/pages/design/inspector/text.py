@@ -116,6 +116,13 @@ class TextSection(Section):
         self.size_field.valueChanged.connect(lambda value: self.edit({"font_size_pt": float(value)}, merge="size"))
         self.column.addWidget(field_row("크기", self.size_field))
 
+        self.spacing_field = StepperField(0, 0, 300, 10, 0, "%")
+        self.spacing_field.setToolTip(
+            "글자 사이를 띄웁니다. 100%면 한 글자만큼 벌어져 '홍길동'이 '홍 길 동'처럼 보입니다.")
+        self.spacing_field.valueChanged.connect(
+            lambda value: self.edit({"letter_spacing": float(value)}, merge="letter_spacing"))
+        self.column.addWidget(field_row("글자 사이", self.spacing_field))
+
         self.bold_toggle = _GlyphToggle("굵게", bold=True)
         self.italic_toggle = _GlyphToggle("기울이기", italic=True)
         self.underline_toggle = _GlyphToggle("밑줄", underline=True)
@@ -177,6 +184,7 @@ class TextSection(Section):
             self._load_auto(source)
         self.font_combo.set_family(item.font_family)
         self.size_field.set_value(item.font_size_pt, emit=False)
+        self.spacing_field.set_value(float(getattr(item, "letter_spacing", 0.0) or 0.0), emit=False)
         for toggle, value in ((self.bold_toggle, item.bold), (self.italic_toggle, item.italic),
                               (self.underline_toggle, item.underline)):
             toggle.setChecked(bool(value))

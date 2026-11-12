@@ -75,7 +75,13 @@ def resolve_font_family(family: str | None) -> str:
     return QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont).family()
 
 
-def _make_font(family: str | None, size_pt: float, bold=False, italic=False, underline=False) -> QFont:
+def _spacing_units(size_pt: float, letter_spacing: float) -> float:
+    """글자 사이에 더 띄우는 폭(글자 단위). letter_spacing은 글자 크기의 %."""
+    return size_pt * _TEXT_UNITS_PER_PT * float(letter_spacing or 0.0) / 100.0
+
+
+def _make_font(family: str | None, size_pt: float, bold=False, italic=False, underline=False,
+               letter_spacing: float = 0.0) -> QFont:
     font = QFont()
     names: list[str] = []
     for name in (family or DEFAULT_FONT_FAMILY, *FALLBACK_FONT_FAMILIES):
@@ -88,6 +94,8 @@ def _make_font(family: str | None, size_pt: float, bold=False, italic=False, und
     font.setUnderline(bool(underline))
     font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
     font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+    if letter_spacing:
+        font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, _spacing_units(size_pt, letter_spacing))
     return font
 
 
@@ -224,17 +232,19 @@ def image_target_rect(
 @lru_cache(maxsize=1024)
 def _fitted_size(
     family: str, bold: bool, italic: bool, text: str, wrap: bool,
-    size_pt: float, min_pt: float, width_u: float, height_u: float,
+    size_pt: float, min_pt: float, width_u: float, height_u: float, letter_spacing: float = 0.0,
 ) -> float:
     size = size_pt
     floor = max(0.5, min(min_pt, size_pt))
     while True:
-        metrics = QFontMetricsF(_make_font(family, size, bold, italic))
+        metrics = QFontMetricsF(_make_font(family, size, bold, italic, letter_spacing=letter_spacing))
+        # 마지막 글자 뒤에 붙는 간격은 눈에 보이지 않으므로 칸 너비에서 빼지 않는다.
+        width_u_now = width_u + _spacing_units(size, letter_spacing)
         if wrap:
-            rect = metrics.boundingRect(QRectF(0, 0, width_u, _HUGE), _wrap_flags(), text)
+            rect = metrics.boundingRect(QRectF(0, 0, width_u_now, _HUGE), _wrap_flags(), text)
         else:
             rect = metrics.boundingRect(QRectF(0, 0, _HUGE, _HUGE), int(Qt.AlignmentFlag.AlignLeft), text)
-        if (rect.width() <= width_u + 0.5 and rect.height() <= height_u + 0.5) or size <= floor:
+        if (rect.width() <= width_u_now + 0.5 and rect.height() <= height_u + 0.5) or size <= floor:
             return size
         size = max(floor, size - _SHRINK_STEP_PT)
 
@@ -252,6 +262,7 @@ def fitted_font_size_pt(item, text: str) -> float:
         item.font_family, item.bold, item.italic, text, item.wrap,
         float(item.font_size_pt), float(item.min_font_size_pt),
         item.w * _TEXT_UNITS_PER_MM, item.h * _TEXT_UNITS_PER_MM,
+        float(getattr(item, "letter_spacing", 0.0) or 0.0),
     )
 
 
@@ -280,6 +291,9 @@ def _draw_text(
     h_align: str = "left", v_align: str = "top", wrap: bool = False,
 ) -> None:
     flags = _text_flags(h_align, v_align, wrap)
+    # 글자 사이를 띄우면 마지막 글자 뒤에도 간격이 붙어 가운데·오른쪽 맞춤이 왼쪽으로 쏠린다. 그만큼 되돌린다.
+    trailing = font.letterSpacing() if font.letterSpacingType() == QFont.SpacingType.AbsoluteSpacing else 0.0
+    shift = trailing / 2.0 if h_align == "center" else trailing if h_align == "right" else 0.0
     painter.save()
     painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -287,7 +301,7 @@ def _draw_text(
     painter.scale(mm_to_px / _TEXT_UNITS_PER_MM, mm_to_px / _TEXT_UNITS_PER_MM)
     painter.setFont(font)
     painter.setPen(color)
-    painter.drawText(QRectF(0, 0, w_mm * _TEXT_UNITS_PER_MM, h_mm * _TEXT_UNITS_PER_MM), flags, text)
+    painter.drawText(QRectF(shift, 0, w_mm * _TEXT_UNITS_PER_MM, h_mm * _TEXT_UNITS_PER_MM), flags, text)
     painter.restore()
 
 
@@ -296,7 +310,8 @@ def _paint_text(painter, item, value, s, opts) -> None:
     if not text:
         return
     size = fitted_font_size_pt(item, text)
-    font = _make_font(item.font_family, size, item.bold, item.italic, item.underline)
+    font = _make_font(item.font_family, size, item.bold, item.italic, item.underline,
+                      letter_spacing=float(getattr(item, "letter_spacing", 0.0) or 0.0))
     _draw_text(
         painter, text, font, _color(item.color, opts.mask_mode), 0.0, 0.0, item.w, item.h, s,
         item.h_align, item.v_align, item.wrap,
@@ -317,7 +332,8 @@ def _text_layout(item, value: Any):
         if not text:
             return None
         font = _make_font(
-            item.font_family, fitted_font_size_pt(item, text), item.bold, item.italic, item.underline
+            item.font_family, fitted_font_size_pt(item, text), item.bold, item.italic, item.underline,
+            letter_spacing=float(getattr(item, "letter_spacing", 0.0) or 0.0),
         )
         return text, font, (0.0, 0.0, item.w, item.h), _text_flags(item.h_align, item.v_align, item.wrap)
     if item.kind == "barcode" and item.show_text:

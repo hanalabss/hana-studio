@@ -123,6 +123,7 @@ class TextItem(Item):
     auto_shrink: bool = False
     wrap: bool = False
     min_font_size_pt: float = 4.0
+    letter_spacing: float = 0.0   # 글자 사이를 더 띄우는 정도(글자 크기의 %). 0 = 보통, 50 = 반 글자만큼
 
 
 @dataclass(kw_only=True)
