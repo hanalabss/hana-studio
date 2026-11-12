@@ -346,9 +346,33 @@ def test_status_ready(adapter, r600_lib):
     assert (status.ribbon_remaining, status.film_remaining) == (250, 480)
     assert status.feeder_empty is False and status.card_inside is False
     assert status.ribbon_type == 1
-    assert r600_lib.call_names() == ["R600QueryPrtStatus", "R600IsFeederNoEmpty",
-                                     "R600IsPrtHaveCard", "R600GetRbnAndFilmRemaining",
-                                     "R600RibbonSettingsRW"]
+    names = [name for name in r600_lib.call_names() if name != "R600GetCheckStatusMsg"]
+    assert names == ["R600QueryPrtStatus", "R600IsFeederNoEmpty",
+                     "R600IsPrtHaveCard", "R600GetRbnAndFilmRemaining",
+                     "R600RibbonSettingsRW"]
+    assert status.details["error_text"] == "No Error" and status.details["main_text"] == "Ready"
+
+
+def test_status_values_from_the_real_printer_mean_ready(adapter, r600_lib):
+    """실기 값: 오류 상태 3001은 '오류 없음', 주 상태 1004는 Ready다. 0이 아니라고 오류로 보면 안 된다."""
+    status = adapter.status()
+    assert status.details["error_status"] == 3001 and status.details["main_status"] == 1004
+    assert status.ready and status.code is None and status.message == "인쇄할 수 있습니다."
+
+
+def test_heating_is_a_notice_not_an_error(adapter, r600_lib):
+    r600_lib.warning_status = 2002
+    status = adapter.status()
+    assert status.ready
+    assert any("예열" in note for note in status.warnings)
+
+
+def test_chinese_no_such_code_text_is_never_shown(adapter, r600_lib):
+    """실기는 상태 값에 대해 오류 문구 함수가 중국어 '그런 오류 코드 없음'을 돌려준다. 화면에 내보내지 않는다."""
+    r600_lib.error_status = 4321          # 문구가 없는 오류 값
+    status = adapter.status()
+    assert not status.ready and "没有" not in status.message
+    assert "(코드 0x10E1)" in status.message
 
 
 def test_status_with_error_uses_sdk_text(adapter, r600_lib):

@@ -134,8 +134,9 @@ def test_query_status_returns_all_nine_values(r600_lib, printer):
     r600_lib.error_status = 7
     r600_lib.reset_calls()
     status = printer.query_status()
-    assert status == {"chassis_temp": 30, "printhead_temp": 35, "heater_temp": 150,
-                      "main_status": 0, "sub_status": 0, "error_status": 7,
+    # 가짜 SDK는 실기(LUCA-40KM)가 평상시에 주는 값과 같은 모양으로 돌려준다.
+    assert status == {"chassis_temp": 2800, "printhead_temp": 3800, "heater_temp": 17700,
+                      "main_status": 1004, "sub_status": 0x57000000, "error_status": 7,
                       "warning_status": 0, "main_code": 0, "sub_code": 0}
     assert r600_lib.calls == [("R600QueryPrtStatus", (OUT,) * 9)]
 

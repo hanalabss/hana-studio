@@ -135,6 +135,10 @@ class FakeLibrary:
 R600_ERR_FEEDER_EMPTY = 0x00808002
 R600_ERR_RIBBON_OUT = 0x00808010
 R600_ERR_PRINT = 0x00808020
+# 실기(LUCA-40KM)에서 읽은 상태 값
+R600_STATUS_READY = 1004        # 주 상태: Ready
+R600_STATUS_NO_ERROR = 3001     # 오류 상태: No Error
+R600_STATUS_HEATING = 2002      # 경고 상태: Heating
 R600_ERR_SELECT_WITHOUT_ENUM = 8404992   # 0x804000: 목록 조회 없이 R600SelectPrt를 부르면 실기가 돌려주는 값
 R600_ERR_NO_PRINTER = 0x00800001
 
@@ -164,6 +168,9 @@ class FakeR600Library(FakeLibrary):
         self.canvas_count = 0
         self.mag_tracks: List[bytes] = [b"", b"", b""]
         self.mag_read_override: Optional[Tuple[bytes, bytes, bytes]] = None
+        self.status_messages: Dict[int, str] = {
+            R600_STATUS_READY: "Ready", R600_STATUS_NO_ERROR: "No Error", R600_STATUS_HEATING: "Heating",
+        }
         self.error_messages: Dict[int, str] = {
             R600_ERR_FEEDER_EMPTY: "Card feeder is empty",
             R600_ERR_RIBBON_OUT: "Ribbon is used up",
@@ -231,8 +238,11 @@ class FakeR600Library(FakeLibrary):
 
     def _h_R600QueryPrtStatus(self, chassis, head, heater, main, sub, error, warning,
                               main_code, sub_code):
-        for ref, value in ((chassis, 30), (head, 35), (heater, 150), (main, 0), (sub, 0),
-                           (error, self.error_status), (warning, self.warning_status),
+        # 실기(LUCA-40KM)는 정상일 때 0이 아니라 고유 번호를 준다: 주 상태 1004(Ready), 오류 3001(No Error).
+        for ref, value in ((chassis, 2800), (head, 3800), (heater, 17700),
+                           (main, R600_STATUS_READY), (sub, 0x57000000),
+                           (error, self.error_status or R600_STATUS_NO_ERROR),
+                           (warning, self.warning_status),
                            (main_code, 0), (sub_code, 0)):
             _set(ref, value)
         return 0
@@ -243,9 +253,30 @@ class FakeR600Library(FakeLibrary):
         _set(length_ref, len(text))
         return 0
 
-    _h_R600GetErrorInfo = _message
-    _h_R600GetErrorOuterInfo = _message
-    _h_R600GetCheckStatusMsg = _message
+    def _error_message(self, code, buffer, length_ref):
+        # 실기처럼, 오류 코드가 아닌 값(상태 번호 등)에는 중국어로 "그런 오류 코드 없음"을 돌려준다.
+        if code in self.error_messages:
+            return self._message(code, buffer, length_ref)
+        text = "没有该错误码".encode("gbk")
+        _fill(buffer, text)
+        _set(length_ref, len(text))
+        return 0
+
+    def _status_message(self, code, buffer, length_ref):
+        text = self.status_messages.get(code)
+        if text is None:
+            text = self.error_messages.get(code)
+        if text is None:
+            _fill(buffer, b"")
+            return 8421388          # 실기가 모르는 상태 값에 돌려주는 코드
+        data = text.encode("ascii")
+        _fill(buffer, data)
+        _set(length_ref, len(data))
+        return 0
+
+    _h_R600GetErrorInfo = _error_message
+    _h_R600GetErrorOuterInfo = _error_message
+    _h_R600GetCheckStatusMsg = _status_message
 
     def _h_R600IsFeederNoEmpty(self, flag):
         _set(flag, 0 if self.feeder_empty else 1)

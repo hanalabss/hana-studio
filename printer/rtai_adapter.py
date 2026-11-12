@@ -49,6 +49,31 @@ _HINTS: Tuple[Tuple[Tuple[str, ...], str, bool], ...] = (
 )
 
 
+# 실기(LUCA-40KM)에서 확인한 값. 상태 값은 0이 아니라 '정상'을 뜻하는 고유 번호로 온다.
+#   주 상태 1004 = Ready, 오류 상태 3001 = No Error, 경고 상태 2002 = Heating
+# R600GetErrorInfo 계열은 이런 상태 값에 대해 "그런 오류 코드 없음"(중국어)을 돌려준다.
+_NO_SUCH_CODE_TEXTS = frozenset({"没有该错误码"})
+_NO_ERROR_TEXTS = frozenset({"no error", "no warning", "none", "normal", "ok", ""})
+_NO_ERROR_CODES = frozenset({0, 3001})
+_READY_TEXTS = frozenset({"ready", "idle", "standby"})
+_STATE_KOREAN = {
+    "heating": "예열 중입니다. 잠시 뒤 인쇄할 수 있습니다.",
+    "printing": "인쇄 중입니다.",
+    "busy": "프린터가 다른 작업을 하고 있습니다.",
+    "initializing": "프린터를 준비하는 중입니다.",
+    "cleaning": "청소 중입니다.",
+    "sleep": "절전 상태입니다.",
+}
+
+
+def _korean_state(text: str) -> str:
+    lowered = text.lower()
+    for key, sentence in _STATE_KOREAN.items():
+        if key in lowered:
+            return sentence
+    return ""
+
+
 def readable_sdk_text(sdk_text: Optional[str]) -> str:
     """사용자에게 보여 줘도 되는 SDK 문구만 돌려준다.
 
@@ -173,9 +198,18 @@ class RtaiAdapter(CardPrinter):
                 text = getter(code)
             except Exception:
                 continue
-            if text:
+            if text and text.strip() not in _NO_SUCH_CODE_TEXTS:
                 return text
         return ""
+
+    def status_text(self, code: int) -> str:
+        """상태 값(주 상태, 오류 상태, 경고 상태)의 SDK 영문 문구. 예: 1004 → Ready, 3001 → No Error."""
+        if self._printer is None:
+            return ""
+        try:
+            return (self._printer.get_check_status_message(code) or "").strip()
+        except Exception:
+            return ""
 
     def _translate(self, error: Exception, operation: Optional[str] = None) -> PrinterError:
         if isinstance(error, PrinterError):
@@ -210,17 +244,34 @@ class RtaiAdapter(CardPrinter):
             error = self._translate(exc)
             return PrinterStatus(ready=False, message=error.message, code=error.code)
         code = raw["error_status"]
-        status = PrinterStatus(ready=code == 0, message="인쇄할 수 있습니다.",
-                               code=code or None, details=dict(raw))
-        if code:
-            sdk_text = self.describe_code(code)
+        error_text = self.status_text(code)
+        if error_text:
+            has_error = error_text.lower() not in _NO_ERROR_TEXTS
+        else:
+            has_error = code not in _NO_ERROR_CODES
+        status = PrinterStatus(ready=not has_error, message="인쇄할 수 있습니다.",
+                               code=code if has_error else None, details=dict(raw))
+        status.details["error_text"] = error_text
+        if has_error:
+            sdk_text = error_text or self.describe_code(code)
             hint = hint_for(sdk_text) if sdk_text else None
             shown = readable_sdk_text(sdk_text)
             status.message = (hint[0] if hint else "프린터가 오류 상태입니다.") + (
                 f" [프린터 메시지: {shown}]" if shown else f" (코드 0x{code:X})")
-        if raw["warning_status"]:
-            warning = readable_sdk_text(self.describe_code(raw["warning_status"]))
-            status.warnings.append(warning or f"프린터 경고 (코드 0x{raw['warning_status']:X})")
+        # 주 상태(Ready, Heating 등)와 경고는 인쇄를 막지 않고 알려만 준다.
+        main_text = self.status_text(raw["main_status"])
+        status.details["main_text"] = main_text
+        if main_text and main_text.lower() not in _READY_TEXTS and not has_error:
+            status.busy = "print" in main_text.lower() or "busy" in main_text.lower()
+            note = _korean_state(main_text)
+            if note:
+                status.warnings.append(note)
+        warning_text = self.status_text(raw["warning_status"])
+        status.details["warning_text"] = warning_text
+        if warning_text and warning_text.lower() not in _NO_ERROR_TEXTS:
+            note = _korean_state(warning_text) or readable_sdk_text(warning_text)
+            if note and note not in status.warnings:
+                status.warnings.append(note)
 
         def probe(call):
             try:
@@ -229,12 +280,13 @@ class RtaiAdapter(CardPrinter):
                 log.debug("RTAI 상태 항목 조회 실패: %s", exc)
                 return None
 
+        # 공급함 조회는 기종·환경에 따라 SDK 안에서 죽기도 한다(그때는 None: 모름으로 두고 인쇄를 막지 않는다).
         feeder = probe(printer.is_feeder_not_empty)
         if feeder is not None:
             status.feeder_empty = not feeder
             if status.feeder_empty:
                 status.ready = False
-                if not code:
+                if not has_error:
                     status.message = "카드 공급함이 비어 있습니다. 카드를 넣어 주세요."
         status.card_inside = probe(printer.has_card_inside)
         remaining = probe(printer.get_ribbon_and_film_remaining)
