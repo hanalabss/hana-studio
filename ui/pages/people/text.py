@@ -60,6 +60,10 @@ def operator_label(op: str, column_type: str = "text") -> str:
     return _OPERATOR_LABELS[op]
 
 
+SAMPLE_BUTTON_TEXT = "예시 파일 받기"
+SAMPLE_BUTTON_TIP = "어떻게 적으면 되는지 볼 수 있는 예시 명단(엑셀)과 예시 사진을 내 컴퓨터에 저장합니다."
+
+
 def people(count: int) -> str:
     return f"{count:,}명"
 

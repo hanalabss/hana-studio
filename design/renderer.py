@@ -648,13 +648,20 @@ def asset_path(document: Document, relative: str | None) -> str | None:
 
 def value_for(
     document: Document, item: Item, record: Mapping[str, Any] | None = None,
-    context: BindingContext | None = None,
+    context: BindingContext | None = None, *, cutout: bool = True,
 ) -> Any:
-    """바인딩을 풀고, 문서 안 이미지 경로를 절대 경로로 바꾼 `paint_item`용 값."""
+    """바인딩을 풀고, 문서 안 이미지 경로를 절대 경로로 바꾼 `paint_item`용 값.
+
+    배경을 지운 그림(`cutout_asset`)이 있으면 원본 대신 그 경로를 준다. cutout=False면 항상 원본.
+    """
     value = resolve(item, record, context)
     if item.kind == "image" and isinstance(value, str):
         from_document = item.source is None or item.source.type == "fixed"
         if from_document:
+            if cutout and value == item.asset:
+                cut = asset_path(document, getattr(item, "cutout_asset", None))
+                if cut and os.path.isfile(cut):
+                    return cut
             return asset_path(document, value)
     return value
 
@@ -807,6 +814,9 @@ def render_side(
                 paint_item(
                     painter, item, value, s, crop=crop, design_mode=design_mode, problems=problems
                 )
+                cut_file = asset_path(document, getattr(item, "cutout_asset", None))
+                if item.kind == "image" and cut_file and not os.path.isfile(cut_file):
+                    problems.append(f"배경을 지운 그림을 찾을 수 없어 원래 그림으로 그렸습니다: {item.cutout_asset}")
                 mask_file = asset_path(document, getattr(item, "mask_asset", None))
                 if item.kind == "image" and mask_file:
                     if load_image(mask_file) is None:

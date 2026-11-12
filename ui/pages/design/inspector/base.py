@@ -32,6 +32,8 @@ class InspectorContext:
     go_to_list: Callable[[], None] = lambda: None
     pick_image: Callable[[str], str | None] = lambda title: None
     background_engine: Any = None
+    # 지금 프린터가 지원하는 기능(set)을 돌려주는 함수. 프린터가 없으면 None을 돌려준다. 없으면 알 수 없음.
+    capabilities: Callable[[], set[str] | None] | None = None
     state: dict = field(default_factory=dict)
 
     def columns(self) -> list[tuple[str, str]]:

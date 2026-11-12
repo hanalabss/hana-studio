@@ -7,7 +7,7 @@ import time
 from typing import Any, Callable
 
 from PySide6.QtCore import QTimer, Signal
-from PySide6.QtWidgets import QDialog, QMenu, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QDialog, QHBoxLayout, QMenu, QStackedWidget, QVBoxLayout, QWidget
 
 from printer.base import CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_UV, CAP_WHITE
 from services import preflight
@@ -22,7 +22,7 @@ from ui.pages.printer.status import bind_printer_status
 from ui.pages.settings.prefs import Prefs
 from ui.shell import PAGE_DESIGN, PAGE_HISTORY, PAGE_LIST, PAGE_PRINT, PAGE_PRINTER, BasePage
 from ui.theme import mark_themed
-from ui.widgets import confirm
+from ui.widgets import SecondaryButton, confirm, label
 
 from . import STATE_DONE, STATE_READY, STATE_RUNNING
 from .findings import (
@@ -106,8 +106,31 @@ class PrintPage(BasePage):
         self._shown_index = 0
         self._last_error = ""
 
+        self._waiting: list[dict] = []     # 인쇄 중에 걸어 둔 다음 작업들
+        self._composing = False            # 인쇄 중에 다음 작업을 고르는 중
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        self.queue_bar = QWidget(self)
+        self.queue_bar.setObjectName("QueueBar")
+        bar = QHBoxLayout(self.queue_bar)
+        bar.setContentsMargins(24, 10, 24, 10)
+        bar.setSpacing(12)
+        self.queue_label = label("", "secondary")
+        self.queue_add_button = SecondaryButton("다음 작업 걸어 두기", size="sm")
+        self.queue_add_button.setToolTip("지금 인쇄가 끝나면 이어서 뽑을 카드를 미리 골라 둡니다.")
+        self.queue_add_button.clicked.connect(self.compose_next)
+        self.queue_back_button = SecondaryButton("인쇄 중인 화면으로", size="sm")
+        self.queue_back_button.clicked.connect(self.back_to_run)
+        self.queue_cancel_button = SecondaryButton("걸어 둔 작업 빼기", size="sm")
+        self.queue_cancel_button.clicked.connect(lambda: self.cancel_waiting())
+        bar.addWidget(self.queue_label, 1)
+        bar.addWidget(self.queue_cancel_button)
+        bar.addWidget(self.queue_back_button)
+        bar.addWidget(self.queue_add_button)
+        layout.addWidget(self.queue_bar)
+        self.queue_bar.hide()
         self.stack = QStackedWidget(self)
         layout.addWidget(self.stack)
         self.ready = ReadyView()
@@ -125,6 +148,59 @@ class PrintPage(BasePage):
         self._connect()
         self._recompute()
         self._refresh_printer()
+
+    # ------------------------------------------------------------------ 다음 작업 걸어 두기
+    def _is_ready(self) -> bool:
+        """인쇄할 것을 고르는 중인가. 인쇄 도중에 다음 작업을 고르는 때도 포함한다."""
+        return self._state == STATE_READY or self._composing
+
+    def waiting_jobs(self) -> list[PrintJobHandle]:
+        return [entry["handle"] for entry in self._waiting]
+
+    def compose_next(self) -> bool:
+        """인쇄가 도는 동안 다음에 뽑을 것을 고르는 화면으로 간다."""
+        if self._state != STATE_RUNNING or self._job is None or not self._job.is_active:
+            return False
+        self._composing = True
+        self.stack.setCurrentWidget(self.ready)
+        self.refresh_now()
+        self._refresh_queue_bar()
+        return True
+
+    def back_to_run(self) -> None:
+        if self._composing:
+            self._composing = False
+            self.stack.setCurrentWidget(self.run)
+            self._refresh_queue_bar()
+
+    def cancel_waiting(self, handle: PrintJobHandle | None = None) -> bool:
+        """걸어 둔 작업을 뺀다. 지정하지 않으면 마지막에 건 것."""
+        if not self._waiting:
+            return False
+        entry = next((e for e in self._waiting if e["handle"] is handle), self._waiting[-1])
+        self._waiting.remove(entry)
+        self.services.printing.cancel(entry["handle"], "now")
+        self._toast("걸어 둔 작업을 뺐습니다.", "info")
+        self._refresh_queue_bar()
+        return True
+
+    def _refresh_queue_bar(self) -> None:
+        active = self._state == STATE_RUNNING and self._job is not None and self._job.is_active
+        self.queue_bar.setVisible(bool(active))
+        if not active:
+            return
+        count = len(self._waiting)
+        cards = sum(entry["handle"].total for entry in self._waiting)
+        if self._composing:
+            text = "지금 인쇄가 끝나면 이어서 뽑을 카드를 고르세요."
+        elif count:
+            text = f"다음에 뽑을 작업 {count:,}개({cards:,}장)가 기다리고 있습니다."
+        else:
+            text = "인쇄하는 동안 다음에 뽑을 카드를 미리 걸어 둘 수 있습니다."
+        self.queue_label.setText(text)
+        self.queue_add_button.setVisible(not self._composing)
+        self.queue_back_button.setVisible(self._composing)
+        self.queue_cancel_button.setVisible(count > 0 and not self._composing)
 
     def _timer(self, interval: int, slot) -> QTimer:
         timer = QTimer(self)
@@ -191,7 +267,7 @@ class PrintPage(BasePage):
 
     def on_enter(self) -> None:
         self._entered = True
-        if self._state == STATE_READY:
+        if self._is_ready():
             self.refresh_now()
             self.services.printers.poll_now()
 
@@ -222,13 +298,13 @@ class PrintPage(BasePage):
 
     # ------------------------------------------------------------------ 누구를 뽑을지
     def _on_list_changed(self, *_args) -> None:
-        if self._state == STATE_READY:
+        if self._is_ready():
             self._targets_dirty = True
             self._targets_timer.start()
             self._refresh_start()
 
     def _on_checked_changed(self, ids: list) -> None:
-        if self._state != STATE_READY:
+        if not self._is_ready():
             return
         if ids:
             self._mode = MODE_CHECKED
@@ -237,7 +313,7 @@ class PrintPage(BasePage):
 
     def _on_design_changed(self, *_args) -> None:
         self._cache.clear()
-        if self._state == STATE_READY:
+        if self._is_ready():
             self._targets_timer.start()
             self._refresh_start()
 
@@ -256,7 +332,7 @@ class PrintPage(BasePage):
             if old != new and getattr(options, name) == old:
                 setattr(options, name, new)
                 changed = True
-        if changed and self._state == STATE_READY:
+        if changed and self._is_ready():
             self._targets_timer.start()
 
     def _reset_edits(self) -> None:
@@ -517,7 +593,7 @@ class PrintPage(BasePage):
     # ------------------------------------------------------------------ 프린터
     def _on_printer_changed(self, *_args) -> None:
         self._refresh_printer()
-        if self._state == STATE_READY:
+        if self._is_ready():
             self._refresh_options_summary()
             self._preflight_timer.start()
 
@@ -600,7 +676,7 @@ class PrintPage(BasePage):
 
     def _run_preflight(self) -> None:
         self._preflight_timer.stop()
-        if self._state != STATE_READY:
+        if not self._is_ready():
             return
         ws, printers = self.workspace, self.services.printers
         document = self._choices.document_for(ws.editor.document)
@@ -639,9 +715,7 @@ class PrintPage(BasePage):
                     "already_printed", "warn",
                     f"이 중 {len(printed):,}명은 이미 뽑은 적이 있습니다. 그대로 인쇄하면 카드가 한 장 더 나옵니다.",
                     [Action(f"이미 뽑은 {len(printed):,}명 빼기", ACT_EXCLUDE, printed)], printed))
-        if self.services.printing.is_printing:
-            problems.append(Problem("busy", "error", "다른 인쇄가 진행 중입니다. 끝난 뒤에 시작할 수 있습니다."))
-        elif device is not None and status is None:
+        if device is not None and status is None and not self.services.printing.is_printing:
             problems.append(Problem("status_unknown", "idle",
                                     "프린터 상태를 확인하고 있습니다. 카드와 리본이 들어 있는지 직접 봐 주세요."))
         problems.sort(key=lambda p: {"error": 0, "warn": 1}.get(p.tone, 2))
@@ -683,7 +757,10 @@ class PrintPage(BasePage):
                                    f"알아 둘 것 {len(warnings)}개를 읽었습니다. 그대로 인쇄합니다.", acknowledged)
         reason = self.blocking_reason()
         cards = self.card_count()
-        text = f"{cards:,}장 인쇄 시작" if cards else "인쇄 시작"
+        if self._composing:
+            text = f"{cards:,}장 다음 작업으로 걸기" if cards else "다음 작업으로 걸기"
+        else:
+            text = f"{cards:,}장 인쇄 시작" if cards else "인쇄 시작"
         tone = "error" if any(p.tone == "error" for p in self._problems) else ("warn" if reason else "")
         self.ready.set_start(text, not reason and cards > 0, reason, tone)
 
@@ -728,7 +805,7 @@ class PrintPage(BasePage):
 
     def refresh_now(self) -> None:
         """미뤄 둔 계산(대상, 미리 보기, 인쇄 전 확인)을 지금 끝낸다."""
-        if self._state != STATE_READY:
+        if not self._is_ready():
             return
         self._recompute()
         self._update_preview()
@@ -736,7 +813,7 @@ class PrintPage(BasePage):
 
     # ------------------------------------------------------------------ 인쇄 시작
     def start_printing(self) -> PrintJobHandle | None:
-        if self._state != STATE_READY:
+        if not self._is_ready():
             return None
         self._run_preflight()
         if self.blocking_reason() or not self.card_count():
@@ -748,24 +825,43 @@ class PrintPage(BasePage):
         options.capabilities = self._choices.capabilities_for(self._capabilities())
         device = printers.current()
         status = printers.status()
-        self._supplies_start = status
-        self._job_sides = 2 if (prints_back(document) and CAP_DUAL_SIDE in options.capabilities) else 1
-        self._job_document = copy.deepcopy(document)
-        self._job_store = ws.store if people else None
+        context = {
+            "supplies": status,
+            "sides": 2 if (prints_back(document) and CAP_DUAL_SIDE in options.capabilities) else 1,
+            "document": copy.deepcopy(document),
+            "store": ws.store if people else None,
+        }
+        queueing = self._composing
+        if not queueing:
+            self._apply_job_context(context)
+        job_store = context["store"]
         rows = self._rows_for_ids(self._ids, options.copies) if people else \
             [{"name": f"{i + 1}번째 카드", "record_id": None, "position": i} for i in range(options.copies)]
         title = f"이번에 뽑는 {len(self._ids):,}명" if people else f"이번에 뽑는 {options.copies:,}장"
         try:
             handle = self.services.printing.start(
-                document, self._job_store, list(self._ids) if people else None, device, options)
+                document, job_store, list(self._ids) if people else None, device, options)
         except PrintServiceError as exc:
             self._toast(plain(str(exc)), "error")
             self._problems.insert(0, Problem("start_failed", "error", plain(str(exc))))
             self.ready.set_problems(self._problems)
             self._refresh_start()
             return None
+        if queueing:
+            self._waiting.append({"handle": handle, "title": title, "rows": rows, "context": context})
+            self._composing = False
+            self.stack.setCurrentWidget(self.run)
+            self._refresh_queue_bar()
+            self._toast(f"{handle.total:,}장을 다음 작업으로 걸어 두었습니다. 지금 인쇄가 끝나면 이어서 뽑습니다.", "ok")
+            return handle
         self._begin_run(handle, title, rows)
         return handle
+
+    def _apply_job_context(self, context: dict) -> None:
+        self._supplies_start = context["supplies"]
+        self._job_sides = context["sides"]
+        self._job_document = context["document"]
+        self._job_store = context["store"]
 
     def _rows_for_ids(self, ids: list[int | None], copies: int = 1) -> list[dict]:
         rows = []
@@ -798,6 +894,7 @@ class PrintPage(BasePage):
         self._refresh_run_supplies(0)
         self._set_state(STATE_RUNNING)
         self.stack.setCurrentWidget(self.run)
+        self._refresh_queue_bar()
         if handle.state == STATE_PRINTING:
             self.run.set_progress(0, handle.total, 1, "프린터에 연결하고 있습니다")
             self._show_run_card(1)
@@ -901,8 +998,23 @@ class PrintPage(BasePage):
 
     # ------------------------------------------------------------------ 끝난 뒤
     def _on_finished(self, summary) -> None:
+        waiting = next((e for e in self._waiting if e["handle"].id == summary.job_id), None)
+        if waiting is not None and not self._mine(summary.job_id):
+            self._waiting.remove(waiting)          # 시작하기 전에 빠진 작업
+            self._refresh_queue_bar()
+            return
+        if self._mine(summary.job_id) and self._waiting:
+            self._notify_workspace()
+            tone = "ok" if summary.state == STATE_COMPLETED else "warn"
+            self._toast(f"앞 작업: {summary.total:,}장 중 {summary.success:,}장을 뽑았습니다. "
+                        "다음 작업을 이어서 뽑습니다.", tone)
+            entry = self._waiting.pop(0)
+            self._composing = False
+            self._apply_job_context(entry["context"])
+            self._begin_run(entry["handle"], entry["title"], entry["rows"])
+            return
         if not self._mine(summary.job_id):
-            if self._state == STATE_READY:
+            if self._is_ready():
                 self._preflight_timer.start()
             return
         job = self._job
@@ -935,7 +1047,9 @@ class PrintPage(BasePage):
                          "프린터에 오류 표시가 있으면 먼저 해결한 뒤 다시 인쇄하세요.")
         leftover = ROW_CANCELLED if summary.state == STATE_CANCELLED else ROW_SKIPPED
         self.run.finish(view, success, failed, left, leftover)
+        self._composing = False
         self._set_state(STATE_DONE)
+        self._refresh_queue_bar()
         self._notify_workspace()
         if self._shell is not None:
             if summary.state == STATE_COMPLETED:

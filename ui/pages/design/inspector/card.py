@@ -56,13 +56,21 @@ class CardSection(Section):
         self.background_picker.colorChanged.connect(self._on_background_color)
         self.background_image_button = SecondaryButton("배경 그림 넣기", size="sm", icon="image")
         self.background_image_button.clicked.connect(self.choose_background_image)
-        self.background_clear_button = SecondaryButton("배경 없애기", size="sm")
+        self.background_clear_button = SecondaryButton("바탕 비우기", size="sm")
+        self.background_clear_button.setToolTip(
+            "카드의 바탕 그림이나 바탕색을 빼고 흰 카드로 돌립니다. "
+            "사진에서 사람만 남기려면 '사진'으로 넣은 뒤 '배경 지우기'를 쓰세요.")
         self.background_clear_button.clicked.connect(lambda: self.controller.set_side_background(None))
         self.background_label = label("바탕", "label")
         self.column.addWidget(group(
             None, self.background_label, self.background_picker,
             hbox(self.background_image_button, self.background_clear_button, None),
         ))
+        self.background_to_photo_button = SecondaryButton("바탕 그림에서 사람만 남기기", size="sm")
+        self.background_to_photo_button.setToolTip(
+            "바탕 그림을 카드 전체 크기의 사진으로 바꿉니다. 그 사진을 고르면 '배경 지우기'를 쓸 수 있습니다.")
+        self.background_to_photo_button.clicked.connect(self.background_to_photo)
+        self.column.addWidget(self.background_to_photo_button)
 
         self.column.addWidget(Divider())
         self.problems_title = label("확인할 것", "strong")
@@ -111,6 +119,8 @@ class CardSection(Section):
             if not is_image:
                 show_color(self.background_picker, background or WHITE)
             self.background_clear_button.setVisible(bool(background))
+            self.background_to_photo_button.setVisible(is_image)
+            self.background_clear_button.setText("바탕 그림 빼기" if is_image else "바탕색 빼기")
             self.background_image_button.setText("배경 그림 바꾸기" if is_image else "배경 그림 넣기")
 
     def refresh_problems(self) -> None:
@@ -167,6 +177,34 @@ class CardSection(Section):
         path = self.context.pick_image("배경으로 쓸 그림 고르기")
         if path:
             self.set_background_image(path)
+
+    def background_to_photo(self):
+        """바탕 그림을 카드 전체 크기의 사진 항목으로 바꾸고 고른다. 실행취소 한 번으로 되돌아간다."""
+        import os
+
+        controller = self.controller
+        background = controller.side().background
+        if not background or background.startswith("#"):
+            return None
+        base = controller.document.base_dir or ""
+        path = background if os.path.isabs(background) else os.path.join(base, background)
+        width, height = controller.side_size_mm()
+        stack = controller.undo_stack
+        stack.beginMacro("바탕 그림을 사진으로 바꾸기")
+        try:
+            item = controller.add_image_from_file(path)
+            controller.set_geometry(item.id, {"x": 0.0, "y": 0.0, "w": width, "h": height, "rotation": 0.0})
+            controller.set_properties([item.id], {"fit": "fill", "name": "바탕 사진"})
+            controller.send_to_back([item.id])
+            controller.set_side_background(None)
+        except EditorError as exc:
+            stack.endMacro()
+            controller.message.emit(str(exc))
+            return None
+        stack.endMacro()
+        controller.select([item.id])
+        controller.message.emit("바탕 그림을 사진으로 바꿨습니다. 오른쪽의 '배경 지우기'를 누르면 사람만 남습니다.")
+        return item
 
     def set_background_image(self, path: str) -> None:
         try:

@@ -607,3 +607,74 @@ def test_changing_card_size_keeps_items_on_the_card(editor):
     assert _steps(editor) == before + 1
     editor.undo()
     assert (corner.x, corner.y) == (55.6, 45.98) and controller.document.card_width_mm == 85.6
+
+
+def test_image_fill_card_button_fits_the_card_in_one_undo_step(editor, tmp_path):
+    item = editor.add_image_file(make_image(tmp_path / "wide.png", size=(200, 60)))
+    section = editor.inspector.image
+    original = (item.x, item.y, item.w, item.h, item.fit)
+    before = _steps(editor)
+
+    section.fill_card_button.click()
+
+    width, height = editor.controller.side_size_mm()
+    assert (item.x, item.y) == (0.0, 0.0)
+    assert abs(item.w - width) < 1e-6 and abs(item.h - height) < 1e-6
+    assert item.fit == "fill" and _steps(editor) == before + 1
+
+    editor.controller.undo_stack.undo()
+    assert (item.x, item.y, item.w, item.h, item.fit) == original
+
+
+def test_card_background_image_can_become_a_photo_for_cutout(editor, tmp_path):
+    controller = editor.controller
+    controller.clear_selection()
+    section = editor.inspector.card
+    section.set_background_image(make_image(tmp_path / "bg.png", size=(300, 200)))
+    assert controller.side().background and not controller.side().background.startswith("#")
+    count = len(controller.side().items)
+    before = _steps(editor)
+
+    item = section.background_to_photo()
+
+    width, height = controller.side_size_mm()
+    assert item is not None and item.kind == "image" and item.fit == "fill"
+    assert (item.x, item.y) == (0.0, 0.0) and abs(item.w - width) < 1e-6 and abs(item.h - height) < 1e-6
+    assert controller.side().background is None
+    assert controller.selection == [item.id]
+    assert controller.side().sorted_items()[0].id == item.id          # 맨 아래에 깔린다
+    assert _steps(editor) == before + 1
+
+    controller.undo_stack.undo()
+    assert len(controller.side().items) == count and controller.side().background
+
+
+def test_manual_mask_goes_to_the_white_layer_and_is_undoable(editor, tmp_path):
+    import numpy as np
+    from PIL import Image
+
+    from design.renderer import render_side
+
+    item = editor.add_image_file(make_image(tmp_path / "photo.png", size=(100, 100)))
+    editor.controller.set_geometry(item.id, {"x": 10.0, "y": 10.0, "w": 20.0, "h": 20.0})
+    section = editor.inspector.image
+    # 기존 수동 마스킹 방식: 왼쪽 절반이 검정(=흰색을 깔 자리), 오른쪽 절반은 흰색
+    mask = np.full((100, 100), 255, np.uint8); mask[:, :50] = 0
+    path = tmp_path / "mask.png"; Image.fromarray(mask, "L").save(path)
+    before = _steps(editor)
+
+    assert section.set_manual_mask(str(path))
+    assert item.mask_asset and section.has_manual_mask() and _steps(editor) == before + 1
+
+    white = np.asarray(render_side(editor.controller.document, "front", dpi=100).white_mask)
+    px = 100 / 25.4
+    left = white[int(20 * px), int(13 * px)]; right = white[int(20 * px), int(27 * px)]
+    assert left > 200 and right < 50                      # 검은 쪽에만 흰색이 깔린다
+
+    assert section.set_manual_mask(str(path), dark_is_ink=False)
+    white = np.asarray(render_side(editor.controller.document, "front", dpi=100).white_mask)
+    assert white[int(20 * px), int(13 * px)] < 50 and white[int(20 * px), int(27 * px)] > 200
+
+    assert section.clear_manual_mask() and item.mask_asset is None and not section.has_manual_mask()
+    editor.controller.undo_stack.undo()
+    assert item.mask_asset and section.has_manual_mask()

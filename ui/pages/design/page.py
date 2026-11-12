@@ -86,7 +86,8 @@ class DesignPage(BasePage):
     documentStateChanged = Signal(str, object)   # 이름, 저장 상태(True/False/None)
     undoStateChanged = Signal(bool, bool)
 
-    def __init__(self, workspace, parent: QWidget | None = None, *, background_engine=None) -> None:
+    def __init__(self, workspace, parent: QWidget | None = None, *, background_engine=None,
+                 capabilities: Callable[[], set[str] | None] | None = None) -> None:
         super().__init__("디자인", parent)
         self.workspace = workspace
         self.controller = workspace.editor
@@ -148,7 +149,7 @@ class DesignPage(BasePage):
         context = InspectorContext(
             controller=self.controller, workspace=workspace, session=self.session,
             go_to_list=self.go_to_list, pick_image=lambda title: self.dialogs.open_image(self, title),
-            background_engine=background_engine,
+            background_engine=background_engine, capabilities=capabilities,
         )
         self.inspector = Inspector(context)
         self.inspector.problemActivated.connect(self.go_to_problem)

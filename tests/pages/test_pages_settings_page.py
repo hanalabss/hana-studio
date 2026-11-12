@@ -177,3 +177,22 @@ def test_app_services_bundle_starts_and_shuts_down(env, queue, history, tmp_path
     bundle.shutdown()
     assert order == ["printing", "printers"], "인쇄를 먼저 멈추고 프린터 조회를 멈춘다(한 번만)"
     assert not printers._timer.isActive()
+
+
+def test_license_admin_entry_only_for_admin(qapp, tmp_path, monkeypatch):
+    from ui.pages.settings import SettingsPage
+
+    plain = SettingsPage()
+    assert not hasattr(plain, "license_button")
+
+    admin = SettingsPage(is_admin=True)
+    opened = []
+
+    class FakePanel:
+        def __init__(self, parent=None): opened.append(parent)
+        def exec(self): opened.append("exec")
+
+    import licensing.admin_panel as admin_panel
+    monkeypatch.setattr(admin_panel, "AdminPanel", FakePanel)
+    admin.license_button.click()
+    assert opened and opened[-1] == "exec"

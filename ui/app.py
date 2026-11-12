@@ -26,7 +26,11 @@ def build_main_window(is_admin: bool = False, *, services=None, start_services: 
     workspace = Workspace(shell)
     services = services or AppServices()
 
-    design = DesignPage(workspace)
+    def printer_capabilities():
+        """지금 고른 프린터가 지원하는 기능. 프린터가 없으면 None(알 수 없음)."""
+        return services.printers.capabilities() if services.printers.current() is not None else None
+
+    design = DesignPage(workspace, capabilities=printer_capabilities)
     people = PeoplePage(workspace)
     printing = PrintPage(workspace, services)
     history = HistoryPage(workspace, services)
@@ -36,7 +40,7 @@ def build_main_window(is_admin: bool = False, *, services=None, start_services: 
     shell.register_page(PAGE_PRINT, printing, "인쇄", "print", step_label="인쇄하기")
     shell.register_page(PAGE_HISTORY, history, "기록", "history")
     shell.register_page(PAGE_PRINTER, PrinterPage(services), "프린터", "printer")
-    shell.register_page(PAGE_SETTINGS, SettingsPage(services=services), "설정", "settings")
+    shell.register_page(PAGE_SETTINGS, SettingsPage(services=services, is_admin=is_admin), "설정", "settings")
 
     shell.workspace = workspace
     shell.services = services

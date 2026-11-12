@@ -1,9 +1,10 @@
-"""사진 배경 지우기: 기존 AI(rembg) 결과를 화이트 층 마스크로 바꾼다. 무거운 일은 별도 스레드에서 한다."""
+"""그림 배경 지우기: AI(rembg) 결과나 바탕색으로 배경이 투명한 그림을 만든다. 무거운 일은 별도 스레드에서 한다."""
 
 from __future__ import annotations
 
 import os
 import tempfile
+from dataclasses import dataclass
 from typing import Callable
 
 import numpy as np
@@ -11,14 +12,14 @@ from PIL import Image, ImageOps
 from PySide6.QtCore import QObject, QRectF, QThread, Qt, Signal
 from PySide6.QtGui import QImage, QPainter, QPixmap
 
-from design import storage
+from design import cutout, storage
+from design.cutout import (  # noqa: F401  (이 화면의 다른 파일과 테스트가 여기서 가져다 쓴다)
+    DEFAULT_THRESHOLD, DEFAULT_TOLERANCE, MAX_THRESHOLD, MAX_TOLERANCE, METHOD_AI, METHOD_COLOR,
+    MIN_THRESHOLD, MIN_TOLERANCE, THRESHOLD_KEY, CutoutSettings,
+)
 from ui.widgets import theme_color
 
-DEFAULT_THRESHOLD = 200
-MIN_THRESHOLD, MAX_THRESHOLD = 5, 250
 PREVIEW_MAX_PX = 520
-# 사진 항목의 extra에 '지우는 정도'를 적어 두는 이름. 파일에 함께 저장된다.
-THRESHOLD_KEY = "cutout_threshold"
 
 
 def stored_threshold(item) -> int | None:
@@ -35,6 +36,11 @@ def with_threshold(item, threshold: int | None) -> dict:
     if threshold is not None:
         extra[THRESHOLD_KEY] = int(threshold)
     return extra
+
+
+def has_settings(item) -> bool:
+    """배경 지우기 설정(방법·정도·색)이 항목에 적혀 있는지."""
+    return len(cutout.without_settings(item.extra)) != len(item.extra)
 
 
 class BackgroundEngine:
@@ -88,8 +94,11 @@ class RembgEngine(BackgroundEngine):
 
 
 def load_oriented(image_path: str) -> Image.Image:
+    """회전 정보를 반영해 연다. 원래 투명한 곳이 있는 그림은 RGBA, 아니면 RGB."""
     with Image.open(image_path) as source:
-        return ImageOps.exif_transpose(source).convert("RGB")
+        image = ImageOps.exif_transpose(source)
+        has_alpha = image.mode in ("RGBA", "LA", "PA") or "transparency" in image.info
+        return image.convert("RGBA" if has_alpha else "RGB")
 
 
 def fit_alpha(alpha: np.ndarray, size: tuple[int, int]) -> np.ndarray:
@@ -111,12 +120,11 @@ def mask_from_alpha(alpha: np.ndarray, threshold: int) -> np.ndarray:
     return np.where(np.asarray(alpha) > int(threshold), 255, 0).astype(np.uint8)
 
 
-def save_mask(alpha: np.ndarray, threshold: int, workdir: str) -> str:
-    """마스크를 문서 작업 폴더의 assets/에 넣고 상대 경로를 돌려준다."""
-    handle, temporary = tempfile.mkstemp(suffix=".png", prefix="mask_")
+def _import_png(image: Image.Image, workdir: str, prefix: str) -> str:
+    handle, temporary = tempfile.mkstemp(suffix=".png", prefix=prefix)
     os.close(handle)
     try:
-        Image.fromarray(mask_from_alpha(alpha, threshold), "L").save(temporary)
+        image.save(temporary, compress_level=3)
         return storage.import_asset(workdir, temporary)
     finally:
         try:
@@ -125,27 +133,81 @@ def save_mask(alpha: np.ndarray, threshold: int, workdir: str) -> str:
             pass
 
 
-class CutoutPreview:
-    """작게 줄인 사진과 알파. 임계값이 바뀔 때마다 바로 다시 그릴 수 있다."""
+def save_cutout(rgb: np.ndarray, alpha: np.ndarray, workdir: str, white: bool) -> tuple[str, str | None]:
+    """배경을 지운 그림(과 white면 흰 잉크 마스크)을 assets/에 넣고 상대 경로들을 돌려준다."""
+    cut_asset = _import_png(cutout.compose(rgb, alpha), workdir, "cut_")
+    mask_asset = _import_png(Image.fromarray(cutout.white_mask(alpha), "L"), workdir, "mask_") if white else None
+    return cut_asset, mask_asset
 
-    def __init__(self, rgb: np.ndarray, alpha: np.ndarray) -> None:
+
+def save_mask_of(cutout_path: str, workdir: str) -> str:
+    """이미 만들어 둔 배경 지운 그림에서 흰 잉크 마스크를 만든다."""
+    with Image.open(cutout_path) as image:
+        alpha = np.array(image.convert("RGBA").getchannel("A"))
+    return _import_png(Image.fromarray(cutout.white_mask(alpha), "L"), workdir, "mask_")
+
+
+def _split(image: Image.Image) -> tuple[np.ndarray, np.ndarray | None]:
+    if image.mode == "RGBA":
+        data = np.array(image)
+        return np.ascontiguousarray(data[..., :3]), np.ascontiguousarray(data[..., 3])
+    return np.array(image.convert("RGB")), None
+
+
+def _cut(rgb, base_alpha, own_alpha, settings: CutoutSettings) -> tuple[np.ndarray, np.ndarray]:
+    out, alpha = cutout.cut(rgb, base_alpha, settings)
+    if own_alpha is not None:
+        alpha = np.minimum(alpha, own_alpha)
+    return out, alpha
+
+
+class CutoutPreview:
+    """작게 줄인 그림과 알파. 정도를 바꿀 때마다 바로 다시 그릴 수 있다."""
+
+    def __init__(self, rgb: np.ndarray, alpha: np.ndarray | None, own_alpha: np.ndarray | None = None) -> None:
         self.rgb = np.ascontiguousarray(rgb, dtype=np.uint8)
-        self.alpha = np.ascontiguousarray(alpha, dtype=np.uint8)
+        self.alpha = None if alpha is None else np.ascontiguousarray(alpha, dtype=np.uint8)
+        self.own_alpha = own_alpha
 
     @classmethod
-    def build(cls, image: Image.Image, alpha: np.ndarray) -> "CutoutPreview":
+    def build(cls, image: Image.Image, alpha: np.ndarray | None) -> "CutoutPreview":
         scale = min(1.0, PREVIEW_MAX_PX / max(image.size))
         size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
-        small = image.resize(size, Image.Resampling.BILINEAR)
-        small_alpha = Image.fromarray(alpha, "L").resize(size, Image.Resampling.BILINEAR)
-        return cls(np.array(small), np.array(small_alpha))
+        rgb, own = _split(image.resize(size, Image.Resampling.BILINEAR))
+        small_alpha = None
+        if alpha is not None:
+            small_alpha = np.array(Image.fromarray(alpha, "L").resize(size, Image.Resampling.BILINEAR))
+        return cls(rgb, small_alpha, own)
 
-    def kept_ratio(self, threshold: int) -> float:
-        return float(np.count_nonzero(self.alpha > int(threshold))) / max(1, self.alpha.size)
+    def cut(self, settings: CutoutSettings) -> tuple[np.ndarray, np.ndarray]:
+        return _cut(self.rgb, self.alpha, self.own_alpha, settings)
 
-    def pixmap(self, threshold: int, width: int, height: int, dpr: float = 1.0) -> QPixmap:
-        keep = np.where(self.alpha > int(threshold), 255, 0).astype(np.uint8)
-        rgba = np.ascontiguousarray(np.dstack([self.rgb, keep]))
+    def kept_ratio(self, settings: CutoutSettings) -> float:
+        return cutout.kept_ratio(self.cut(settings)[1])
+
+    def corner_color(self) -> tuple[int, int, int]:
+        return cutout.corner_color(self.rgb)
+
+    def target_rect(self, width: float, height: float) -> QRectF:
+        h, w = self.rgb.shape[:2]
+        scale = min(width / w, height / h)
+        return QRectF((width - w * scale) / 2, (height - h * scale) / 2, w * scale, h * scale)
+
+    def color_at(self, x: float, y: float, width: float, height: float) -> tuple[int, int, int] | None:
+        """미리 보기 칸(width × height) 안의 한 점에 있는 그림 색. 그림 밖이면 None."""
+        target = self.target_rect(width, height)
+        if not target.contains(x, y) or target.width() <= 0:
+            return None
+        h, w = self.rgb.shape[:2]
+        col = min(w - 1, max(0, int((x - target.left()) / target.width() * w)))
+        row = min(h - 1, max(0, int((y - target.top()) / target.height() * h)))
+        patch = self.rgb[max(0, row - 1): row + 2, max(0, col - 1): col + 2].reshape(-1, 3)
+        color = np.median(patch, axis=0)
+        return (int(color[0]), int(color[1]), int(color[2]))
+
+    def pixmap(self, settings: CutoutSettings, width: int, height: int, dpr: float = 1.0) -> QPixmap:
+        rgb, keep = self.cut(settings)
+        rgba = np.ascontiguousarray(np.dstack([rgb, keep]))
         h, w = keep.shape
         image = QImage(rgba.data, w, h, w * 4, QImage.Format.Format_RGBA8888).copy()
         pixmap = QPixmap(round(width * dpr), round(height * dpr))
@@ -153,8 +215,7 @@ class CutoutPreview:
         pixmap.fill(Qt.transparent)
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
-        scale = min(width / w, height / h)
-        target = QRectF((width - w * scale) / 2, (height - h * scale) / 2, w * scale, h * scale)
+        target = self.target_rect(width, height)
         light, dark = theme_color("surface_sunken"), theme_color("surface_pressed")
         painter.setClipRect(target)
         cell = 8
@@ -166,33 +227,66 @@ class CutoutPreview:
         return pixmap
 
 
+@dataclass
+class CutoutWork:
+    """그림 한 장을 가려낸 결과. 기억해 두면 정도를 바꿀 때 다시 계산하지 않는다."""
+
+    asset: str | None
+    method: str
+    rgb: np.ndarray                        # 작업 크기(긴 변 최대 cutout.MAX_CUTOUT_PX)
+    alpha: np.ndarray | None               # "ai": 모델이 준 알파. "color": 없음
+    preview: CutoutPreview
+    own_alpha: np.ndarray | None = None    # 그림이 원래 가지고 있던 투명도
+
+    def cut(self, settings: CutoutSettings) -> tuple[np.ndarray, np.ndarray]:
+        return _cut(self.rgb, self.alpha, self.own_alpha, settings)
+
+
+def build_work(image_path: str, method: str, alpha: np.ndarray | None, asset: str | None = None) -> CutoutWork:
+    image = load_oriented(image_path)
+    if alpha is not None:
+        alpha = fit_alpha(alpha, image.size)
+    size = cutout.work_size(image.size)
+    if size != image.size:
+        image = image.resize(size, Image.Resampling.LANCZOS)
+        if alpha is not None:
+            alpha = np.array(Image.fromarray(alpha, "L").resize(size, Image.Resampling.LANCZOS))
+    rgb, own = _split(image)
+    return CutoutWork(asset, method, rgb, alpha, CutoutPreview.build(image, alpha), own)
+
+
 class _Worker(QThread):
-    done = Signal(object, object)   # alpha(원본 크기), CutoutPreview
+    done = Signal(object)           # CutoutWork
     failed = Signal(str)
     progress = Signal(str)
 
-    def __init__(self, engine: BackgroundEngine, image_path: str, parent: QObject | None = None) -> None:
+    def __init__(self, engine: BackgroundEngine | None, image_path: str, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._engine = engine
         self._path = image_path
 
     def run(self) -> None:
         try:
-            image = load_oriented(self._path)
-            alpha = fit_alpha(self._engine.compute_alpha(self._path, self.progress.emit), image.size)
-            self.done.emit(alpha, CutoutPreview.build(image, alpha))
+            if self._engine is None:
+                self.done.emit(build_work(self._path, METHOD_COLOR, None))
+            else:
+                alpha = self._engine.compute_alpha(self._path, self.progress.emit)
+                self.done.emit(build_work(self._path, METHOD_AI, alpha))
         except Exception as exc:
             self.failed.emit(str(exc) or "배경을 지우지 못했습니다.")
 
 
 class RemovalJob(QObject):
-    """배경 분리 한 번. 끝나면 finished(alpha, preview) 또는 failed(message)를 화면 스레드로 보낸다."""
+    """배경 가려내기 한 번. 끝나면 finished(CutoutWork) 또는 failed(message)를 화면 스레드로 보낸다.
 
-    finished = Signal(object, object)
+    engine이 None이면 AI 없이 그림만 읽는다(바탕색 지우기용).
+    """
+
+    finished = Signal(object)
     failed = Signal(str)
     progress = Signal(str)
 
-    def __init__(self, engine: BackgroundEngine, image_path: str, parent: QObject | None = None) -> None:
+    def __init__(self, engine: BackgroundEngine | None, image_path: str, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._cancelled = False
         self._worker = _Worker(engine, image_path, self)
@@ -213,9 +307,9 @@ class RemovalJob(QObject):
     def wait(self, msecs: int = 30000) -> bool:
         return self._worker.wait(msecs)
 
-    def _on_done(self, alpha, preview) -> None:
+    def _on_done(self, work) -> None:
         if not self._cancelled:
-            self.finished.emit(alpha, preview)
+            self.finished.emit(work)
 
     def _on_failed(self, message: str) -> None:
         if not self._cancelled:

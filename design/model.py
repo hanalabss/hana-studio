@@ -132,7 +132,8 @@ class ImageItem(Item):
     fit: str = "fill"          # fill(채우고 넘치면 자름) | contain | stretch
     crop: Crop = field(default_factory=Crop)
     record_crops: dict[str, Crop] = field(default_factory=dict)
-    mask_asset: str | None = None
+    mask_asset: str | None = None      # 화이트 층 마스크(흰색 = 흰 잉크를 까는 곳)
+    cutout_asset: str | None = None    # 배경을 지운 그림(RGBA). 있으면 asset 대신 이것을 그린다
 
     def _encode(self, name: str, value: Any) -> Any:
         if name == "crop":
@@ -708,7 +709,7 @@ class Document(Serializable):
             if side.background and not side.background.startswith("#"):
                 refs.add(side.background)
             for item in side.items:
-                for attr in ("asset", "mask_asset"):
+                for attr in ("asset", "mask_asset", "cutout_asset"):
                     value = getattr(item, attr, None)
                     if value:
                         refs.add(value)

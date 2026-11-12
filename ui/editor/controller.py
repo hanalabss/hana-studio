@@ -888,6 +888,9 @@ class EditorController(QObject):
             mask = renderer.asset_path(document, getattr(item, "mask_asset", None))
             if mask and not os.path.isfile(mask):
                 issues.append(("missing_asset", "배경 제거 마스크 파일을 찾을 수 없습니다."))
+            cut = renderer.asset_path(document, getattr(item, "cutout_asset", None))
+            if cut and not os.path.isfile(cut):
+                issues.append(("missing_asset", "배경을 지운 그림 파일을 찾을 수 없습니다."))
         elif item.kind in ("barcode", "qr"):
             value = renderer.value_for(document, item, self._record, context)
             data = "" if value is None else str(value)

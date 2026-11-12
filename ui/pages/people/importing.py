@@ -52,7 +52,15 @@ from ui.widgets import (
 
 from .inputs import ElidedLabel, Rethemed
 from .preview import CardView, render_card_image
-from .text import DELIMITER_NAMES, ENCODING_NAMES, display_value, has_final_consonant, people
+from .text import (
+    DELIMITER_NAMES,
+    ENCODING_NAMES,
+    SAMPLE_BUTTON_TEXT,
+    SAMPLE_BUTTON_TIP,
+    display_value,
+    has_final_consonant,
+    people,
+)
 
 FILE_FILTER = "명단 파일 (*.xlsx *.xlsm *.csv *.txt *.tsv);;엑셀 (*.xlsx *.xlsm);;CSV (*.csv *.txt *.tsv)"
 IMPORT_SUFFIXES = (".xlsx", ".xlsm", ".csv", ".txt", ".tsv", ".tab", ".xls")
@@ -586,6 +594,11 @@ class ImportWizard(Dialog):
         self.preview_caption = label("", "hint")
         foot.addWidget(self.preview_caption)
         foot.addStretch(1)
+        self.sample_button = QuietButton(SAMPLE_BUTTON_TEXT, "sm", accent=True)
+        self.sample_button.setAccessibleName(SAMPLE_BUTTON_TEXT)
+        self.sample_button.setToolTip(SAMPLE_BUTTON_TIP)
+        self.sample_button.clicked.connect(lambda: self.get_sample())
+        foot.addWidget(self.sample_button)
         self.detail_toggle = QuietButton("자세히", "sm", icon="chevron-down")
         self.detail_toggle.setCheckable(True)
         self.detail_toggle.toggled.connect(self._toggle_details)
@@ -638,6 +651,30 @@ class ImportWizard(Dialog):
             return False
         self.load_file(path)
         return True
+
+    def get_sample(self, folder: str | os.PathLike | None = None, ask: bool = True):
+        """예시 명단과 예시 사진을 저장한다. '이 파일로 바로 해 보기'를 고르면 이 창에서 그 파일을 연다.
+
+        만든 파일(data.samples.SampleFiles)을 돌려주고, 그만두면 None. folder, ask는 PeoplePage.get_sample과 같다.
+        """
+        from .sample import offer_sample
+
+        if self._busy:
+            return None
+        sample, wants_try = offer_sample(self, self._workspace.editor.document, self._show_file_error, folder, ask)
+        if sample is not None and wants_try:
+            self.use_sample(sample)
+        return sample
+
+    def use_sample(self, sample) -> None:
+        """예시 파일을 읽고, 예시 사진 폴더를 사진 폴더로 골라 둔다."""
+        self.load_file(sample.workbook_path)
+        self.set_photo_folder(sample.photo_dir)
+
+    def _show_file_error(self, message: str) -> None:
+        self.file_banner.set_kind("error")
+        self.file_banner.set_text(message)
+        self.file_banner.setVisible(True)
 
     def load_file(self, path: str | os.PathLike, **options: Any) -> None:
         """파일을 읽어 첫 화면을 채운다. options: sheet, has_header, encoding, delimiter."""
@@ -877,8 +914,8 @@ class ImportWizard(Dialog):
         photo_fields = [f for f in self._fields if f.is_photo]
         self._photo_field = photo_fields[0].name if photo_fields else None
         file_has_photo = any(c.type == "photo" for c in preview.columns)
-        if self._photo_field is None and file_has_photo:
-            self._photo_field = DEFAULT_PHOTO_FIELD
+        if self._photo_field is None and (file_has_photo or self._photo_folder):
+            self._photo_field = DEFAULT_PHOTO_FIELD      # 사진 폴더를 이미 골랐으면 카드에 사진 칸이 없어도 쓴다
 
         while self.field_grid.count():
             child = self.field_grid.takeAt(0)

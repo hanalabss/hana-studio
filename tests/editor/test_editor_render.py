@@ -163,3 +163,34 @@ def test_items_repaint_only_when_content_changes(parity_controller, monkeypatch)
     assert updates == []
     controller.set_property([barcode.id], "data", "CHANGED")
     assert updates == [barcode.id]
+
+
+def test_cutout_image_looks_the_same_on_canvas_and_in_print(parity_controller, qimage_array, tmp_path):
+    """배경을 지운 그림: 화면과 인쇄 모두 지운 자리에 카드 색이 보이고, 둘이 서로 같다."""
+    from PIL import Image
+
+    from design import storage
+
+    controller = parity_controller
+    picture = next(it for it in controller.side().items if it.name == "그림")
+    cut = Image.new("RGBA", (240, 160), (0, 0, 0, 0))
+    cut.paste((200, 30, 30, 255), (60, 0, 180, 160))             # 가운데 띠만 남긴다
+    cut.save(tmp_path / "cut.png")
+    asset = storage.import_asset(controller.document.base_dir, tmp_path / "cut.png")
+    controller.set_properties(picture.id, {"cutout_asset": asset, "fit": "stretch"})
+
+    printed = np.array(renderer.render_side(controller.document, "front", None, dpi=300).color)
+    canvas = qimage_array(_scene_image(controller, printed.shape[1], printed.shape[0]))[..., :3]
+    rows, cols = _item_region(picture, K, printed.shape)
+    mean, far = _difference(canvas[rows, cols], printed[rows, cols])
+    assert mean < 3.0 and far < 0.02
+
+    card = np.array([0xF4, 0xF1, 0xEA])
+    y, x_cleared, x_kept = (rows.start + rows.stop) // 2, cols.start + 20, (cols.start + cols.stop) // 2
+    for image in (printed, canvas):
+        assert np.abs(image[y, x_cleared].astype(int) - card).max() <= 3      # 지운 자리: 카드 바탕색
+        assert np.abs(image[y, x_kept].astype(int) - np.array([200, 30, 30])).max() <= 3
+
+    controller.undo_stack.undo()                                 # 되돌리면 원래 그림이 다시 꽉 찬다
+    restored = np.array(renderer.render_side(controller.document, "front", None, dpi=300).color)
+    assert np.abs(restored[y, x_cleared].astype(int) - card).max() > 40

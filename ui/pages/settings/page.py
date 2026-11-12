@@ -16,7 +16,7 @@ from ui.pages.printing.style import apply_page_style
 from ui.shell import BasePage
 from ui.theme import SPACE, ThemeManager
 from ui.widgets import (
-    ComboBox, FormRow, MmField, Panel, QuietButton, SecondaryButton, SegmentedControl, StepperField,
+    ComboBox, FormRow, MmField, Panel, QuietButton, SecondaryButton, SegmentedControl, StepperField, inform,
     label,
 )
 
@@ -61,11 +61,13 @@ def version_lines() -> list[tuple[str, str]]:
 
 
 class SettingsPage(BasePage):
-    def __init__(self, shell=None, services=None, parent: QWidget | None = None, prefs: Prefs | None = None) -> None:
+    def __init__(self, shell=None, services=None, parent: QWidget | None = None, prefs: Prefs | None = None,
+                 is_admin: bool = False) -> None:
         """shell: 순서 안내를 켜고 끌 틀(없으면 틀에 올라갈 때 잇는다). services: 기록 정리에 쓴다."""
         super().__init__("설정", parent)
         self.prefs = prefs or Prefs.instance()
         self.services = services
+        self.is_admin = bool(is_admin)
         self._bound_shell = None
         self.open_folder = lambda path: QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
@@ -95,6 +97,8 @@ class SettingsPage(BasePage):
         column.addWidget(self._build_print())
         column.addWidget(self._build_history())
         column.addWidget(self._build_files())
+        if self.is_admin:
+            column.addWidget(self._build_admin())
         column.addWidget(self._build_about())
         column.addStretch(1)
         apply_page_style(self)
@@ -245,6 +249,25 @@ class SettingsPage(BasePage):
             ("documents", "내 문서", os.path.join(os.path.expanduser("~"), "Documents"),
              "디자인과 명단 파일은 저장할 때 고른 곳에 있습니다. 보통 여기에 둡니다."),
         ]
+
+    def _build_admin(self) -> Panel:
+        panel = Panel("관리자", "관리자 키로 들어왔을 때만 보입니다.")
+        self.license_button = SecondaryButton("라이선스 관리 열기")
+        self.license_button.clicked.connect(self.open_license_admin)
+        row = QHBoxLayout()
+        row.addWidget(self.license_button)
+        row.addStretch(1)
+        panel.body.addLayout(row)
+        return panel
+
+    def open_license_admin(self) -> None:
+        """라이선스 키를 만들고 정지하는 관리 창(기존 화면의 '관리 > 라이선스 관리'와 같은 창)."""
+        try:
+            from licensing.admin_panel import AdminPanel
+            AdminPanel(self.window()).exec()
+        except Exception as exc:
+            log.exception("라이선스 관리 창을 열지 못했습니다")
+            inform(self, "라이선스 관리를 열 수 없습니다", str(exc))
 
     def _build_about(self) -> Panel:
         panel = Panel("프로그램 정보")

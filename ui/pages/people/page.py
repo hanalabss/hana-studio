@@ -57,6 +57,7 @@ from .empty import EmptyView
 from .importing import IMPORT_SUFFIXES, FILE_FILTER, ImportWizard, design_fields
 from .model import HIDDEN_OPTION, KIND_FIELD, KIND_STATUS, IdsFilter, PeopleTableModel, PhotoIndex, SpecRole
 from .preview import Issue, PreviewPanel
+from .sample import offer_sample
 from .inputs import TableFrame
 from .table import HEADER_HEIGHT, PeopleTable
 from .text import TYPE_NAMES, display_value, josa, people
@@ -91,6 +92,7 @@ class PeoplePage(BasePage):
         self.empty_view = EmptyView(self)
         self.empty_view.importRequested.connect(lambda: self.start_import())
         self.empty_view.manualRequested.connect(lambda: self.start_manual())
+        self.empty_view.sampleRequested.connect(lambda: self.get_sample())
         self.empty_view.openRequested.connect(self.open_list)
         self._stack.addWidget(self.empty_view)
         self._main = QWidget(self)
@@ -316,8 +318,28 @@ class PeoplePage(BasePage):
         if open_form:
             self.add_person()
 
-    def start_import(self, path: str | os.PathLike | None = None, run: bool = True) -> ImportWizard | None:
-        """가져오기 창을 연다. run=False면 창을 띄우지 않고 돌려준다(테스트, 스크린샷용)."""
+    def get_sample(self, folder: str | os.PathLike | None = None, ask: bool = True, run: bool = True):
+        """예시 명단과 예시 사진을 저장한다. 만든 파일(data.samples.SampleFiles)을 돌려주고, 그만두면 None.
+
+        folder가 없으면 저장할 폴더를 묻는다. ask=False면 저장만 하고 '바로 해 보기'를 묻지 않는다.
+        사용자가 '이 파일로 바로 해 보기'를 고르면 try_sample로 넘어간다(run은 그때 창을 띄울지).
+        """
+        sample, wants_try = offer_sample(self, self.workspace.editor.document,
+                                         lambda message: self.toast(message, "error"), folder, ask)
+        if sample is not None and wants_try:
+            self.try_sample(sample, run)
+        return sample
+
+    def try_sample(self, sample, run: bool = True) -> ImportWizard | None:
+        """예시 파일로 보통의 가져오기를 연다. 사진 폴더는 예시 사진 폴더로 미리 골라 둔다."""
+        return self.start_import(sample.workbook_path, run, photo_folder=sample.photo_dir)
+
+    def start_import(self, path: str | os.PathLike | None = None, run: bool = True,
+                     photo_folder: str | os.PathLike | None = None) -> ImportWizard | None:
+        """가져오기 창을 연다. run=False면 창을 띄우지 않고 돌려준다(테스트, 스크린샷용).
+
+        photo_folder를 주면 사진 폴더를 미리 골라 둔다.
+        """
         self.commit_pending_delete()
         if path is None:
             start = str(Path(self._design_path()).parent) if self._design_path() else ""
@@ -329,6 +351,8 @@ class PeoplePage(BasePage):
         wizard.busyChanged.connect(self.model.set_frozen)
         wizard.finished.connect(lambda _code, w=wizard: self._after_import(w))
         wizard.load_file(path)
+        if photo_folder:
+            wizard.set_photo_folder(photo_folder)
         if run:
             wizard.exec()
         return wizard

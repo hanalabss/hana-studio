@@ -185,3 +185,59 @@ def test_eta_appears_after_two_cards(env, workspace, services):
     gate.release.set()
     finish_job(env, page)
     assert page.run.eta.text() == ""
+
+
+def test_next_job_can_be_queued_while_printing(env, workspace, services):
+    """인쇄가 도는 동안 다음 작업을 걸어 두면, 앞 작업이 끝난 뒤 이어서 뽑는다(기존 화면의 대기열)."""
+    from printer import registry
+    from ui.pages.printing import STATE_DONE, STATE_RUNNING
+
+    gate = Gate(registry, hold_on=2)
+    page = make_page(env, workspace, services)
+    ids = workspace.store.ids()
+    workspace.set_checked_ids(ids[:3])
+    page.refresh_now()
+    first = page.start_printing()
+    wait_until(env, gate.entered.is_set)
+    assert page.queue_bar.isVisibleTo(page) and page.queue_add_button.isVisibleTo(page)
+
+    assert page.compose_next() is True
+    assert page.stack.currentWidget() is page.ready
+    workspace.set_checked_ids(ids[3:])
+    page.refresh_now()
+    assert "다음 작업으로 걸기" in page.ready.start_button.text()
+    second = page.start_printing()
+    assert second is not None and second.id != first.id
+    assert page.waiting_jobs() == [second]
+    assert page.stack.currentWidget() is page.run and page.state() == STATE_RUNNING
+    assert "1개" in page.queue_label.text()
+
+    gate.release.set()
+    wait_until(env, lambda: page.job() is second)
+    wait_until(env, lambda: page.state() == STATE_DONE)
+    assert page.waiting_jobs() == []
+    assert not page.queue_bar.isVisibleTo(page)
+    assert all(r["_printed"] for r in workspace.store.rows())
+    assert first.success_count == 3 and second.success_count == len(ids) - 3
+
+
+def test_queued_job_can_be_removed_before_it_starts(env, workspace, services):
+    from printer import registry
+
+    gate = Gate(registry, hold_on=1)
+    page = make_page(env, workspace, services)
+    ids = workspace.store.ids()
+    workspace.set_checked_ids(ids[:2])
+    page.refresh_now()
+    page.start_printing()
+    wait_until(env, gate.entered.is_set)
+    page.compose_next()
+    workspace.set_checked_ids(ids[2:])
+    page.refresh_now()
+    second = page.start_printing()
+    assert page.cancel_waiting() is True and page.waiting_jobs() == []
+    gate.release.set()
+    finish_job(env, page)
+    printed = [r["_printed"] for r in workspace.store.rows()]
+    assert printed[:2] == [True, True] and not any(printed[2:])
+    assert not second.is_active

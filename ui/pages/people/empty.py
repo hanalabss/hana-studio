@@ -1,4 +1,4 @@
-"""명단이 아직 없을 때의 화면: 파일 가져오기, 직접 입력, 최근에 쓴 명단."""
+"""명단이 아직 없을 때의 화면: 파일 가져오기, 예시 파일 받기, 직접 입력, 최근에 쓴 명단."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from ui.widgets import IconWidget, PrimaryButton, QuietButton, label, paint_icon
 
 from .inputs import Rethemed
 from .storage import RecentList
+from .text import SAMPLE_BUTTON_TEXT, SAMPLE_BUTTON_TIP
 
 
 class _SheetToCards(Rethemed, QWidget):
@@ -103,6 +104,7 @@ class _DropZone(Rethemed, QFrame):
 class EmptyView(QWidget):
     importRequested = Signal()
     manualRequested = Signal()
+    sampleRequested = Signal()
     openRequested = Signal(str)
 
     def __init__(self, parent: QWidget | None = None):
@@ -149,6 +151,13 @@ class EmptyView(QWidget):
         manual = QHBoxLayout()
         manual.setSpacing(SPACE["xs"])
         manual.addStretch(1)
+        manual.addWidget(label("어떻게 적는지 궁금하면", "muted"))
+        self.sample_button = QuietButton(SAMPLE_BUTTON_TEXT, "sm", accent=True)
+        self.sample_button.setAccessibleName(SAMPLE_BUTTON_TEXT)
+        self.sample_button.setToolTip(SAMPLE_BUTTON_TIP)
+        self.sample_button.clicked.connect(self.sampleRequested)
+        manual.addWidget(self.sample_button)
+        manual.addSpacing(SPACE["lg"])
         manual.addWidget(label("파일이 없나요?", "muted"))
         self.manual_button = QuietButton("직접 입력해서 시작", "sm", accent=True)
         self.manual_button.clicked.connect(self.manualRequested)
