@@ -20,47 +20,70 @@ def _debug_log_path() -> str:
         return os.path.join(folder, "hana_debug.log")
 
 
+class _CappedLog:
+    """크기가 정해진 한도를 넘으면 처음부터 다시 쓰는 기록 파일. 오래 켜 둬도 무한히 커지지 않는다."""
+
+    LIMIT_BYTES = 5 * 1024 * 1024
+
+    def __init__(self, path: str):
+        self.path = path
+        self._file = open(path, "w", encoding="utf-8", buffering=1)
+        self._written = 0
+
+    def write(self, text) -> int:
+        try:
+            text = str(text)
+            self._written += len(text.encode("utf-8", "replace"))
+            if self._written > self.LIMIT_BYTES:
+                self._file.close()
+                self._file = open(self.path, "w", encoding="utf-8", buffering=1)
+                self._file.write("(기록이 5MB를 넘어 앞부분을 지우고 새로 시작합니다)\n")
+                self._written = len(text)
+            return self._file.write(text)
+        except Exception:
+            return 0
+
+    def flush(self) -> None:
+        try:
+            self._file.flush()
+        except Exception:
+            pass
+
+    def isatty(self) -> bool:
+        return False
+
+
+_capped_log = None
+try:
+    _capped_log = _CappedLog(_debug_log_path())
+except Exception:
+    _capped_log = None
+
+# GUI 모드(PyInstaller --windowed)에서는 stdout/stderr가 없으므로 기록 파일로 보낸다.
 if sys.stdout is None or sys.stderr is None:
-    try:
-        log_path = _debug_log_path()
-        log_file = open(log_path, "w", encoding="utf-8", buffering=1)
-        if sys.stdout is None:
-            sys.stdout = log_file
-        if sys.stderr is None:
-            sys.stderr = log_file
-    except Exception:
-        devnull = open(os.devnull, 'w', encoding='utf-8')
-        if sys.stdout is None:
-            sys.stdout = devnull
-        if sys.stderr is None:
-            sys.stderr = devnull
+    _sink = _capped_log or open(os.devnull, 'w', encoding='utf-8')
+    if sys.stdout is None:
+        sys.stdout = _sink
+    if sys.stderr is None:
+        sys.stderr = _sink
 
 # 안전한 print 함수
 _original_print = print
-_log_file = None
+
 
 def safe_print(*args, **kwargs):
-    """GUI 모드에서도 안전한 print 함수"""
-    global _log_file
-    if _log_file is None:
-        try:
-            log_path = _debug_log_path()
-            _log_file = open(log_path, "a", encoding="utf-8")
-        except Exception:
-            _log_file = False
-
+    """GUI 모드에서도 안전한 print 함수. 콘솔이 있을 때는 화면과 기록 파일 양쪽에 남긴다."""
     try:
         _original_print(*args, **kwargs)
-    except:
+    except Exception:
         pass
-
-    if _log_file and _log_file is not False:
+    # 콘솔 없이 실행 중이면 위의 print가 이미 기록 파일로 갔다(같은 내용을 두 번 쓰지 않는다).
+    if _capped_log is not None and sys.stdout is not _capped_log:
         try:
-            message = " ".join(str(arg) for arg in args)
-            _log_file.write(message + "\n")
-            _log_file.flush()
-        except:
+            _capped_log.write(" ".join(str(arg) for arg in args) + "\n")
+        except Exception:
             pass
+
 
 import builtins
 builtins.print = safe_print

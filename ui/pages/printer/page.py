@@ -46,7 +46,8 @@ def checklist_for(diagnostics: list[str]) -> list[str]:
         "프린터 전원이 켜져 있고, 프린터 화면에 오류 표시가 없는지 봐 주세요.",
         "USB 선이 프린터와 컴퓨터 양쪽에 끝까지 꽂혀 있는지 확인해 주세요. "
         "네트워크로 쓰는 프린터라면 랜선과 공유기를 확인해 주세요.",
-        "Windows에 프린터 드라이버를 따로 설치하지 않아도 됩니다. 선만 이어져 있으면 찾습니다.",
+        "Windows의 '프린터 및 스캐너'에 이 프린터가 보이는지 확인해 주세요. 보이지 않으면 "
+        "프린터 제조사의 드라이버를 먼저 설치해 주세요.",
     ]
     text = "\n".join(diagnostics)
     missing = [name for family, name in _LIBRARY_NAMES.items()

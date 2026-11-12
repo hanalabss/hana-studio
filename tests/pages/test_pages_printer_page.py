@@ -30,7 +30,7 @@ def test_nothing_found_shows_a_checklist_and_raw_detail(env, services, monkeypat
     assert page.summary.text() == "찾은 프린터가 없습니다"
     texts = page.checklist_texts()
     assert "전원" in texts[0] and "USB 선" in texts[1]
-    assert "드라이버를 따로 설치하지 않아도 됩니다" in texts[2]
+    assert "제조사의 드라이버를 먼저 설치해 주세요" in texts[2]
     assert any("SMART 프린터를 쓰는 데 필요한 프로그램 파일" in t for t in texts)
     assert not any("RTAI 프린터를 쓰는 데" in t for t in texts)
     assert "다시 찾기" in texts[-1]
