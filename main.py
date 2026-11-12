@@ -105,7 +105,7 @@ def main():
             pass
 
         # 최소한의 Qt import만
-        from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel
+        from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel
         from PySide6.QtCore import Qt, QTimer
         from PySide6.QtGui import QFont
 
@@ -114,7 +114,12 @@ def main():
         configure_hidpi()
 
         # Qt 애플리케이션 생성
+        # 작업 표시줄에 파이썬 대신 앱 아이콘이 보이게 한다(창을 만들기 전에)
+        from ui.theme.brand import app_icon, logo_pixmap, set_windows_app_id
+        set_windows_app_id()
+
         app = QApplication(sys.argv)
+        app.setWindowIcon(app_icon())
         app.setStyle('Fusion')
         app.setQuitOnLastWindowClosed(True)
 
@@ -133,34 +138,57 @@ def main():
         from ui.theme import ThemeManager
         ThemeManager.instance().apply(app)
 
-        # 매우 심플한 로딩 화면
+        # 로딩 화면: 로고, 이름, 지금 하는 일, 아래에 리본 색 띠
         loading = QWidget()
-        loading.setWindowTitle("Hana Studio")
-        loading.setFixedSize(400, 200)
-        loading.setStyleSheet("background-color: #F8F9FA;")
+        loading.setWindowTitle("하나스튜디오")
+        loading.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        loading.setFixedSize(420, 240)
+        loading.setObjectName("Loading")
+        loading.setAttribute(Qt.WA_StyledBackground, True)
+        loading.setStyleSheet("#Loading { background-color: #FFFFFF; border: 1px solid #DDE1E7; }")
 
-        layout = QVBoxLayout(loading)
+        outer = QVBoxLayout(loading)
+        outer.setContentsMargins(1, 1, 1, 1)
+        outer.setSpacing(0)
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(32, 36, 32, 24)
         layout.setAlignment(Qt.AlignCenter)
-        layout.setSpacing(15)
+        layout.setSpacing(10)
 
-        # 타이틀
-        title = QLabel("Hana Studio")
+        logo = QLabel()
+        logo.setAlignment(Qt.AlignCenter)
+        logo.setPixmap(logo_pixmap(64, loading.devicePixelRatioF()))
+        layout.addWidget(logo)
+
+        title = QLabel("하나스튜디오")
         title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("Segoe UI", 24, QFont.Bold))
-        title.setStyleSheet("color: #343A40;")
+        title.setFont(QFont("Malgun Gothic", 17, QFont.Bold))
+        title.setStyleSheet("color: #1B2430;")
         layout.addWidget(title)
 
-        # 상태
-        status = QLabel("Loading...")
+        status = QLabel("시작하는 중...")
         status.setAlignment(Qt.AlignCenter)
-        status.setStyleSheet("color: #6C757D; font-size: 12px;")
+        status.setFont(QFont("Malgun Gothic", 9))
+        status.setStyleSheet("color: #5B6676;")
         layout.addWidget(status)
+        outer.addWidget(body, 1)
+
+        ribbon = QWidget()
+        ribbon.setFixedHeight(6)
+        ribbon_row = QHBoxLayout(ribbon)
+        ribbon_row.setContentsMargins(0, 0, 0, 0)
+        ribbon_row.setSpacing(0)
+        for color in ("#F5C400", "#E0338A", "#1AA7E0", "#1B2430"):
+            block = QWidget()
+            block.setStyleSheet(f"background-color: {color};")
+            ribbon_row.addWidget(block)
+        outer.addWidget(ribbon)
 
         # 화면 중앙에 배치
-        screen = app.primaryScreen().geometry()
-        x = (screen.width() - loading.width()) // 2
-        y = (screen.height() - loading.height()) // 2
-        loading.move(x, y)
+        screen = app.primaryScreen().availableGeometry()
+        loading.move(screen.x() + (screen.width() - loading.width()) // 2,
+                     screen.y() + (screen.height() - loading.height()) // 2)
 
         # 로딩 화면 표시
         loading.show()
@@ -181,25 +209,25 @@ def main():
 
             try:
                 if step == 0:
-                    status.setText("NumPy 로딩...")
+                    status.setText("계산 도구를 불러오는 중...")
                     app.processEvents()
                     import numpy
                     print("[IMPORT] numpy")
 
                 elif step == 1:
-                    status.setText("OpenCV 로딩...")
+                    status.setText("그림 도구를 불러오는 중...")
                     app.processEvents()
                     import cv2
                     print("[IMPORT] cv2")
 
                 elif step == 2:
-                    status.setText("ONNX Runtime 로딩...")
+                    status.setText("배경 지우기 기능을 준비하는 중...")
                     app.processEvents()
                     import onnxruntime
                     print("[IMPORT] onnxruntime")
 
                 elif step == 3:
-                    status.setText("UI 컴포넌트 로딩...")
+                    status.setText("화면을 준비하는 중...")
                     app.processEvents()
                     from ui.components.control_panels import (
                         PrinterPanel, FileSelectionPanel, PrintModePanel,
@@ -208,14 +236,14 @@ def main():
                     print("[IMPORT] control_panels")
 
                 elif step == 4:
-                    status.setText("이미지 뷰어 로딩...")
+                    status.setText("화면을 준비하는 중...")
                     app.processEvents()
                     from ui.components.image_viewer import ImageViewer
                     from ui import main_window
                     print("[IMPORT] image_viewer")
 
                 elif step == 5:
-                    status.setText("화면 준비 중...")
+                    status.setText("거의 다 됐습니다...")
                     app.processEvents()
                     from ui.app import build_main_window
                     state['main_window'] = build_main_window(is_admin=state['is_admin'])

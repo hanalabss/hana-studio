@@ -26,6 +26,8 @@ SolidCompression=yes
 
 ; 호환성
 WizardStyle=modern
+WizardImageFile=assets\brand\installer_side.bmp,assets\brand\installer_side_2x.bmp
+WizardSmallImageFile=assets\brand\installer_small.bmp,assets\brand\installer_small_2x.bmp
 MinVersion=10.0.17763
 ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64

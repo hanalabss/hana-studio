@@ -23,6 +23,15 @@ def build_main_window(is_admin: bool = False, *, services=None, start_services: 
                           PAGE_SETTINGS, AppShell)
 
     shell = AppShell(is_admin=is_admin)
+    try:
+        from ui.theme.brand import app_icon
+        icon = app_icon()
+        if not icon.isNull():
+            shell.setWindowIcon(icon)
+            if QApplication.instance() is not None:
+                QApplication.instance().setWindowIcon(icon)
+    except Exception:
+        log.exception("앱 아이콘을 불러오지 못했습니다")
     workspace = Workspace(shell)
     services = services or AppServices()
 

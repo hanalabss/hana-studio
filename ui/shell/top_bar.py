@@ -96,6 +96,17 @@ class TopBar(QFrame):
         layout.setContentsMargins(20, 0, 16, 0)
         layout.setSpacing(SPACE["sm"])
 
+        self._logo = QLabel()
+        self._logo.setObjectName("AppLogo")
+        self._logo.setFixedSize(24, 24)
+        try:
+            from ui.theme.brand import logo_pixmap
+            self._logo.setPixmap(logo_pixmap(24, self.devicePixelRatioF()))
+        except Exception:
+            pass
+        if self._logo.pixmap() is None or self._logo.pixmap().isNull():
+            self._logo.hide()
+        layout.addWidget(self._logo)
         self._app_name = QLabel(APP_NAME)
         self._app_name.setObjectName("AppName")
         layout.addWidget(self._app_name)

@@ -73,6 +73,7 @@ a = Analysis(
         ('dll/R600StatusReference', '_internal/dll'),
         ('dll/Retransfer600_SDKCfg.xml', '_internal/dll'),
         ('hana.ico', '.'),
+        ('assets/brand', 'assets/brand'),
 
         # === 프로젝트 내부 모듈 ===
         ('dll', 'dll'),
