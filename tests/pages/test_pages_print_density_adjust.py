@@ -26,7 +26,6 @@ def test_density_fields_show_for_smart_and_carry_the_saved_values(env, workspace
     select_smart(env, services, page)
     sheet = page.make_options_sheet()
     assert list(sheet.density_fields) == ["density", "density_yellow", "density_magenta", "density_cyan"]
-    assert sheet.color_fields == {}, "밝기·명암·채도는 SMART에 없다"
     assert [field.value() for field in sheet.density_fields.values()] == [0, 0, 0, 0]
 
     sheet.density_fields["density"].set_value(20)

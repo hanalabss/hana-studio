@@ -30,7 +30,7 @@ def test_color_fields_show_for_rtai_and_carry_the_saved_values(env, workspace, s
     assert page.prefs.color_adjust() == (0, 0, 0)
 
 
-def test_color_fields_are_hidden_for_a_printer_that_cannot_do_it(env, workspace, services):
+def test_color_fields_show_for_smart_too(env, workspace, services):
     page = make_page(env, workspace, services)
     smart = next(d for d in services.printers.devices() if d.family == "smart")
     services.printers.select(smart)
@@ -38,8 +38,21 @@ def test_color_fields_are_hidden_for_a_printer_that_cannot_do_it(env, workspace,
     wait_until(env, lambda: not services.printers.is_busy and services.printers.status() is not None)
     page.refresh_now()
     sheet = page.make_options_sheet()
-    assert sheet.color_fields == {}
-    assert "색 조정" not in page.ready.options_summary.text()
+    assert set(sheet.color_fields) == {"brightness", "contrast", "saturation"}
+    sheet.color_fields["saturation"].set_value(15)
+    page.apply_choices(sheet.choices())
+    page.refresh_now()
+    assert "색 조정 밝기 +0 명암 +0 채도 +15" in page.ready.options_summary.text()
+
+
+def test_color_fields_are_hidden_when_the_printer_cannot_do_it(env):
+    from design.model import Document
+    from ui.pages.printing.options_sheet import OptionsSheet, PrintChoices, summary_text
+
+    choices = PrintChoices(options=PrintOptions(brightness=10))
+    sheet = OptionsSheet(choices, Document(), set(), [], people=False)
+    assert sheet.color_fields == {} and sheet.density_fields == {}
+    assert "색 조정" not in summary_text(choices, Document(), set(), False)
 
 
 def test_stored_values_outside_the_range_are_clamped(env):

@@ -135,7 +135,7 @@ class OptionsSheet(Dialog):
             self.body.addWidget(Divider())
             self.body.addWidget(label("색 맞추기", "title"))
             self.body.addWidget(label(
-                "카드에 찍힌 색이 화면보다 어둡거나 흐릴 때만 바꾸세요. 0이 원래대로이고 "
+                "카드에 찍힌 색이 화면보다 어둡거나 밋밋할 때만 바꾸세요. 0이 원래대로이고 "
                 f"{COLOR_ADJUST_MIN}부터 +{COLOR_ADJUST_MAX}까지 넣을 수 있습니다. 화면의 미리 보기에는 "
                 "나타나지 않고 인쇄에만 적용됩니다. 이 값은 다음 인쇄에도 그대로 씁니다.", "muted", wrap=True))
             colors = QHBoxLayout()

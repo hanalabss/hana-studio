@@ -29,9 +29,9 @@ def visual_calls(lib):
     return [call.args for call in lib.calls_named(VISUAL)]
 
 
-def test_only_rtai_says_it_can_adjust_color(adapter, smart_lib):
+def test_both_families_say_they_can_adjust_color(adapter, smart_lib):
     assert CAP_COLOR_ADJUST in adapter.capabilities()
-    assert CAP_COLOR_ADJUST not in SmartAdapter(lib=smart_lib).capabilities()
+    assert CAP_COLOR_ADJUST in SmartAdapter(lib=smart_lib).capabilities()
 
 
 def test_values_are_read_from_options_and_kept_inside_the_sdk_range():
@@ -193,3 +193,38 @@ def test_real_dll_keeps_the_value_until_it_is_set_again(real_printer, chart):
     assert brightness_of(carried) > brightness_of(base) + 5, "다시 넣지 않으면 앞의 값이 남는다"
     restored = render(real_printer, chart, (0, 0, 0))
     assert abs(brightness_of(restored) - brightness_of(base)) < 1.0
+
+
+# ---------------------------------------------------------------- SMART: 보내기 전에 그림을 바꾼다
+def smart_prepared(smart_lib, smart_device, source, options, adjust_color=True):
+    adapter = SmartAdapter(lib=smart_lib)
+    adapter.connect(smart_device)
+    temp_files = []
+    path = adapter._prepare_image(source, SideImages(source), False, options, temp_files,
+                                  adjust_color=adjust_color)
+    with Image.open(path) as image:
+        result = image.convert("RGB")
+    for name in temp_files:
+        os.remove(name)
+    return result
+
+
+def test_smart_changes_the_picture_it_sends(smart_lib, smart_device, chart):
+    def sent(**options):
+        return smart_prepared(smart_lib, smart_device, chart, {"bleed_handled": True, **options})
+
+    base = sent()
+    assert sent(brightness=0, contrast=0, saturation=0).tobytes() == base.tobytes(), "0이면 그림을 건드리지 않는다"
+    assert brightness_of(sent(brightness=40)) > brightness_of(base) + 5
+    assert brightness_of(sent(brightness=-40)) < brightness_of(base) - 5
+    assert contrast_of(sent(contrast=40)) > contrast_of(base) + 2
+    assert contrast_of(sent(contrast=-40)) < contrast_of(base) - 2
+    assert saturation_of(sent(saturation=40)) > saturation_of(base) + 5
+    assert saturation_of(sent(saturation=-100)) < 1.0, "-100이면 회색이 된다"
+
+
+def test_smart_leaves_the_fluorescent_picture_alone(smart_lib, smart_device, chart):
+    options = {"bleed_handled": True, "brightness": 40, "saturation": 40}
+    plain = smart_prepared(smart_lib, smart_device, chart, {"bleed_handled": True})
+    uv = smart_prepared(smart_lib, smart_device, chart, options, adjust_color=False)
+    assert uv.tobytes() == plain.tobytes()
