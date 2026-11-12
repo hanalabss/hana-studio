@@ -252,6 +252,7 @@ class PrintPage(BasePage):
         view.personSelected.connect(self.show_position)
         view.stepRequested.connect(lambda delta: self.show_position(self._position + delta))
         view.sideChanged.connect(self._on_side_changed)
+        view.layerChanged.connect(self._on_layer_changed)
         view.optionsRequested.connect(self.open_options)
         view.printerChangeRequested.connect(self._change_printer)
         view.findingAction.connect(self._on_finding_action)
@@ -558,6 +559,11 @@ class PrintPage(BasePage):
         self._side = side
         self._update_preview()
 
+    def _on_layer_changed(self, layer: str) -> None:
+        """미리 보기를 '인쇄 그림'과 '흰색·은색이 깔리는 자리' 사이에서 바꾼다."""
+        self._layer = layer
+        self._update_preview()
+
     def _update_preview(self) -> None:
         self._preview_timer.stop()
         document, store = self.workspace.editor.document, self.workspace.store
@@ -575,11 +581,12 @@ class PrintPage(BasePage):
             self.ready.preview.set_placeholder("왼쪽에서 뽑을 사람을 고르면\n카드가 여기에 보입니다")
             self.ready.set_preview_caption("뽑을 사람을 골라 주세요", "", 0, 0)
             return
-        key = (record_id, self._side, self._position if record_id is None else 0)
+        layer = getattr(self, "_layer", "color")
+        key = (record_id, self._side, self._position if record_id is None else 0, layer)
         image = self._cache.get(key)
         if image is None:
             image = render_card_image(document, store if people else None, record_id, self._side,
-                                      position=self._position)
+                                      position=self._position, layer=layer)
             if image is not None:
                 self._cache.put(key, image)
         self.ready.preview.set_image(image)

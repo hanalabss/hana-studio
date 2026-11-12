@@ -114,6 +114,7 @@ class ReadyView(QWidget):
     personSelected = Signal(int)         # 목록에서의 위치
     stepRequested = Signal(int)          # -1 이전, +1 다음
     sideChanged = Signal(str)
+    layerChanged = Signal(str)
     optionsRequested = Signal()
     printerChangeRequested = Signal()
     findingAction = Signal(str, object)
@@ -260,6 +261,11 @@ class ReadyView(QWidget):
         names.addWidget(self.preview_name)
         names.addWidget(self.preview_sub)
         top.addLayout(names, 1)
+        self.layer_control = SegmentedControl([("color", "인쇄 그림"), ("white", "흰색·은색 자리")])
+        self.layer_control.setToolTip(
+            "'흰색·은색 자리'는 흰색(W)이나 은색(S) 리본이 깔리는 곳을 검게 보여 줍니다. 투명 카드에 찍기 전에 확인하세요.")
+        self.layer_control.currentChanged.connect(self.layerChanged)
+        top.addWidget(self.layer_control, 0, Qt.AlignTop)
         self.side_control = SegmentedControl([("front", "앞면"), ("back", "뒷면")])
         self.side_control.currentChanged.connect(self.sideChanged)
         top.addWidget(self.side_control, 0, Qt.AlignTop)

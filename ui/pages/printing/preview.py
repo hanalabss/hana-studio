@@ -20,9 +20,27 @@ PREVIEW_DPI = 150.0
 _CORNER_RATIO = 3.18 / 85.6     # CR80 모서리 둥글기
 
 
+LAYER_COLOR = "color"      # 인쇄되는 그림
+LAYER_WHITE = "white"      # 흰색·은색(W·S)이 깔리는 자리: 깔리는 곳을 검게 보여 준다(프린터에 보내는 모양 그대로)
+
+
+def white_layer_image(mask_path: str | None, size: QSize) -> QImage:
+    """흰색·은색이 깔리는 자리 그림. 깔리는 곳은 검정, 나머지는 흰색. 깔 곳이 없으면 온통 흰색."""
+    if mask_path:
+        mask = QImage(mask_path)
+        if not mask.isNull():
+            shown = mask.convertToFormat(QImage.Format.Format_Grayscale8)
+            shown.invertPixels()          # 앱 안에서는 흰색 = 깔리는 곳. 보여 줄 때는 검정 = 깔리는 곳
+            return shown.copy()
+    blank = QImage(size, QImage.Format.Format_Grayscale8)
+    blank.fill(255)
+    return blank
+
+
 def render_card_image(document: Document, store: DataStore | None, record_id: int | None,
-                      side_key: str = "front", dpi: float = PREVIEW_DPI, position: int = 0) -> QImage | None:
-    """record_id 사람의 카드 한 면. 그릴 수 없으면 None."""
+                      side_key: str = "front", dpi: float = PREVIEW_DPI, position: int = 0,
+                      layer: str = LAYER_COLOR) -> QImage | None:
+    """record_id 사람의 카드 한 면. 그릴 수 없으면 None. layer가 LAYER_WHITE면 흰색·은색이 깔리는 자리."""
     job = None
     try:
         options = PrintOptions(dpi=dpi, counter_offset=position)
@@ -37,7 +55,11 @@ def render_card_image(document: Document, store: DataStore | None, record_id: in
         if side is None:
             return None
         image = QImage(side.color_path)
-        return None if image.isNull() else image.copy()
+        if image.isNull():
+            return None
+        if layer == LAYER_WHITE:
+            return white_layer_image(side.white_mask_path, image.size())
+        return image.copy()
     except Exception as exc:
         log.info("미리 보기를 그리지 못했습니다: %s", exc)
         return None
