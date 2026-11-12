@@ -97,7 +97,13 @@ def pack(vpk: str, version: str) -> None:
 
 def upload(vpk: str, version: str, token: str) -> None:
     run([vpk, "upload", "github", "--repoUrl", REPO_URL, "--outputDir", str(OUT), "--token", token,
-         "--publish", "--tag", f"v{version}", "--releaseName", f"{TITLE} {version}"])
+         "--publish", "--tag", f"v{version}", "--releaseName", f"{TITLE} {version}",
+         "--targetCommitish", current_commit(), "--timeout", "60"])
+
+
+def current_commit() -> str:
+    """태그가 가리킬 커밋: 지금 빌드한 코드(작업 폴더의 HEAD). 올리기 전에 푸시되어 있어야 한다."""
+    return subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True, cwd=ROOT).stdout.strip()
 
 
 def prune_releases(keep: int = KEEP_RELEASES) -> list[str]:
