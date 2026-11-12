@@ -7,6 +7,8 @@ from typing import Any, Iterable
 
 from PySide6.QtGui import QUndoCommand
 
+from design.model import ItemGeometry
+
 _MERGE_ID = 0x4853  # 병합 후보끼리 같은 id를 쓰고, 실제 병합 여부는 mergeWith가 정한다.
 
 # 레이어 목록에 보이는 속성. 바뀌면 목록을 다시 그려야 한다.
@@ -259,35 +261,59 @@ class SideBackgroundCommand(EditorCommand):
 
 
 class CardSetupCommand(EditorCommand):
-    """카드 크기, 도련, 양면 여부, 이름, 면 방향."""
+    """카드 크기, 도련, 양면 여부, 이름, 면 방향. 그에 맞춰 옮긴 항목 위치도 함께 되돌린다."""
 
     structural = True
     card_level = True
     FIELDS = ("name", "card_width_mm", "card_height_mm", "bleed_mm", "dual_side")
 
-    def __init__(self, controller, text: str, changes: dict[str, Any], orientations: dict[str, str] | None = None):
+    def __init__(
+        self, controller, text: str, changes: dict[str, Any], orientations: dict[str, str] | None = None,
+        geometry: dict[str, dict[str, ItemGeometry]] | None = None,
+    ):
+        """geometry: 면 → {항목 id: ItemGeometry}. 카드가 바뀐 뒤 항목이 놓일 자리."""
         super().__init__(controller, text, None)
         document = controller.document
         self.after = {k: v for k, v in changes.items() if k in self.FIELDS}
         self.before = {k: getattr(document, k) for k in self.after}
         self.orient_after = dict(orientations or {})
         self.orient_before = {k: document.side(k).orientation for k in self.orient_after}
+        self.geometry_after = {key: dict(placed) for key, placed in (geometry or {}).items()}
+        self.geometry_before = {
+            key: {
+                item_id: ItemGeometry.of(document.side(key).get(item_id))
+                for item_id in placed if document.side(key).get(item_id) is not None
+            }
+            for key, placed in self.geometry_after.items()
+        }
         self.select_after = list(self.select_before)
+
+    def affected_ids(self) -> list[str]:
+        return list(self.geometry_after.get(self.controller.current_side, {}))
+
+    def changed_attrs(self) -> set[str]:
+        return {"x", "y", "w", "h", "rotation"} if self.geometry_after else set()
 
     def is_noop(self) -> bool:
         return self.after == self.before and self.orient_after == self.orient_before
 
-    def _apply(self, fields: dict[str, Any], orientations: dict[str, str]) -> None:
+    def _apply(self, fields: dict[str, Any], orientations: dict[str, str], geometry: dict[str, dict]) -> None:
         document = self.controller.document
         for name, value in fields.items():
             setattr(document, name, value)
         for key, orientation in orientations.items():
             document.side(key).orientation = orientation
+        for key, placed in geometry.items():
+            side = document.side(key)
+            for item_id, place in placed.items():
+                item = side.get(item_id)
+                if item is not None:
+                    place.apply_to(item)
 
     def redo(self) -> None:
-        self._apply(self.after, self.orient_after)
+        self._apply(self.after, self.orient_after, self.geometry_after)
         self._finish(False)
 
     def undo(self) -> None:
-        self._apply(self.before, self.orient_before)
+        self._apply(self.before, self.orient_before, self.geometry_before)
         self._finish(True)

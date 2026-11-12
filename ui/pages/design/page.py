@@ -474,9 +474,7 @@ class DesignPage(BasePage):
         return bool(path) and self._save_to(path)
 
     def _save_to(self, path: str) -> bool:
-        view_editor = getattr(self.view, "_commit_text_edit", None)
-        if callable(view_editor):
-            view_editor()
+        self.view.commit_text_edit()
         try:
             saved = self.controller.save(path)
         except (storage.StorageError, EditorError, OSError) as exc:

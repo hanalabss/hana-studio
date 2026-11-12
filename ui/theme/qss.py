@@ -216,6 +216,63 @@ QAbstractSpinBox::down-arrow { image: url($img_spin_down); width: 10px; height: 
 QAbstractSpinBox::up-arrow:disabled, QAbstractSpinBox::up-arrow:off { image: url($img_spin_up_disabled); }
 QAbstractSpinBox::down-arrow:disabled, QAbstractSpinBox::down-arrow:off { image: url($img_spin_down_disabled); }
 
+/* 날짜 칸: 달력을 여는 QDateEdit(calendarPopup). 속성은 화면에 나오기 전에 켜 둬야 한다. */
+QDateTimeEdit[calendarPopup="true"] { padding-right: 4px; }
+QDateTimeEdit[calendarPopup="true"]:focus { padding-right: 3px; }
+QDateTimeEdit::drop-down {
+    subcontrol-origin: padding; subcontrol-position: center right; width: 30px; border: 0;
+    border-radius: ${r_sm}px; background: transparent;
+}
+QDateTimeEdit::drop-down:hover { background: $surface_hover; }
+QDateTimeEdit[calendarPopup="true"]::down-arrow { image: url($img_calendar); width: 16px; height: 16px; }
+QDateTimeEdit[calendarPopup="true"]::down-arrow:disabled { image: url($img_calendar_disabled); }
+
+/* 달력 팝업: 따로 뜨는 창이라 이름(#)으로 골라 어디서나 먹게 한다. */
+QCalendarWidget { background: $surface_raised; border: 1px solid $control_line; }
+QWidget#qt_calendar_navigationbar {
+    background: $surface_sunken; border: 0; border-bottom: 1px solid $line;
+    min-height: 40px; max-height: 40px;
+}
+QToolButton#qt_calendar_prevmonth, QToolButton#qt_calendar_nextmonth,
+QToolButton#qt_calendar_monthbutton, QToolButton#qt_calendar_yearbutton {
+    min-height: 28px; max-height: 28px; margin: 0 2px; padding: 0 8px; border: 0; border-radius: ${r_sm}px;
+    background: transparent; color: $text; font-size: ${fs_body}px; font-weight: $strong;
+}
+QToolButton#qt_calendar_prevmonth, QToolButton#qt_calendar_nextmonth {
+    min-width: 28px; max-width: 28px; padding: 0; margin: 0 6px; icon-size: 14px;
+}
+QToolButton#qt_calendar_prevmonth { qproperty-icon: url($img_chevron_left); }
+QToolButton#qt_calendar_nextmonth { qproperty-icon: url($img_chevron_right); }
+QToolButton#qt_calendar_prevmonth:hover, QToolButton#qt_calendar_nextmonth:hover,
+QToolButton#qt_calendar_monthbutton:hover, QToolButton#qt_calendar_yearbutton:hover { background: $surface_hover; }
+QToolButton#qt_calendar_prevmonth:pressed, QToolButton#qt_calendar_nextmonth:pressed,
+QToolButton#qt_calendar_monthbutton:pressed, QToolButton#qt_calendar_yearbutton:pressed { background: $surface_pressed; }
+QToolButton#qt_calendar_monthbutton::menu-indicator { image: none; width: 0; }
+QSpinBox#qt_calendar_yearedit {
+    min-height: 28px; max-height: 28px; min-width: 64px; padding: 0 22px 0 6px;
+    border: 1px solid $control_line; border-radius: ${r_sm}px; background: $surface_raised; color: $text;
+    selection-background-color: $accent; selection-color: $text_on_accent;
+}
+QSpinBox#qt_calendar_yearedit:focus { border: 2px solid $focus; padding: 0 21px 0 5px; }
+QSpinBox#qt_calendar_yearedit::up-button, QSpinBox#qt_calendar_yearedit::down-button {
+    subcontrol-origin: border; width: 20px; border: 0; background: transparent; margin: 1px 1px 1px 0;
+}
+QSpinBox#qt_calendar_yearedit::up-button { subcontrol-position: top right; }
+QSpinBox#qt_calendar_yearedit::down-button { subcontrol-position: bottom right; }
+QSpinBox#qt_calendar_yearedit::up-arrow { image: url($img_spin_up); width: 10px; height: 10px; }
+QSpinBox#qt_calendar_yearedit::down-arrow { image: url($img_spin_down); width: 10px; height: 10px; }
+QAbstractItemView#qt_calendar_calendarview {
+    background: $surface_raised; alternate-background-color: $surface_raised; color: $text;
+    border: 0; outline: 0; padding: 0;
+    selection-background-color: transparent; selection-color: $text;
+}
+QAbstractItemView#qt_calendar_calendarview:disabled { color: $text_disabled; }
+/* 날짜 칸은 위젯(DateField, style_calendar)이 직접 그린다. 표의 줄 배경이 그 밑에 깔리지 않게 비운다. */
+QAbstractItemView#qt_calendar_calendarview::item,
+QAbstractItemView#qt_calendar_calendarview::item:hover,
+QAbstractItemView#qt_calendar_calendarview::item:selected,
+QAbstractItemView#qt_calendar_calendarview::item:selected:hover { padding: 0; border: 0; background: transparent; }
+
 QLineEdit#StepperValue { font-weight: $strong; font-size: ${fs_body}px; }
 QPushButton[stepper="true"] { padding: 0; }
 
@@ -279,6 +336,12 @@ QHeaderView::section {
 }
 QHeaderView::section:vertical { border-bottom: 0; border-right: 1px solid $line; padding: 0 8px; }
 QHeaderView::section:hover { color: $text; }
+/* 정렬 표시. 오름차순(가→하)이면 up-arrow가 쓰이고 위쪽 꺾쇠를, 내림차순이면 아래쪽 꺾쇠를 보인다. */
+QHeaderView::up-arrow, QHeaderView::down-arrow {
+    width: 12px; height: 12px; subcontrol-origin: padding; subcontrol-position: center right; right: 8px;
+}
+QHeaderView::up-arrow { image: url($img_sort_asc); }
+QHeaderView::down-arrow { image: url($img_sort_desc); }
 QTableCornerButton::section { background: $surface_sunken; border: 0; border-bottom: 1px solid $line; }
 
 /* ---------- 스크롤 ---------- */
@@ -347,7 +410,7 @@ QFrame#SettingsRow { background: transparent; border: 0; border-bottom: 1px soli
 THEMED_PROPERTY = "themed"
 _SCOPE = f'[{THEMED_PROPERTY}="true"]'
 # 어디서나 먹어도 되는 것: 따로 뜨는 작은 창들.
-_GLOBAL_TYPES = ("QToolTip", "QMenu", "QMenuBar")
+_GLOBAL_TYPES = ("QToolTip", "QMenu", "QMenuBar", "QCalendarWidget")
 # 우리 위젯만 갖는 속성. 이 속성으로 고른 규칙은 범위를 따로 좁히지 않는다.
 _KIT_PROPERTIES = ("role", "variant", "sizing", "segment", "chip", "pill", "stepper", "iconOnly",
                    "tone", "kind", "quiet", "state", "accent", "sunken", "invalid")

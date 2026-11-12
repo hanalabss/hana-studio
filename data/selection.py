@@ -14,18 +14,18 @@ _DASHES = str.maketrans({"~": "-", "～": "-", "〜": "-", "–": "-", "—": "-
 def parse_ranges(text: str, total: int) -> list[int]:
     """'1,3,4-9' → [1,3,4,5,6,7,8,9]. 번호는 1부터 total까지, 입력한 순서를 지키고 중복은 한 번만."""
     if total <= 0:
-        raise RangeError("인쇄할 레코드가 없습니다.")
+        raise RangeError("뽑을 사람이 없습니다.")
     cleaned = re.sub(r"\s*-\s*", "-", str(text or "").translate(_DASHES).strip())
     tokens = [t for t in re.split(r"[,;\s]+", cleaned) if t]
     if not tokens:
-        raise RangeError(f"인쇄할 범위를 입력하세요. {_EXAMPLE}")
+        raise RangeError(f"뽑을 번호를 적어 주세요. {_EXAMPLE}")
 
     def check(number: int) -> int:
         if number < 1:
             raise RangeError(f"번호는 1부터 시작합니다. {_EXAMPLE}")
         if number > total:
             raise RangeError(
-                f"{number}번은 범위를 벗어났습니다. 전체 {total}건이므로 1부터 {total} 사이로 입력하세요."
+                f"{number}번은 범위를 벗어났습니다. 모두 {total}명이므로 1부터 {total} 사이로 입력하세요."
             )
         return number
 
@@ -100,7 +100,7 @@ class PrintSelection:
         """인쇄할 레코드 _id를 인쇄 순서대로 돌려준다."""
         if self.mode == "current":
             if self.record_id is None or store.get(self.record_id) is None:
-                raise DataError("선택한 레코드를 찾을 수 없습니다.")
+                raise DataError("고른 사람을 명단에서 찾을 수 없습니다.")
             return [self.record_id]
         if self.mode == "all":
             return store.ids(filter, order)
@@ -114,22 +114,22 @@ class PrintSelection:
             return store.ids(self.filter, order)
         if self.mode == "unprinted":
             return store.ids(all_of(filter, unprinted_only()), order)
-        raise DataError(f"알 수 없는 인쇄 대상입니다: {self.mode}")
+        raise DataError(f"알 수 없는 고르기 방식입니다: {self.mode}")
 
     def count(self, store, filter: Any = None, order: Any = None) -> int:
         return len(self.resolve(store, filter, order))
 
     def describe(self) -> str:
         if self.mode == "current":
-            return "현재 레코드"
+            return "지금 보는 사람"
         if self.mode == "all":
             return "전체"
         if self.mode == "ranges":
             return f"범위 {self.range_text}"
         if self.mode == "ids":
-            return f"선택한 {len(self.record_ids)}건"
+            return f"고른 {len(self.record_ids)}명"
         if self.mode == "filter":
-            return "조건에 맞는 레코드"
+            return "조건에 맞는 사람"
         if self.mode == "unprinted":
-            return "인쇄하지 않은 레코드"
+            return "아직 안 뽑은 사람"
         return self.mode

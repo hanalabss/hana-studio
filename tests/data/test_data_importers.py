@@ -125,10 +125,10 @@ def test_detect_delimiter_single_column():
 def test_preview_csv_headerless(tmp_path):
     preview = preview_csv(write(tmp_path, "a.csv", "김철수,00123,2026-01-05\n이영희,00124,2026-02-01\n", "cp949"))
     assert preview.has_header is False
-    assert [c.name for c in preview.columns] == ["열1", "열2", "열3"]
+    assert [c.name for c in preview.columns] == ["항목1", "항목2", "항목3"]
     assert preview.total_rows == 2
     assert preview.sample_rows[0] == ["김철수", "00123", "2026-01-05"]
-    assert types(preview) == {"열1": "text", "열2": "text", "열3": "date"}
+    assert types(preview) == {"항목1": "text", "항목2": "text", "항목3": "date"}
 
 
 def test_preview_csv_headerless_all_text_repeating_values(tmp_path):
@@ -150,7 +150,7 @@ def test_preview_csv_messy_headers_and_blank_lines(tmp_path):
     text = "\n\n 이름 ,,이름,_id,메모\n\n김철수,x,철수,7,\n,,,,\n이영희,y,영희,8,\n\n\n"
     preview = preview_csv(write(tmp_path, "a.csv", text, "utf-8"))
     assert preview.has_header is True
-    assert [c.name for c in preview.columns] == ["이름", "열2", "이름 (2)", "id", "메모"]
+    assert [c.name for c in preview.columns] == ["이름", "항목2", "이름 (2)", "id", "메모"]
     assert preview.total_rows == 2
     assert preview.blank_rows == 2
     assert preview.row_numbers == [5, 7]
@@ -264,7 +264,7 @@ def test_import_column_map_errors_leave_store_untouched(tmp_path, people):
         import_into(people, preview, {"없는 열": "이름"})
     with pytest.raises(DataError, match="두 개 이상"):
         import_into(people, preview, {"이름": "이름", "사번": "이름"})
-    with pytest.raises(DataError, match="가져올 열"):
+    with pytest.raises(DataError, match="가져올 항목"):
         import_into(people, preview, {"이름": None})
     with pytest.raises(DataError):
         import_into(people, preview, {"이름": "이름", "사번": "_id"}, mode="replace")
@@ -298,7 +298,7 @@ def test_import_caps_warning_list(tmp_path, store):
     result = import_into(store, preview_csv(write(tmp_path, "a.csv", text, "utf-8"), has_header=True))
     assert result.inserted == 250
     assert len(result.warnings) == 101
-    assert "150건" in result.warnings[-1]
+    assert "150개" in result.warnings[-1]
 
 
 def test_import_hostile_headers_and_values(tmp_path, store):
@@ -483,8 +483,8 @@ def test_preview_excel_headerless(tmp_path):
 
     preview = preview_excel(save_workbook(tmp_path, build))
     assert preview.has_header is False
-    assert [c.name for c in preview.columns] == ["열1", "열2", "열3"]
-    assert types(preview) == {"열1": "text", "열2": "number", "열3": "date"}
+    assert [c.name for c in preview.columns] == ["항목1", "항목2", "항목3"]
+    assert types(preview) == {"항목1": "text", "항목2": "number", "항목3": "date"}
 
 
 def test_preview_excel_errors(tmp_path):

@@ -53,6 +53,15 @@ class Dialog(QDialog):
     def title(self) -> str:
         return self._title.text()
 
+    def set_title(self, title: str, window_title: bool = True) -> None:
+        """안쪽 제목을 바꾼다. window_title이 참이면 창 제목 줄도 같이 바꾼다."""
+        self._title.setText(title)
+        if window_title:
+            self.setWindowTitle(title)
+
+    def description(self) -> str:
+        return self._description.text()
+
     def set_description(self, text: str | None) -> None:
         self._description.setText(text or "")
         self._description.setVisible(bool(text))

@@ -107,6 +107,7 @@ def test_view_grab_matches_print_render(parity_controller, qimage_array, qapp):
     from ui.editor import EditorView
 
     controller = parity_controller
+    controller.set_field_tint_visible(False)     # 명단 항목 표시(옅은 노랑)는 화면에만 얹는 것이라 끄고 견준다
     view = EditorView(controller)
     view.resize(900, 640)
     view.show()

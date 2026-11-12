@@ -25,9 +25,9 @@ def test_parse_ranges_friendly_variants():
 @pytest.mark.parametrize(
     "text,total,fragment",
     [
-        ("", 10, "범위를 입력"),
-        ("   ", 10, "범위를 입력"),
-        (",", 10, "범위를 입력"),
+        ("", 10, "번호를 적어"),
+        ("   ", 10, "번호를 적어"),
+        (",", 10, "번호를 적어"),
         ("11", 10, "11번은 범위를 벗어났습니다"),
         ("1-20", 10, "20번은 범위를 벗어났습니다"),
         ("0", 10, "1부터"),
@@ -38,7 +38,7 @@ def test_parse_ranges_friendly_variants():
         ("1-2-3", 10, "'1-2-3'"),
         ("-", 10, "'-'"),
         ("1.5", 10, "'1.5'"),
-        ("3", 0, "레코드가 없습니다"),
+        ("3", 0, "뽑을 사람이 없습니다"),
     ],
 )
 def test_parse_ranges_errors_are_korean_and_specific(text, total, fragment):
@@ -49,7 +49,7 @@ def test_parse_ranges_errors_are_korean_and_specific(text, total, fragment):
 
 
 def test_out_of_range_message_mentions_total():
-    with pytest.raises(RangeError, match="전체 10건"):
+    with pytest.raises(RangeError, match="모두 10명"):
         parse_ranges("12", 10)
 
 
@@ -78,7 +78,7 @@ def test_selection_ranges_follow_the_visible_order(people):
     assert PrintSelection.ranges("1-2").resolve(people, order=("나이", "desc")) == by_age[:2]
     dev = Condition("부서", "eq", "개발부")
     assert PrintSelection.ranges("2").resolve(people, filter=dev) == [ids[2]]
-    with pytest.raises(RangeError, match="전체 2건"):
+    with pytest.raises(RangeError, match="모두 2명"):
         PrintSelection.ranges("3").resolve(people, filter=dev)
 
 
@@ -117,4 +117,4 @@ def test_selection_descriptions_are_korean(people):
         PrintSelection.unprinted(),
     ]:
         assert selection.describe()
-    assert PrintSelection.ids([1, 2]).describe() == "선택한 2건"
+    assert PrintSelection.ids([1, 2]).describe() == "고른 2명"

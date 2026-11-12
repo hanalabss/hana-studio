@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QScrollArea, QVBox
 from design import presets
 from printer.history import default_history_path
 from services.printers import app_data_dir
-from ui.pages.printing.style import apply_page_style, hug_left
+from ui.pages.printing.style import apply_page_style
 from ui.shell import BasePage
 from ui.theme import SPACE, ThemeManager
 from ui.widgets import (
@@ -132,9 +132,9 @@ class SettingsPage(BasePage):
             current=ThemeManager.instance().mode)
         self.theme_control.currentChanged.connect(lambda mode: ThemeManager.instance().set_mode(mode))
         self.theme_control.setAccessibleName("화면 색")
-        panel.body.addWidget(FormRow("화면 색", hug_left(self.theme_control),
+        panel.body.addWidget(FormRow("화면 색", self.theme_control,
                                      "'시스템 따라가기'는 Windows 설정의 밝게·어둡게를 따릅니다.",
-                                     orientation="horizontal", label_width=_LABEL_WIDTH))
+                                     orientation="horizontal", label_width=_LABEL_WIDTH, control_align="left"))
         self.guide_check = QCheckBox("카드 꾸미기, 명단 넣기, 인쇄하기 순서 안내 보기")
         self.guide_check.setEnabled(False)
         self.guide_check.toggled.connect(self._on_guide_toggled)
@@ -164,8 +164,8 @@ class SettingsPage(BasePage):
         self.copies.setFixedWidth(200)
         self.copies.valueChanged.connect(lambda value: self.prefs.set_copies(int(value)))
         self.copies.setAccessibleName("한 사람에 몇 장")
-        panel.body.addWidget(FormRow("한 사람에 몇 장", hug_left(self.copies), orientation="horizontal",
-                                     label_width=_LABEL_WIDTH))
+        panel.body.addWidget(FormRow("한 사람에 몇 장", self.copies, orientation="horizontal",
+                                     label_width=_LABEL_WIDTH, control_align="left"))
         self.stop_check = QCheckBox("한 장이 실패하면 남은 카드는 찍지 않고 멈추기")
         self.stop_check.toggled.connect(self.prefs.set_stop_on_error)
         stop = QVBoxLayout()
@@ -206,9 +206,9 @@ class SettingsPage(BasePage):
         self.retention_combo.currentIndexChanged.connect(
             lambda index: self.prefs.set_retention_days(RETENTION_CHOICES[index][0]))
         self.retention_combo.setAccessibleName("기록을 두는 기간")
-        panel.body.addWidget(FormRow("기록을 두는 기간", hug_left(self.retention_combo),
+        panel.body.addWidget(FormRow("기록을 두는 기간", self.retention_combo,
                                      "이 기간이 지난 기록은 프로그램을 켤 때 지웁니다. 명단에 적힌 '뽑은 날짜'는 지우지 않습니다.",
-                                     orientation="horizontal", label_width=_LABEL_WIDTH))
+                                     orientation="horizontal", label_width=_LABEL_WIDTH, control_align="left"))
         return panel
 
     def _build_files(self) -> Panel:

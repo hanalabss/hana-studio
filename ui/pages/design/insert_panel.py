@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QMimeData, QRectF, Qt, Signal
+from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QAction, QPainter, QPen
 from PySide6.QtWidgets import QGridLayout, QMenu, QPushButton, QVBoxLayout, QWidget
 
-from ui.editor import MIME_FIELD, field_mime
 from ui.theme import SPACE, ThemeManager
 from ui.widgets import FieldChip, FocusRingMixin, label, theme_color
 
@@ -61,20 +60,15 @@ class InsertTile(FocusRingMixin, QPushButton):
 
 
 class ListFieldChip(FieldChip):
-    """끌 때 캔버스가 알아듣는 형식(application/x-hanastudio-field)도 함께 싣는다."""
+    """명단 항목 칩. 캔버스가 받는 끌기 형식은 공용 FieldChip이 싣는다. 여기서는 도움말만 바꾼다."""
 
     def __init__(self, name: str, kind: str = "text", parent: QWidget | None = None) -> None:
-        super().__init__(name, parent)
+        super().__init__(name, parent, kind=kind)
         self.kind = kind
         if kind == "image":
             self.setToolTip("카드 위로 끌어다 놓으면 사람마다 바뀌는 사진 칸이 됩니다")
         else:
             self.setToolTip("카드 위로 끌어다 놓으면 사람마다 바뀌는 칸이 됩니다")
-
-    def mime_data(self) -> QMimeData:
-        mime = super().mime_data()
-        mime.setData(MIME_FIELD, field_mime(self.name(), self.kind).data(MIME_FIELD))
-        return mime
 
 
 class InsertPanel(QWidget):

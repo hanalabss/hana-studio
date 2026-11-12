@@ -389,3 +389,36 @@ def test_page_works_at_minimum_shell_size(shell, qapp):
     assert bar.side_control.width() >= bar.side_control.minimumSizeHint().width()
     assert bar.zoom_button.geometry().right() <= bar.width()
     assert bar.side_control.geometry().right() < bar.align_button.geometry().left()
+
+
+def test_saving_keeps_text_still_being_typed_on_the_canvas(editor, tmp_path):
+    controller = editor.controller
+    item = editor.add("text")
+    assert editor.view.begin_text_edit(item.id)
+    editor.view.text_editor().setPlainText("입력하던 글자")
+    editor.dialogs.save_path = str(tmp_path / "typing.hsd")
+
+    assert editor.save()
+    assert item.text == "입력하던 글자" and not editor.view.is_editing_text()
+    assert not controller.is_modified
+    loaded = storage.load(editor.dialogs.save_path)
+    try:
+        assert loaded.find_item(item.id)[1].text == "입력하던 글자"
+    finally:
+        storage.cleanup_workdir(loaded)
+
+
+def test_design_page_uses_only_public_editor_api():
+    """디자인 화면은 편집기의 밑줄 붙은(내부) 이름을 부르지 않는다."""
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2] / "ui" / "pages" / "design"
+    pattern = re.compile(r"\b(?:controller|view|scene|undo_stack)\._[a-z]\w*|getattr\([^)]*,\s*[\"']_")
+    found = [
+        f"{path.relative_to(root)}:{number}: {line.strip()}"
+        for path in sorted(root.rglob("*.py"))
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if pattern.search(line)
+    ]
+    assert found == []

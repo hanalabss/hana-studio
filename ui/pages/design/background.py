@@ -15,7 +15,26 @@ from design import storage
 from ui.widgets import theme_color
 
 DEFAULT_THRESHOLD = 200
+MIN_THRESHOLD, MAX_THRESHOLD = 5, 250
 PREVIEW_MAX_PX = 520
+# 사진 항목의 extra에 '지우는 정도'를 적어 두는 이름. 파일에 함께 저장된다.
+THRESHOLD_KEY = "cutout_threshold"
+
+
+def stored_threshold(item) -> int | None:
+    """사진 항목에 적어 둔 '지우는 정도'. 없거나 쓸 수 없는 값이면 None."""
+    value = getattr(item, "extra", {}).get(THRESHOLD_KEY)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return int(min(MAX_THRESHOLD, max(MIN_THRESHOLD, round(value))))
+
+
+def with_threshold(item, threshold: int | None) -> dict:
+    """'지우는 정도'를 적어 넣은(None이면 지운) 새 extra. 다른 값은 그대로 둔다."""
+    extra = {key: value for key, value in item.extra.items() if key != THRESHOLD_KEY}
+    if threshold is not None:
+        extra[THRESHOLD_KEY] = int(threshold)
+    return extra
 
 
 class BackgroundEngine:
@@ -50,8 +69,6 @@ class RembgEngine(BackgroundEngine):
         return bool(ensure_model_downloaded(loader.model_name, parent))
 
     def compute_alpha(self, image_path: str, progress: Callable[[str], None]) -> np.ndarray:
-        import io
-
         from core.image_processor import ImageProcessor
         from core.model_loader import get_model_loader
 
@@ -61,17 +78,13 @@ class RembgEngine(BackgroundEngine):
             if not loader.wait_for_loading():
                 raise RuntimeError("배경을 알아보는 기능을 준비하지 못했습니다. 잠시 뒤에 다시 해 보세요.")
         session = loader.get_loaded_session()
-        processor = ImageProcessor()
-        extract = getattr(processor, "extract_alpha", None)
         progress("사진에서 사람과 배경을 가려내고 있습니다.")
-        if callable(extract):
-            return np.asarray(extract(image_path, session=session), dtype=np.uint8)
-        # ImageProcessor.remove_background는 임계값을 적용한 결과만 주므로, 같은 방식으로 알파만 직접 얻는다.
-        from rembg import remove
-
-        with open(image_path, "rb") as handle:
-            result = remove(handle.read(), session=session)
-        return np.array(Image.open(io.BytesIO(result)).convert("RGBA").split()[-1], dtype=np.uint8)
+        try:
+            alpha = ImageProcessor().extract_alpha(image_path, session=session)
+        except (RuntimeError, ValueError) as exc:
+            # 처리기의 오류 문구는 개발자용이라 그대로 보여 주지 않는다.
+            raise RuntimeError("사진을 읽거나 가려내는 중에 문제가 생겼습니다. 다른 사진으로 해 보세요.") from exc
+        return np.asarray(alpha, dtype=np.uint8)
 
 
 def load_oriented(image_path: str) -> Image.Image:

@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from typing import Sequence
 
-from PySide6.QtCore import Signal
-from PySide6.QtGui import QPainter
+from PySide6.QtCore import QSize, Signal
+from PySide6.QtGui import QFont, QFontMetrics, QPainter
 from PySide6.QtWidgets import QButtonGroup, QFrame, QHBoxLayout, QPushButton, QSizePolicy, QWidget
+
+from ui.theme import ThemeManager
 
 from ._util import FocusRingMixin
 
@@ -20,6 +22,23 @@ class _Segment(FocusRingMixin, QPushButton):
         self.setFixedHeight(30)
         self.setAutoDefault(False)
 
+    def _bold_extra(self) -> int:
+        """고른 칸은 굵은 글씨로 그려진다. 보통 굵기로 잰 폭보다 얼마나 더 필요한지 돌려준다."""
+        self.ensurePolished()
+        bold = QFont(self.font())
+        bold.setWeight(QFont.Weight(ThemeManager.instance().font_spec.strong_weight))
+        text = self.text()
+        extra = QFontMetrics(bold).horizontalAdvance(text) - self.fontMetrics().horizontalAdvance(text)
+        return max(0, extra) + 2    # 2: 굵은 글씨 가장자리가 안쪽 여백에 닿지 않게 두는 여유
+
+    def sizeHint(self) -> QSize:
+        hint = super().sizeHint()
+        return QSize(hint.width() + self._bold_extra(), hint.height())
+
+    def minimumSizeHint(self) -> QSize:
+        hint = super().minimumSizeHint()
+        return QSize(max(hint.width(), self.sizeHint().width()), hint.height())
+
     def paintEvent(self, event) -> None:
         super().paintEvent(event)
         if self.shows_focus_ring():
@@ -32,7 +51,11 @@ class _Segment(FocusRingMixin, QPushButton):
 
 
 class SegmentedControl(QFrame):
-    """options는 "글자" 또는 (key, "글자"). currentChanged는 key를 보낸다."""
+    """options는 "글자" 또는 (key, "글자"). currentChanged는 key를 보낸다.
+
+    칸 너비는 굵은 글씨(고른 상태) 기준으로 잡으므로, 어느 칸을 골라도 글자가 잘리지 않고
+    고를 때마다 너비가 흔들리지도 않는다.
+    """
 
     currentChanged = Signal(str)
 

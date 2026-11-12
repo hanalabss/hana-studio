@@ -243,7 +243,10 @@ class PreviewBar(QWidget):
 
         editor = workspace.editor
         workspace.store_changed.connect(self.reload)
-        workspace.records_changed.connect(self.reload)
+        workspace.records_changed.connect(self._on_records_changed)
+        view_changed = getattr(workspace, "view_changed", None)
+        if view_changed is not None:
+            view_changed.connect(self._on_view_changed)
         workspace.columns_changed.connect(self._schedule_check)
         workspace.current_record_changed.connect(self._on_current_changed)
         for signal in (editor.items_changed, editor.document_changed, editor.card_changed, editor.side_changed):
@@ -256,18 +259,35 @@ class PreviewBar(QWidget):
     def record_ids(self) -> list[int]:
         return list(self._ids)
 
-    def reload(self) -> None:
+    def _query_ids(self) -> list[int]:
+        """명단 화면에서 보는 조건과 순서 그대로."""
         store = self.workspace.store
         if store is None:
-            self._ids = []
-        else:
-            try:
-                self._ids = store.ids(self.workspace.view_filter, self.workspace.view_order)
-            except Exception:
-                self._ids = store.ids()
+            return []
+        try:
+            return store.ids(self.workspace.view_filter, self.workspace.view_order)
+        except Exception:
+            return store.ids()
+
+    def reload(self) -> None:
+        self._ids = self._query_ids()
         self.strip.set_ids(self._ids)
         self._sync()
         self.refresh_warnings()
+
+    def _on_records_changed(self) -> None:
+        if not getattr(self.workspace, "store_opening", False):      # 명단을 열 때는 store_changed에서 읽었다
+            self.reload()
+
+    def _on_view_changed(self) -> None:
+        """명단 화면에서 찾거나 줄 세운 대로 따라간다. 카드 그림은 사람마다 그대로라 다시 그리지 않는다."""
+        ids = self._query_ids()
+        if ids == self._ids:
+            return
+        self._ids = ids
+        self.strip.model.set_ids(ids)
+        self._sync()
+        self.strip.scroll_to_current()
 
     def step(self, delta: int) -> None:
         if not self._ids:

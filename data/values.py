@@ -185,7 +185,7 @@ def clean_column_name(name: Any, index: int = 0) -> str:
     """파일 머리글을 저장소 열 이름으로 쓸 수 있게 다듬는다."""
     text = "" if name is None else re.sub(r"\s+", " ", str(name)).strip()
     text = text.lstrip("_").strip()
-    return text or f"열{index + 1}"
+    return text or f"항목{index + 1}"
 
 
 def unique_names(names: Iterable[str]) -> list[str]:

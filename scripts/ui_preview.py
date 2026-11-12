@@ -113,6 +113,11 @@ def _section_choices():
         SegmentedControl(["컬러", "화이트", "UV"]),
         off,
     ))
+    panel.body.addLayout(_row(
+        SegmentedControl([("system", "Windows 설정 따르기"), ("light", "밝게"), ("dark", "어둡게")]),
+        SegmentedControl([("system", "Windows 설정 따르기"), ("light", "밝게"), ("dark", "어둡게")],
+                         current="dark"),
+    ))
     panel.body.addWidget(label("걸러 보기 칩", "label"))
     gone = FilterChip("휴직", 0)
     gone.setEnabled(False)
@@ -144,7 +149,10 @@ def _section_inputs():
     from PySide6.QtWidgets import (QCheckBox, QDoubleSpinBox, QGridLayout, QLineEdit, QPlainTextEdit,
                                    QRadioButton, QSlider, QSpinBox, QVBoxLayout, QWidget)
 
-    from ui.widgets import ComboBox, FormRow, MmField, Panel, SearchField, StepperField, SwatchPicker, label
+    from PySide6.QtCore import QDate
+
+    from ui.widgets import (ComboBox, DateField, Divider, FormRow, MmField, Panel, SearchField, SegmentedControl,
+                            StepperField, SwatchPicker, align_form_rows, label)
 
     panel = Panel("입력")
     grid = QGridLayout()
@@ -232,9 +240,31 @@ def _section_inputs():
     memo.setFixedHeight(88)
     grid.addWidget(FormRow("뒷면 문구", memo), 3, 3)
 
+    date_off = DateField(QDate(2026, 3, 2))
+    date_off.setEnabled(False)
+    grid.addWidget(FormRow("입사일", DateField(QDate(2026, 11, 12))), 4, 0)
+    grid.addWidget(FormRow("퇴사일", DateField(empty_text="날짜 없음")), 4, 1)
+    grid.addWidget(FormRow("발급일", date_off), 4, 2)
+
     for column in range(4):
         grid.setColumnStretch(column, 1)
     panel.body.addLayout(grid)
+
+    panel.body.addWidget(Divider())
+    panel.body.addWidget(label("이름표가 왼쪽에 오는 줄 (이름표 폭을 가장 긴 것에 맞춤)", "label"))
+    form = QWidget()
+    form_box = QVBoxLayout(form)
+    form_box.setContentsMargins(0, 0, 0, 0)
+    form_box.setSpacing(12)
+    form_box.addWidget(FormRow(
+        "화면 색", SegmentedControl([("system", "Windows 설정 따르기"), ("light", "밝게"), ("dark", "어둡게")]),
+        "위쪽 줄의 달 모양 버튼으로도 바로 바꿀 수 있습니다.", orientation="horizontal", control_align="left"))
+    form_box.addWidget(FormRow("한 사람에 몇 장", StepperField(1, 1, 99, 1, 0, "장"), orientation="horizontal",
+                               control_align="left"))
+    form_box.addWidget(FormRow("기록을 두는 기간", ComboBox(["1년", "3년", "계속 두기"]),
+                               orientation="horizontal"))
+    align_form_rows(form)
+    panel.body.addWidget(form)
     panel.body.addWidget(label("글자색", "label"))
     panel.body.addWidget(SwatchPicker(current="#16181C"))
     return panel
@@ -355,6 +385,8 @@ def _section_data():
         table.setItem(row, 0, check)
         for column, value in enumerate(person, start=1):
             table.setItem(row, column, QTableWidgetItem(value))
+    table.horizontalHeader().setSortIndicatorShown(True)
+    table.horizontalHeader().setSortIndicator(1, Qt.AscendingOrder)
     table.selectRow(2)
     table.setFixedHeight(280)
 
@@ -396,6 +428,31 @@ def _section_text():
     return panel
 
 
+def _section_icons():
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QGridLayout, QVBoxLayout, QWidget
+
+    from ui.widgets import ICON_NAMES, IconWidget, Panel, label
+
+    panel = Panel("아이콘")
+    grid = QGridLayout()
+    grid.setHorizontalSpacing(8)
+    grid.setVerticalSpacing(14)
+    columns = 12
+    for index, name in enumerate(ICON_NAMES):
+        cell = QWidget()
+        box = QVBoxLayout(cell)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(4)
+        box.addWidget(IconWidget(name, 22), 0, Qt.AlignHCenter)
+        caption = label(name, "caption")
+        caption.setAlignment(Qt.AlignHCenter)
+        box.addWidget(caption)
+        grid.addWidget(cell, index // columns, index % columns)
+    panel.body.addLayout(grid)
+    return panel
+
+
 GALLERY_SECTIONS = (
     ("text", _section_text),
     ("buttons", _section_buttons),
@@ -405,6 +462,7 @@ GALLERY_SECTIONS = (
     ("empty", _section_empty),
     ("progress", _section_progress),
     ("data", _section_data),
+    ("icons", _section_icons),
 )
 
 
@@ -443,6 +501,19 @@ def build_sample_dialog(parent=None):
     dialog.add_button("그만두기", "secondary", "reject")
     dialog.add_button("12명 지우기", "danger", "accept")
     return dialog
+
+
+def build_sample_calendar():
+    """(날짜 칸, 펼친 달력 창)을 돌려준다. 날짜는 그림이 날마다 달라지지 않게 고정한다."""
+    from PySide6.QtCore import QDate
+
+    from ui.theme import mark_themed
+    from ui.widgets import DateField
+
+    field = DateField(QDate(2026, 11, 12))
+    mark_themed(field)
+    popup = field.calendarWidget().window()
+    return field, popup
 
 
 def build_sample_menu(parent=None):
@@ -653,7 +724,15 @@ def export_screenshots(app, out_dir: str | os.PathLike) -> list[Path]:
             save(tips[0], f"tooltip_{theme}.png")
         QToolTip.hideText()
 
-        for widget in (dialog, menu, focus_host, gallery, shell):
+        date_field, calendar = build_sample_calendar()
+        calendar.show()
+        _settle(app)
+        calendar.resize(calendar.sizeHint())
+        _settle(app)
+        save(calendar, f"calendar_{theme}.png")
+        calendar.hide()
+
+        for widget in (dialog, menu, date_field, focus_host, gallery, shell):
             widget.close()
             widget.deleteLater()
         _settle(app)

@@ -1,4 +1,4 @@
-"""인쇄·기록·프린터 화면이 쓰는 말. 서비스가 준 문구도 여기서 쉬운 말로 바꾼다."""
+"""인쇄·기록·프린터 화면이 쓰는 말."""
 from __future__ import annotations
 
 import re
@@ -8,27 +8,6 @@ from typing import Any, Iterable
 from printer.base import (
     CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_UV, CAP_WHITE, FAMILY_RTAI, FAMILY_SMART, UNIT_CARDS, UNIT_PERCENT,
     UNIT_UNKNOWN, PrinterDevice, PrinterStatus,
-)
-
-_REPLACEMENTS: tuple[tuple[re.Pattern, str], ...] = (
-    (re.compile(r"(\d+)번째 레코드"), r"\1번째 사람"),
-    (re.compile(r"(\d+)번 레코드"), r"\1번째 사람"),
-    (re.compile(r"레코드가 (\d+)건"), r"사람이 \1명"),
-    (re.compile(r"전체 (\d+)건"), r"모두 \1명"),
-    (re.compile(r"(\d+)건 중"), r"\1명 중"),
-    (re.compile(r"인쇄할 레코드가 없습니다\. 인쇄 대상을 선택하세요\."), "뽑을 사람이 없습니다. 왼쪽에서 뽑을 사람을 고르세요."),
-    (re.compile(r"인쇄할 레코드가 없습니다\."), "뽑을 사람이 없습니다."),
-    (re.compile(r"선택한 레코드를 찾을 수 없습니다\."), "고른 사람을 명단에서 찾을 수 없습니다."),
-    (re.compile(r"지워진 레코드"), "지워진 사람"),
-    (re.compile(r"레코드"), "사람"),
-    (re.compile(r"인쇄 대상을 다시 선택하세요"), "뽑을 사람을 다시 고르세요"),
-    (re.compile(r"인쇄할 범위를 입력하세요"), "뽑을 번호를 적어 주세요"),
-    (re.compile(r"'([^']+)' 열"), r"'\1' 항목"),
-    (re.compile(r"다른 열을"), "다른 항목을"),
-    (re.compile(r"열을 다시"), "항목을 다시"),
-    (re.compile(r"인쇄 옵션에서"), "인쇄 설정에서"),
-    (re.compile(r"화이트 레이어"), "화이트로 찍는 부분"),
-    (re.compile(r"인쇄 작업"), "인쇄"),
 )
 
 CAPABILITY_WORDS: tuple[tuple[str, str], ...] = (
@@ -53,11 +32,8 @@ CARD_STATE_TONES = {"success": "ok", "failed": "error", "cancelled": "idle"}
 
 
 def plain(message: str | None) -> str:
-    """서비스 문구에서 '레코드', '열' 같은 낱말을 사용자가 쓰는 말로 바꾼다."""
-    text = str(message or "").strip()
-    for pattern, replacement in _REPLACEMENTS:
-        text = pattern.sub(replacement, text)
-    return text
+    """서비스가 준 문구를 화면에 넣을 글자로. 낱말은 서비스가 이미 화면과 같은 말(사람, 항목, 장)로 쓴다."""
+    return str(message or "").strip()
 
 
 _PRINTER_NOTE = re.compile(r"\s*\[프린터 메시지:[^\]]*\]")
@@ -66,6 +42,33 @@ _PRINTER_NOTE = re.compile(r"\s*\[프린터 메시지:[^\]]*\]")
 def brief(message: str | None) -> str:
     """실패 이유를 화면에 보일 만큼만: SDK가 붙인 영어 원문은 빼고 코드는 남긴다."""
     return _PRINTER_NOTE.sub("", plain(message)).strip()
+
+
+# 단계 키(PrintProgress.stage_key) → 화면에 보일 말. 드라이버마다 다른 문구 대신 같은 말을 쓴다.
+STAGE_SENTENCES = {
+    "connect": "프린터에 연결하고 있습니다",
+    "prepare": "카드 그림을 준비하고 있습니다",
+    "feed": "카드를 프린터 안으로 넣고 있습니다",
+    "magnetic": "마그네틱에 정보를 적고 있습니다",
+    "setup": "인쇄를 준비하고 있습니다",
+    "front_image": "앞면 그림을 프린터로 보내고 있습니다",
+    "back_image": "뒷면 그림을 프린터로 보내고 있습니다",
+    "print": "카드를 찍고 있습니다",
+    "print_front": "앞면을 찍고 있습니다",
+    "print_back": "뒷면을 찍고 있습니다",
+    "wait": "다 찍히기를 기다리고 있습니다",
+    "eject": "카드를 내보내고 있습니다",
+    "done": "이 카드를 다 찍었습니다",
+    "next_card": "다음 카드를 준비하고 있습니다",
+}
+
+
+def stage_sentence(stage_key: str | None, text: str | None = "", side: str | None = None) -> str:
+    """지금 하는 일을 한 문장으로. 단계 키를 모르는 드라이버는 보내 준 문구를 그대로 쓴다."""
+    text = plain(text).rstrip(". ").strip()
+    if stage_key == "next_card" and "실패" in text:
+        return "이 카드를 찍지 못했습니다"
+    return STAGE_SENTENCES.get(stage_key or "") or text
 
 
 def capability_words(capabilities: Iterable[str]) -> list[str]:

@@ -188,9 +188,11 @@ def test_existing_mask_without_cached_result_offers_redo(page, qapp, tmp_path):
 
 
 def test_default_engine_uses_legacy_ai_stack(monkeypatch, tmp_path):
-    """기존 화면이 쓰는 세션(core.model_loader)과 rembg를 그대로 쓴다. 모델은 내려받지 않는다."""
+    """기존 화면이 쓰는 세션(core.model_loader)과 처리기(core.image_processor)를 그대로 쓴다. 모델은 내려받지 않는다."""
     import sys
     import types
+
+    import core.image_processor  # noqa: F401  진짜 처리기를 쓴다(rembg와 세션만 가짜)
 
     calls = {}
 
@@ -216,7 +218,6 @@ def test_default_engine_uses_legacy_ai_stack(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "core.model_loader", types.SimpleNamespace(get_model_loader=lambda: Loader()))
     monkeypatch.setitem(sys.modules, "core.model_downloader", types.SimpleNamespace(
         is_model_downloaded=lambda name: True, ensure_model_downloaded=lambda name, parent=None: True))
-    monkeypatch.setitem(sys.modules, "core.image_processor", types.SimpleNamespace(ImageProcessor=object))
     monkeypatch.setitem(sys.modules, "rembg", types.SimpleNamespace(remove=fake_remove))
 
     engine = background.RembgEngine()
@@ -225,4 +226,112 @@ def test_default_engine_uses_legacy_ai_stack(monkeypatch, tmp_path):
     alpha = engine.compute_alpha(make_image(tmp_path / "x.png", size=(8, 6)), messages.append)
     assert calls["session"] == "SESSION"
     assert alpha.shape == (6, 8) and alpha[3, 3] == 255 and alpha[0, 0] == 0
+    assert alpha.dtype == np.uint8
     assert messages
+
+
+def test_default_engine_hides_processor_errors_behind_plain_wording(monkeypatch, tmp_path):
+    import sys
+    import types
+
+    import core.image_processor  # noqa: F401
+
+    class Loader:
+        def is_ready(self):
+            return True
+
+        def get_loaded_session(self):
+            return "SESSION"
+
+    def broken_remove(data, session=None):
+        raise OSError("onnxruntime: invalid graph")
+
+    monkeypatch.setitem(sys.modules, "core.model_loader", types.SimpleNamespace(get_model_loader=lambda: Loader()))
+    monkeypatch.setitem(sys.modules, "rembg", types.SimpleNamespace(remove=broken_remove))
+
+    with pytest.raises(RuntimeError) as caught:
+        background.RembgEngine().compute_alpha(make_image(tmp_path / "x.png"), lambda _text: None)
+    assert "onnxruntime" not in str(caught.value) and "사진" in str(caught.value)
+
+
+def test_threshold_is_kept_on_the_item_and_follows_undo(editor, qapp):
+    section = editor.inspector.image
+    controller = editor.controller
+    controller.set_properties(editor.photo.id, {"extra": {"메모": "그대로"}})
+    section.start_removal()
+    _finish(editor, qapp)
+    assert editor.photo.extra == {"메모": "그대로", background.THRESHOLD_KEY: 128}
+    first_mask = editor.photo.mask_asset
+    before = controller.undo_stack.index()
+
+    section.set_threshold(60)
+    assert editor.photo.extra[background.THRESHOLD_KEY] == 60
+    assert editor.photo.mask_asset != first_mask
+    assert controller.undo_stack.index() == before + 1           # 마스크와 정도가 한 단계
+    assert len(section.engine.calls) == 1                        # 기억해 둔 결과를 다시 쓴다
+
+    editor.undo()
+    assert editor.photo.mask_asset == first_mask
+    assert editor.photo.extra[background.THRESHOLD_KEY] == 128
+    assert section.threshold_slider.value() == 128
+    editor.redo()
+    assert editor.photo.extra[background.THRESHOLD_KEY] == 60 and section.threshold_slider.value() == 60
+
+    editor.undo()
+    editor.undo()                                                # 배경 지우기 자체를 되돌린다
+    assert editor.photo.mask_asset is None and editor.photo.extra == {"메모": "그대로"}
+
+
+def test_threshold_survives_save_and_is_reused_when_redoing(editor, qapp, tmp_path):
+    from design import storage
+
+    section = editor.inspector.image
+    section.start_removal()
+    _finish(editor, qapp)
+    section.set_threshold(60)
+    path = str(tmp_path / "card.hsd")
+    editor.controller.save(path)
+
+    reopened = storage.load(path)
+    try:
+        photo = next(item for _side, item in reopened.iter_items() if item.kind == "image")
+        assert background.stored_threshold(photo) == 60 and photo.mask_asset
+    finally:
+        storage.cleanup_workdir(reopened)
+
+    section._results.clear()                                     # 프로그램을 껐다 켠 것처럼: 계산 결과는 없고 정도만 남는다
+    editor.controller.open(path)
+    pump(qapp)
+    photo = next(item for item in editor.controller.side().items if item.kind == "image")
+    editor.controller.select(photo.id)
+    pump(qapp)
+    assert section.redo_button.isVisible() and not section.adjust_box.isVisible()
+    section.redo_button.click()
+    _finish(editor, qapp)
+    assert section.adjust_box.isVisible() and section.threshold_slider.value() == 60
+    assert photo.extra[background.THRESHOLD_KEY] == 60
+
+
+def test_stored_threshold_ignores_unusable_values():
+    from design.model import ImageItem
+
+    item = ImageItem()
+    assert background.stored_threshold(item) is None
+    for value, expected in ((60, 60), (60.4, 60), (1, 5), (999, 250), ("60", None), (True, None), (None, None)):
+        item.extra = {background.THRESHOLD_KEY: value}
+        assert background.stored_threshold(item) == expected, value
+    item.extra = {"다른 값": 1, background.THRESHOLD_KEY: 60}
+    assert background.with_threshold(item, None) == {"다른 값": 1}
+    assert background.with_threshold(item, 90) == {"다른 값": 1, background.THRESHOLD_KEY: 90}
+    assert item.extra[background.THRESHOLD_KEY] == 60            # 원래 것은 건드리지 않는다
+
+
+def test_replacing_image_forgets_the_threshold(editor, qapp, tmp_path):
+    section = editor.inspector.image
+    section.start_removal()
+    _finish(editor, qapp)
+    section.set_threshold(60)
+    assert section.replace_image(make_image(tmp_path / "other.png", color=(5, 5, 5)))
+    assert background.THRESHOLD_KEY not in editor.photo.extra
+    editor.undo()
+    assert editor.photo.extra[background.THRESHOLD_KEY] == 60 and editor.photo.mask_asset

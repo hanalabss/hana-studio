@@ -193,7 +193,7 @@ def test_deleted_record_fails_with_a_korean_message(store, simple_document):
     job = RenderJob.for_records(simple_document, store, [record_id])
     store.delete([record_id])
     try:
-        with pytest.raises(rj.RenderJobError, match="지워진 레코드"):
+        with pytest.raises(rj.RenderJobError, match="지워진 사람"):
             job.render(0)
     finally:
         job.close()

@@ -128,13 +128,13 @@ class Condition(Filter):
             if number is not None:
                 return number, True
             if strict:
-                raise DataError(f"'{self.column}' 열은 숫자 열입니다. 숫자를 입력하세요: {value}")
+                raise DataError(f"'{self.column}' 항목에는 숫자만 넣을 수 있습니다. 숫자를 입력하세요: {value}")
             return str(value), False
         if column_type in ("date", "time"):
             converted, ok = normalize_value(column_type, value)
             if not ok and strict:
                 label = "날짜" if column_type == "date" else "시간"
-                raise DataError(f"'{self.column}' 열은 {label} 열입니다. 올바른 {label}를 입력하세요: {value}")
+                raise DataError(f"'{self.column}' 항목은 {label} 항목입니다. 올바른 {label}를 입력하세요: {value}")
             return converted, False
         return normalize_value("text", value)[0], False
 

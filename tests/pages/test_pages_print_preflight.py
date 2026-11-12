@@ -49,9 +49,9 @@ def test_missing_photo_blocks_until_those_people_are_left_out(env, workspace, se
     assert "'사진' 항목" in row.text() and " 열" not in row.text()
     assert not page.ready.start_button.isEnabled()
     assert page.ready.start_button.text() == "5장 인쇄 시작"
-    assert page.ready.reason.text() == "고쳐야 할 것 1건을 먼저 해결해야 인쇄할 수 있습니다."
+    assert page.ready.reason.text() == "고쳐야 할 것 1개를 먼저 해결해야 인쇄할 수 있습니다."
     assert page.ready.reason.property("tone") == "error"
-    assert page.ready.findings_title.text() == "인쇄 전 확인 (고쳐야 할 것 1건)"
+    assert page.ready.findings_title.text() == "인쇄 전 확인 (고쳐야 할 것 1개)"
     assert page.ready.stat_photo.number.text() == "2명"
     from ui.pages.printing.ready_view import ROLE_TAG
 
@@ -103,7 +103,7 @@ def test_warnings_must_be_acknowledged(env, workspace, services):
     page = make_page(env, workspace, services)
     assert [p.tone for p in page.problems()] == ["warn"]
     box = page.ready.acknowledge
-    assert box.isVisibleTo(page.ready) and box.text() == "알아 둘 것 1건을 읽었습니다. 그대로 인쇄합니다."
+    assert box.isVisibleTo(page.ready) and box.text() == "알아 둘 것 1개를 읽었습니다. 그대로 인쇄합니다."
     assert not page.ready.start_button.isEnabled()
     assert "체크하면 인쇄할 수 있습니다" in page.ready.reason.text()
     assert page.ready.reason.property("tone") == "warn"
@@ -118,7 +118,7 @@ def test_warnings_must_be_acknowledged(env, workspace, services):
     page.refresh_now()
     assert page.ready.finding("already_printed") is not None
     assert not box.isChecked() and not page.ready.start_button.isEnabled()
-    assert box.text().startswith("알아 둘 것 2건")
+    assert box.text().startswith("알아 둘 것 2개")
     page.ready.finding("already_printed").button("exclude").click()
     assert len(page.target_ids()) == 4 and page.ready.finding("already_printed") is None
 

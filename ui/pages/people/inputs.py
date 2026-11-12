@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QDate, QRectF, Qt
-from PySide6.QtGui import QFontMetrics, QPainter, QPainterPath, QPen, QTextCharFormat
-from PySide6.QtWidgets import QCalendarWidget, QDateEdit, QFrame, QLabel, QToolButton, QVBoxLayout, QWidget
+from PySide6.QtGui import QFontMetrics, QPainter, QPainterPath, QPen
+from PySide6.QtWidgets import QDateEdit, QFrame, QLabel, QVBoxLayout, QWidget
 
-from ui.theme import ThemeManager, mark_themed
-from ui.theme.assets import ensure_assets
-from ui.widgets import theme_color, themed_icon
+from ui.theme import ThemeManager
+from ui.widgets import DateField, theme_color
 
-EMPTY_DATE = QDate(1900, 1, 1)
+EMPTY_DATE = DateField.EMPTY_DATE
 
 
 class Rethemed:
@@ -24,67 +23,9 @@ class Rethemed:
         target.update()
 
 
-def _date_style() -> str:
-    arrow = ensure_assets(ThemeManager.instance().theme)["chevron-down"]
-    return (
-        "QDateEdit { padding-right: 4px; }"
-        "QDateEdit::drop-down { subcontrol-origin: padding; subcontrol-position: center right;"
-        " width: 30px; border: 0; }"
-        f"QDateEdit::down-arrow {{ image: url({arrow}); width: 14px; height: 14px; }}"
-    )
-
-
 def make_date_edit(parent: QWidget | None = None) -> QDateEdit:
-    """달력에서 고르는 날짜 칸. 맨 앞 값(날짜 없음)이 빈 값이다."""
-    edit = QDateEdit(parent)
-    edit.setCalendarPopup(True)
-    edit.setDisplayFormat("yyyy-MM-dd")
-    edit.setMinimumDate(EMPTY_DATE)
-    edit.setSpecialValueText("날짜 없음")
-    edit.setFixedHeight(40)
-    edit.setStyleSheet(_date_style())
-    calendar = edit.calendarWidget()
-    if calendar is not None:
-        style_calendar(calendar)
-    return edit
-
-
-def style_calendar(calendar: QCalendarWidget) -> None:
-    """달력 팝업을 테마 색으로 맞춘다(기본 모양은 색 띠와 초록 화살표가 튄다)."""
-    mark_themed(calendar)
-    calendar.setGridVisible(False)
-    calendar.setVerticalHeaderFormat(QCalendarWidget.NoVerticalHeader)
-    calendar.setHorizontalHeaderFormat(QCalendarWidget.ShortDayNames)
-    color = {role: theme_color(role).name() for role in (
-        "surface_raised", "surface_sunken", "surface_hover", "text", "text_muted", "control_line",
-        "accent", "text_on_accent", "line")}
-    calendar.setStyleSheet(
-        f"QCalendarWidget {{ border: 1px solid {color['control_line']}; }}"
-        f"QCalendarWidget QWidget#qt_calendar_navigationbar {{ background: {color['surface_sunken']};"
-        f" border-bottom: 1px solid {color['line']}; min-height: 38px; }}"
-        f"QCalendarWidget QToolButton {{ color: {color['text']}; background: transparent; border: 0;"
-        " border-radius: 6px; min-height: 28px; padding: 0 8px; margin: 4px 2px; }"
-        f"QCalendarWidget QToolButton:hover {{ background: {color['surface_hover']}; }}"
-        "QCalendarWidget QToolButton::menu-indicator { image: none; width: 0; }"
-        f"QCalendarWidget QSpinBox {{ min-height: 26px; max-height: 26px; padding: 0 4px; }}"
-        f"QCalendarWidget QAbstractItemView {{ background: {color['surface_raised']}; color: {color['text']};"
-        f" border: 0; outline: 0; selection-background-color: {color['accent']};"
-        f" selection-color: {color['text_on_accent']}; alternate-background-color: {color['surface_raised']}; }}"
-        f"QCalendarWidget QAbstractItemView:disabled {{ color: {color['text_muted']}; }}"
-    )
-    plain = QTextCharFormat()
-    plain.setForeground(theme_color("text"))
-    for day in (Qt.Saturday, Qt.Sunday):
-        calendar.setWeekdayTextFormat(day, plain)
-    head = QTextCharFormat()
-    head.setForeground(theme_color("text_muted"))
-    head.setBackground(theme_color("surface_raised"))
-    calendar.setHeaderTextFormat(head)
-    for name, icon in (("qt_calendar_prevmonth", "chevron-left"), ("qt_calendar_nextmonth", "chevron-right")):
-        button = calendar.findChild(QToolButton, name)
-        if button is not None:
-            button.setIcon(themed_icon(icon, "text", 16))
-            button.setToolTip("이전 달" if icon == "chevron-left" else "다음 달")
+    """달력에서 고르는 날짜 칸(공용 DateField). 맨 앞 값(날짜 없음)이 빈 값이다."""
+    return DateField(empty_text="날짜 없음", parent=parent)
 
 
 def date_value(edit: QDateEdit) -> str | None:

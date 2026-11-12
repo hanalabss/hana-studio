@@ -563,3 +563,47 @@ def test_custom_card_size_is_listed(editor):
     section = editor.inspector.card
     assert section.size_combo.currentData() == "custom"
     assert "70 × 100" in section.size_combo.currentText()
+
+
+def test_changing_orientation_keeps_items_on_the_card_and_undoes_in_one_step(editor):
+    controller = editor.controller
+    section = editor.inspector.card
+    name = editor.add("text")
+    photo = editor.add("image")
+    controller.set_properties(name.id, {"x": 50.0, "y": 44.0, "w": 34.0, "h": 8.0})    # 가로 카드의 오른쪽 아래
+    controller.set_properties(photo.id, {"x": 60.0, "y": 4.0, "w": 22.0, "h": 28.0})   # 오른쪽 위
+    controller.clear_selection()
+    placed = {item.id: (item.x, item.y, item.w, item.h) for item in controller.side().items}
+    before = _steps(editor)
+
+    section.orientation_control.set_current("portrait")
+    width, height = controller.side_size_mm()
+    assert (width, height) == (53.98, 85.6)
+    for item in controller.side().items:
+        left, top, right, bottom = item.bounds()
+        assert left >= -1e-6 and top >= -1e-6 and right <= width + 1e-6 and bottom <= height + 1e-6, item.kind
+    assert not any(problem.code in ("outside_card", "off_card") for problem in controller.problems())
+    assert _steps(editor) == before + 1
+
+    editor.undo()
+    assert controller.side().orientation == "landscape"
+    assert section.orientation_control.current() == "landscape"
+    assert {item.id: (item.x, item.y, item.w, item.h) for item in controller.side().items} == placed
+    editor.redo()
+    assert controller.side().orientation == "portrait" and section.orientation_control.current() == "portrait"
+    assert not any(problem.code in ("outside_card", "off_card") for problem in controller.problems())
+
+
+def test_changing_card_size_keeps_items_on_the_card(editor):
+    controller = editor.controller
+    section = editor.inspector.card
+    corner = editor.add("text")
+    controller.set_properties(corner.id, {"x": 55.6, "y": 45.98, "w": 30.0, "h": 8.0})  # 오른쪽 아래 구석에 딱 붙임
+    controller.clear_selection()
+    before = _steps(editor)
+
+    pick(section.size_combo, "cut_54x86_bleed")                  # 90 × 58 (재단 여백 포함)
+    assert (corner.x + corner.w, corner.y + corner.h) == pytest.approx((90.0, 58.0))
+    assert _steps(editor) == before + 1
+    editor.undo()
+    assert (corner.x, corner.y) == (55.6, 45.98) and controller.document.card_width_mm == 85.6

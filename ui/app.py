@@ -41,7 +41,13 @@ def build_main_window(is_admin: bool = False, *, services=None, start_services: 
     shell.workspace = workspace
     shell.services = services
 
+    done = {"shutdown": False}
+
     def shutdown() -> None:
+        """서비스를 멈추고 명단 파일을 닫는다. 여러 번 불러도 한 번만 한다."""
+        if done["shutdown"]:
+            return
+        done["shutdown"] = True
         try:
             services.shutdown()
         except Exception:
@@ -50,6 +56,14 @@ def build_main_window(is_admin: bool = False, *, services=None, start_services: 
             workspace.close()
         except Exception:
             log.exception("작업 상태 정리 실패")
+        app = QApplication.instance()
+        if app is not None:
+            try:
+                app.aboutToQuit.disconnect(shutdown)
+            except (RuntimeError, TypeError):
+                pass
+
+    shell.shutdown = shutdown       # 창을 직접 없애는 쪽(테스트, 시연)이 부른다
 
     app = QApplication.instance()
     if app is not None:

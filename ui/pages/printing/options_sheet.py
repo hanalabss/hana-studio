@@ -16,7 +16,7 @@ from ui.widgets import (
     ComboBox, Dialog, Divider, FormRow, MmField, QuietButton, SegmentedControl, StepperField, label,
 )
 
-from .style import apply_page_style, hug_left
+from .style import apply_page_style
 
 TRACKS = (("track1", "1번 줄"), ("track2", "2번 줄"), ("track3", "3번 줄"))
 _NONE = "쓰지 않음"
@@ -88,8 +88,8 @@ class OptionsSheet(Dialog):
         self.copies = StepperField(options.copies, 1, COPIES_MAX, 1, 0, "장")
         self.copies.setFixedWidth(200)
         self.copies.setAccessibleName("한 사람에 몇 장" if people else "뽑을 장수")
-        self.body.addWidget(FormRow("한 사람에 몇 장" if people else "몇 장 뽑을까요", hug_left(self.copies),
-                                    orientation="horizontal", label_width=132))
+        self.body.addWidget(FormRow("한 사람에 몇 장" if people else "몇 장 뽑을까요", self.copies,
+                                    orientation="horizontal", label_width=132, control_align="left"))
 
         self.sides: SegmentedControl | None = None
         if document.dual_side:
@@ -101,8 +101,8 @@ class OptionsSheet(Dialog):
                 self.sides.setEnabled(False)
                 hint = "지금 고른 프린터는 한 면만 찍을 수 있어 앞면만 뽑습니다."
             self.sides.setAccessibleName("찍을 면")
-            self.body.addWidget(FormRow("찍을 면", hug_left(self.sides), hint, orientation="horizontal",
-                                        label_width=132))
+            self.body.addWidget(FormRow("찍을 면", self.sides, hint, orientation="horizontal",
+                                        label_width=132, control_align="left"))
 
         self.body.addWidget(Divider())
         self.body.addWidget(label("찍히는 위치 맞추기", "title"))

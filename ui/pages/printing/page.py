@@ -41,11 +41,20 @@ from .targets import (
     PEOPLE_MODES, Resolution, TargetCounts,
     count_targets, default_mode, resolve_targets,
 )
-from .text import brief, duration_text, pill_state, plain, status_sentence, supplies_lines, supply_text
+from .text import (
+    brief, duration_text, pill_state, plain, stage_sentence, status_sentence, supplies_lines, supply_text,
+)
 
 log = logging.getLogger(__name__)
 
 ACT_EXCLUDE_PRINTED = "exclude_printed"
+ACT_OPEN_DESIGN = "open_design"
+
+
+def _is_blank(document) -> bool:
+    """아무것도 놓지 않았고 바탕도 없는 카드."""
+    return all(not document.side(key).items and not document.side(key).background
+               for key in document.active_side_keys())
 _RUN_PREVIEW_DPI = 110.0
 
 
@@ -63,6 +72,7 @@ class PrintPage(BasePage):
         self.confirm: Callable[..., bool] = confirm      # 테스트에서 바꿔 끼운다
 
         self._choices = PrintChoices(self.prefs.print_options())
+        self._defaults = self.prefs.print_options()      # 마지막으로 본 설정 화면의 기본값
         self._copy_count = 1
         self._mode: str | None = None
         self._range_text = ""
@@ -139,6 +149,9 @@ class PrintPage(BasePage):
         for signal in (ws.store_changed, ws.columns_changed, ws.records_changed):
             signal.connect(self._on_list_changed)
         ws.current_record_changed.connect(self._on_list_changed)
+        view_changed = getattr(ws, "view_changed", None)
+        if view_changed is not None:
+            view_changed.connect(self._on_list_changed)
         ws.checked_ids_changed.connect(self._on_checked_changed)
         editor = ws.editor
         for signal in (editor.document_changed, editor.items_changed, editor.properties_changed,
@@ -229,12 +242,21 @@ class PrintPage(BasePage):
             self._refresh_start()
 
     def _on_prefs_changed(self) -> None:
-        defaults = self.prefs.print_options()
+        """설정 화면에서 기본값이 바뀌었다. 바뀐 값만, 이번 인쇄에서 따로 고치지 않은 것에만 옮긴다.
+
+        (보관 기간처럼 인쇄와 상관없는 설정을 바꿔도, 이번 인쇄에 정해 둔 장수·위치는 그대로다.
+        인쇄 중인 작업은 시작할 때 설정을 복사해 갔으므로 영향을 받지 않는다.)
+        """
+        defaults, before = self.prefs.print_options(), self._defaults
+        self._defaults = defaults
         options = self._choices.options
-        options.offset_x_mm, options.offset_y_mm = defaults.offset_x_mm, defaults.offset_y_mm
-        options.stop_on_error = defaults.stop_on_error
-        options.copies = defaults.copies
-        if self._state == STATE_READY:
+        changed = False
+        for name in ("copies", "stop_on_error", "offset_x_mm", "offset_y_mm"):
+            old, new = getattr(before, name), getattr(defaults, name)
+            if old != new and getattr(options, name) == old:
+                setattr(options, name, new)
+                changed = True
+        if changed and self._state == STATE_READY:
             self._targets_timer.start()
 
     def _reset_edits(self) -> None:
@@ -564,6 +586,7 @@ class PrintPage(BasePage):
         self.prefs.blockSignals(True)
         self.prefs.set_offsets(choices.options.offset_x_mm, choices.options.offset_y_mm)
         self.prefs.blockSignals(False)
+        self._defaults.offset_x_mm, self._defaults.offset_y_mm = self.prefs.offsets()
         self._recompute(True)
 
     # ------------------------------------------------------------------ 인쇄 전 확인
@@ -590,6 +613,11 @@ class PrintPage(BasePage):
                 "no_printer", "error",
                 "쓸 프린터가 없습니다. 프린터 전원과 USB 선을 확인한 뒤 프린터 화면에서 다시 찾아 주세요.",
                 [Action("프린터 화면 열기", ACT_OPEN_PRINTER)]))
+        if _is_blank(ws.editor.document):
+            problems.insert(0, Problem(         # 카드 꾸미기가 먼저다
+                "blank_design", "error",
+                "카드에 아직 아무것도 없습니다. 디자인 화면에서 카드를 먼저 꾸며 주세요.",
+                [Action("카드 꾸미러 가기", ACT_OPEN_DESIGN)]))
         if people and not self._ids:
             text = self._resolution.error or "뽑을 사람이 없습니다. 왼쪽에서 뽑을 사람을 고르세요."
             problems.append(Problem("no_targets", "error", text))
@@ -640,7 +668,7 @@ class PrintPage(BasePage):
     def blocking_reason(self) -> str:
         errors = [p for p in self._problems if p.tone == "error"]
         if errors:
-            return f"고쳐야 할 것 {len(errors)}건을 먼저 해결해야 인쇄할 수 있습니다."
+            return f"고쳐야 할 것 {len(errors)}개를 먼저 해결해야 인쇄할 수 있습니다."
         if self._preflight_timer.isActive() or self._targets_timer.isActive():
             return "인쇄해도 되는지 확인하고 있습니다."
         warnings = warning_signature(self._problems)
@@ -652,7 +680,7 @@ class PrintPage(BasePage):
         warnings = warning_signature(self._problems)
         acknowledged = bool(warnings) and self._acknowledged == warnings
         self.ready.set_acknowledge(bool(warnings) and not any(p.tone == "error" for p in self._problems),
-                                   f"알아 둘 것 {len(warnings)}건을 읽었습니다. 그대로 인쇄합니다.", acknowledged)
+                                   f"알아 둘 것 {len(warnings)}개를 읽었습니다. 그대로 인쇄합니다.", acknowledged)
         reason = self.blocking_reason()
         cards = self.card_count()
         text = f"{cards:,}장 인쇄 시작" if cards else "인쇄 시작"
@@ -671,6 +699,8 @@ class PrintPage(BasePage):
             if side and side != editor.current_side:
                 editor.set_side(side)
             editor.select(item_ids)
+            self._navigate(PAGE_DESIGN)
+        elif key == ACT_OPEN_DESIGN:
             self._navigate(PAGE_DESIGN)
         elif key == ACT_OPEN_LIST:
             self._navigate(PAGE_LIST)
@@ -691,10 +721,10 @@ class PrintPage(BasePage):
             page = self._shell.page(PAGE_LIST)
         except KeyError:
             page = None
+        self._shell.navigate(PAGE_LIST)
         hook = getattr(page, "show_people", None)
         if callable(hook):
             hook(list(record_ids))
-        self._shell.navigate(PAGE_LIST)
 
     def refresh_now(self) -> None:
         """미뤄 둔 계산(대상, 미리 보기, 인쇄 전 확인)을 지금 끝낸다."""
@@ -723,7 +753,7 @@ class PrintPage(BasePage):
         self._job_document = copy.deepcopy(document)
         self._job_store = ws.store if people else None
         rows = self._rows_for_ids(self._ids, options.copies) if people else \
-            [{"name": f"{i + 1}번째 카드", "record_id": None} for i in range(options.copies)]
+            [{"name": f"{i + 1}번째 카드", "record_id": None, "position": i} for i in range(options.copies)]
         title = f"이번에 뽑는 {len(self._ids):,}명" if people else f"이번에 뽑는 {options.copies:,}장"
         try:
             handle = self.services.printing.start(
@@ -745,7 +775,7 @@ class PrintPage(BasePage):
             extras = {f"extra{i}": str((record or {}).get(column) or "") for i, column in enumerate(self._extra_columns)}
             for copy_index in range(max(1, copies)):
                 suffix = f" ({copy_index + 1}/{copies})" if copies > 1 else ""
-                rows.append({"name": name + suffix, "record_id": record_id, **extras})
+                rows.append({"name": name + suffix, "record_id": record_id, "position": position, **extras})
         return rows
 
     def _ribbon_panels(self) -> tuple[str, ...]:
@@ -785,8 +815,9 @@ class PrintPage(BasePage):
     def _on_progress(self, progress) -> None:
         if not self._mine(progress.job_id) or self._state != STATE_RUNNING:
             return
-        self.run.set_progress(progress.done, progress.total, progress.index, plain(progress.stage),
-                              progress.panel, getattr(progress, "card_percent", 0))
+        self.run.set_progress(progress.done, progress.total, progress.index,
+                              stage_sentence(progress.stage_key, progress.stage, progress.side),
+                              progress.panel, progress.card_percent)
         self._show_run_card(progress.index)
 
     def _show_run_card(self, index: int) -> None:
@@ -802,8 +833,9 @@ class PrintPage(BasePage):
             return
         data = self.run.model.row(row)
         record_id = data.get("record_id")
+        # 다시 뽑거나 이어서 뽑을 때도 일련번호는 처음 정한 순서 그대로 보여 준다.
         image = render_card_image(self._job_document, self._job_store, record_id, "front",
-                                  dpi=_RUN_PREVIEW_DPI, position=row)
+                                  dpi=_RUN_PREVIEW_DPI, position=int(data.get("position", row)))
         sub = " ".join(v for v in (data.get("extra0", ""), data.get("extra1", "")) if v)
         self.run.set_current_card(image, data.get("name", ""), sub)
 
@@ -927,7 +959,7 @@ class PrintPage(BasePage):
             return None
         indices = set(previous.failed_indices) | (set(previous.unprinted_indices) if include_unprinted else set())
         old_rows = self.run.model.rows()
-        rows = [{k: v for k, v in old_rows[i].items() if k in ("name", "record_id", "extra0", "extra1")}
+        rows = [{k: v for k, v in old_rows[i].items() if k in ("name", "record_id", "position", "extra0", "extra1")}
                 for i in sorted(indices) if i < len(old_rows)]
         self._supplies_start = self.services.printers.status() or self._supplies_start
         self.services.printing.forget(previous)
@@ -964,7 +996,11 @@ class PrintPage(BasePage):
             page = self._shell.page(PAGE_HISTORY)
         except KeyError:
             page = None
-        hook = getattr(page, "show_latest", None)
         self._shell.navigate(PAGE_HISTORY)
+        history_id = self._job.history_id if self._job is not None else None
+        show_job = getattr(page, "show_job", None)
+        if callable(show_job) and history_id is not None and show_job(history_id):
+            return
+        hook = getattr(page, "show_latest", None)
         if callable(hook):
             hook()

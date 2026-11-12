@@ -17,7 +17,7 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from .base import PrinterDevice
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 JOB_PENDING = "pending"
 JOB_PRINTING = "printing"
@@ -63,6 +63,15 @@ CREATE INDEX IF NOT EXISTS idx_cards_record ON cards(record_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at);
 """
 
+# 버전 2에서 더한 열. 예전 파일에는 ALTER TABLE로 붙이고, 예전 줄의 값은 NULL로 남는다.
+#   cards.record_name : 인쇄할 때의 사람 이름(명단이 바뀌거나 다른 명단을 열어도 그대로 보여 준다)
+#   jobs.list_id/name : 어느 명단으로 뽑았는지(DataStore.list_id()). record_id는 그 명단 안에서만 뜻이 있다
+_ADDED_COLUMNS = (
+    ("cards", "record_name", "TEXT"),
+    ("jobs", "list_id", "TEXT"),
+    ("jobs", "list_name", "TEXT"),
+)
+
 
 @dataclass
 class JobRecord:
@@ -80,6 +89,8 @@ class JobRecord:
     created_at: str
     started_at: Optional[str]
     finished_at: Optional[str]
+    list_id: Optional[str] = None
+    list_name: Optional[str] = None
 
 
 @dataclass
@@ -93,6 +104,7 @@ class CardRecord:
     error_code: Optional[int]
     started_at: Optional[str]
     finished_at: Optional[str]
+    record_name: Optional[str] = None
 
 
 def now_text() -> str:
@@ -112,6 +124,18 @@ class JobHistory:
         os.makedirs(directory, exist_ok=True)
         with self._connect() as connection:
             connection.executescript(_SCHEMA)
+            self._migrate(connection)
+
+    @staticmethod
+    def _migrate(connection: sqlite3.Connection) -> None:
+        """빠진 열만 더한다. 있는 기록은 건드리지 않는다."""
+        for table, column, kind in _ADDED_COLUMNS:
+            existing = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+            if column not in existing:
+                connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_cards_name ON cards(record_name)")
+        version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+        if version < SCHEMA_VERSION:
             connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
     @contextmanager
@@ -150,20 +174,33 @@ class JobHistory:
     def record_card(self, job_id: int, card_index: int, status: str,
                     error_text: Optional[str] = None, error_code: Optional[int] = None,
                     record_id: Any = None, started_at: Optional[str] = None,
-                    finished_at: Optional[str] = None) -> int:
+                    finished_at: Optional[str] = None, record_name: Optional[str] = None) -> int:
         """카드 한 장의 결과를 남긴다. card_index는 작업 안에서 1부터 센 순번."""
         finished_at = finished_at or now_text()
         with self._connect() as connection:
             cursor = connection.execute(
                 "INSERT INTO cards (job_id, card_index, record_id, status, error_text, "
-                "error_code, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "error_code, started_at, finished_at, record_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (job_id, int(card_index), None if record_id is None else str(record_id), status,
-                 error_text, error_code, started_at, finished_at))
+                 error_text, error_code, started_at, finished_at, record_name or None))
             column = {CARD_SUCCESS: "success_cards", CARD_FAILED: "failed_cards"}.get(status)
             if column:
                 connection.execute(f"UPDATE jobs SET {column} = {column} + 1 WHERE id = ?",
                                    (job_id,))
             return int(cursor.lastrowid)
+
+    def set_job_list(self, job_id: int, list_id: Optional[str], list_name: Optional[str] = None) -> None:
+        """이 작업을 어느 명단으로 뽑았는지 적는다."""
+        with self._connect() as connection:
+            connection.execute("UPDATE jobs SET list_id = ?, list_name = ? WHERE id = ?",
+                               (list_id or None, list_name or None, job_id))
+
+    def set_card_name(self, job_id: int, card_index: int, record_name: Optional[str]) -> int:
+        """이미 남긴 카드 결과에 그때의 사람 이름을 적는다. 고친 줄 수를 돌려준다."""
+        with self._connect() as connection:
+            return connection.execute(
+                "UPDATE cards SET record_name = ? WHERE job_id = ? AND card_index = ?",
+                (record_name or None, job_id, int(card_index))).rowcount
 
     def finish_job(self, job_id: int, status: Optional[str] = None,
                    error_text: Optional[str] = None) -> str:
@@ -198,8 +235,9 @@ class JobHistory:
                 clauses.append(f"{column} {operator} ?")
                 params.append(value)
         if search:
-            clauses.append("(name LIKE ? OR device_name LIKE ? OR error_text LIKE ?)")
-            params.extend([f"%{search}%"] * 3)
+            clauses.append("(name LIKE ? OR device_name LIKE ? OR error_text LIKE ? "
+                           "OR id IN (SELECT job_id FROM cards WHERE record_name LIKE ?))")
+            params.extend([f"%{search}%"] * 4)
         return (" WHERE " + " AND ".join(clauses)) if clauses else "", params
 
     def list_jobs(self, limit: int = 100, offset: int = 0, status: Optional[str] = None,

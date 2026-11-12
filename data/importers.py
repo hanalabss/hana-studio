@@ -488,16 +488,16 @@ def import_into(
     targets: set[str] = set()
     for source, target in column_map.items():
         if source not in positions:
-            raise DataError(f"가져올 파일에 '{source}' 열이 없습니다.")
+            raise DataError(f"가져올 파일에 '{source}' 항목이 없습니다.")
         if target is None or str(target).strip() == "":
             continue
         target = str(target).strip()
         if target in targets:
-            raise DataError(f"'{target}' 열에 파일의 열이 두 개 이상 연결되어 있습니다.")
+            raise DataError(f"'{target}' 항목에 파일의 항목이 두 개 이상 연결되어 있습니다.")
         targets.add(target)
         pairs.append((positions[source], target, preview.columns[positions[source]]))
     if not pairs:
-        raise DataError("가져올 열이 없습니다. 하나 이상의 열을 연결하세요.")
+        raise DataError("가져올 항목이 없습니다. 하나 이상의 항목을 연결하세요.")
     pairs.sort(key=lambda pair: pair[0])
 
     result = ImportResult(skipped=preview.blank_rows)
@@ -534,12 +534,12 @@ def import_into(
         def on_invalid(index: int, column: str, value: Any) -> None:
             label = TYPE_LABELS.get(types.get(column, "text"), "값")
             warn(
-                f"{kept_numbers[index]}행: '{column}' 열의 값 '{value}'을(를) {label}(으)로 인식하지 못해 "
+                f"{kept_numbers[index]}행: '{column}' 항목의 값 '{value}'을(를) {label}(으)로 인식하지 못해 "
                 "입력된 글자 그대로 저장했습니다."
             )
 
         result.inserted = store.insert_many(generate(), on_invalid=on_invalid)
 
     if hidden:
-        result.warnings.append(f"그 밖에 {hidden}건의 알림이 더 있습니다.")
+        result.warnings.append(f"그 밖에 알림이 {hidden}개 더 있습니다.")
     return result

@@ -77,9 +77,9 @@ class PeoplePage(BasePage):
         self._chip = CHIP_ALL
         self._search = ""
         self._condition: Group | None = None
+        self._people_ids: list[int] | None = None      # show_people로 좁혀 보는 사람들
         self._pending_delete: list[int] = []
         self._own_change = False
-        self._opening: set[str] = set()
         self._syncing_current = False
         self._select_all_banner = False
         self._toast: Toast | None = None
@@ -115,7 +115,6 @@ class PeoplePage(BasePage):
         workspace.records_changed.connect(self._on_records_changed)
         workspace.current_record_changed.connect(self._on_workspace_current)
         self._on_store_changed()
-        self._opening = set()
 
     # ================================================================ 화면 만들기
     def _build_main(self) -> None:
@@ -169,6 +168,11 @@ class PeoplePage(BasePage):
         self.condition_clear.setVisible(False)
         tools.addWidget(self.condition_clear)
         left.addLayout(tools)
+
+        self.people_banner = Banner("info", "", "전체 보기")
+        self.people_banner.actionTriggered.connect(self.show_everyone)
+        self.people_banner.setVisible(False)
+        left.addWidget(self.people_banner)
 
         self.select_banner = Banner("info", "", "선택 해제")
         self.select_banner.actionTriggered.connect(self.clear_checked)
@@ -333,6 +337,9 @@ class PeoplePage(BasePage):
         self.model.set_frozen(False)
         if self.wizard is wizard:
             self.wizard = None
+        if getattr(wizard, "_after_import_done", False):     # 창이 닫히며 finished가 한 번 더 올 수 있다
+            return
+        wizard._after_import_done = True
         outcome = wizard.outcome
         if outcome is None or wizard.store is None:
             return
@@ -351,6 +358,8 @@ class PeoplePage(BasePage):
         store = self.store
         self._pending_delete = []
         self._chip, self._search, self._condition = CHIP_ALL, "", None
+        self._people_ids = None
+        self.people_banner.setVisible(False)
         self._select_all_banner = False
         self.search_field.blockSignals(True)
         self.search_field.clear()
@@ -364,17 +373,13 @@ class PeoplePage(BasePage):
         self._refresh_empty_view()
         self._sync_all()
         self._select_first()
-        # set_store는 이어서 columns_changed, records_changed도 보낸다. 방금 다 읽었으니 한 번씩은 넘긴다.
-        self._opening = {"columns", "records"} if store is not None else set()
 
-    def _just_opened(self, signal: str) -> bool:
-        if signal in self._opening:
-            self._opening.discard(signal)
-            return True
-        return False
+    def _just_opened(self) -> bool:
+        """set_store가 이어서 보내는 columns_changed, records_changed인지(방금 다 읽었으니 넘긴다)."""
+        return bool(getattr(self.workspace, "store_opening", False))
 
     def _on_columns_changed(self) -> None:
-        if self.store is None or self._just_opened("columns"):
+        if self.store is None or self._just_opened():
             return
         current = self.workspace.current_record_id
         self.photos.configure(self.store, columns_used(self.workspace.editor.document))
@@ -387,7 +392,7 @@ class PeoplePage(BasePage):
         self._sync_all()
 
     def _on_records_changed(self) -> None:
-        if self.store is None or self._just_opened("records") or self._own_change:
+        if self.store is None or self._just_opened() or self._own_change:
             return
         current = self.workspace.current_record_id
         self.photos.refresh_folders()
@@ -450,6 +455,8 @@ class PeoplePage(BasePage):
             parts.append(quick_search(self._search.strip()))
         if self._condition is not None:
             parts.append(self._condition)
+        if self._people_ids is not None:
+            parts.append(IdsFilter(frozenset(self._people_ids)))
         parts = [p for p in parts if p is not None]
         if not parts:
             return None
@@ -459,8 +466,7 @@ class PeoplePage(BasePage):
         scroll = self.table.verticalScrollBar().value()
         view_filter = self.compose_filter()
         self.model.set_view(view_filter, self.model.view_order)
-        self.workspace.view_filter = self.model.view_filter
-        self.workspace.view_order = self.model.view_order
+        self.workspace.set_view(self.model.view_filter, self.model.view_order)
         row = self.model.row_of(keep) if keep is not None else -1
         if row >= 0:
             self._syncing_current = True
@@ -518,10 +524,58 @@ class PeoplePage(BasePage):
 
     def clear_filters(self) -> None:
         self._chip, self._condition = CHIP_ALL, None
+        self._people_ids = None
+        self.people_banner.setVisible(False)
         for name, chip in self.chips.items():
             chip.setChecked(name == CHIP_ALL)
         self.set_search("")
         self._search = ""
+        self._view_changed()
+
+    def show_people(self, record_ids: Iterable[int], note: str | None = None) -> bool:
+        """이 사람들만 보여 준다(인쇄·기록 화면의 "명단에서 보기"). 띠의 '전체 보기'로 되돌린다.
+
+        note: 띠에 적을 말. 없으면 "확인할 N명만 보고 있습니다. …"
+        명단에 한 명도 남아 있지 않으면 아무것도 바꾸지 않고 False.
+        """
+        store = self.store
+        if store is None:
+            return False
+        self.commit_pending_delete()
+        wanted = list(dict.fromkeys(int(i) for i in record_ids))
+        existing = set(store.ids())
+        ids = [i for i in wanted if i in existing]
+        if not ids:
+            self.toast("그 사람들은 지금 열려 있는 명단에 없습니다.", "warn")
+            return False
+        self._chip, self._condition, self._search = CHIP_ALL, None, ""
+        for name, chip in self.chips.items():
+            chip.setChecked(name == CHIP_ALL)
+        self._search_timer.stop()
+        self.search_field.blockSignals(True)
+        self.search_field.clear()
+        self.search_field.blockSignals(False)
+        self._people_ids = ids
+        text = note or f"확인할 {people(len(ids))}만 보고 있습니다. 다 보았으면 '전체 보기'를 누르세요."
+        if len(ids) < len(wanted):
+            text += f" 나머지 {people(len(wanted) - len(ids))}은 명단에서 지워져 보이지 않습니다."
+        self.people_banner.set_text(text)
+        self.people_banner.setVisible(True)
+        self._select_all_banner = False
+        self._apply_view(keep=ids[0])
+        self._sync_stats()
+        return True
+
+    def shown_people(self) -> list[int] | None:
+        """show_people로 좁혀 보는 중이면 그 사람들, 아니면 None."""
+        return None if self._people_ids is None else list(self._people_ids)
+
+    def show_everyone(self) -> None:
+        """show_people로 좁힌 것만 푼다(찾는 글자와 조건은 그대로)."""
+        if self._people_ids is None:
+            return
+        self._people_ids = None
+        self.people_banner.setVisible(False)
         self._view_changed()
 
     def _view_changed(self) -> None:
@@ -599,7 +653,8 @@ class PeoplePage(BasePage):
         self.condition_clear.setVisible(self._condition is not None)
 
         filtered = self.model.view_filter is not None and (self._chip != CHIP_ALL or self._search.strip()
-                                                           or self._condition is not None)
+                                                           or self._condition is not None
+                                                           or self._people_ids is not None)
         show_banner = self._select_all_banner and checked > 0
         if show_banner:
             if filtered:
@@ -934,7 +989,7 @@ class PeoplePage(BasePage):
         try:
             store.add_column(name, type, options or {})
         except DataError as exc:
-            self.toast(_plain(str(exc)), "error")
+            self.toast(str(exc), "error")
             return False
         self.workspace.notify_columns_changed()
         return True
@@ -956,7 +1011,7 @@ class PeoplePage(BasePage):
         try:
             store.rename_column(old, new)
         except DataError as exc:
-            self.toast(_plain(str(exc)), "error")
+            self.toast(str(exc), "error")
             return False
         if self._condition is not None:
             items = [Condition(new, c.op, c.value) if isinstance(c, Condition) and c.column == old else c
@@ -979,7 +1034,7 @@ class PeoplePage(BasePage):
                 options["choices"] = self._distinct_values(name)
             failed = store.set_column_type(name, type, options)
         except DataError as exc:
-            self.toast(_plain(str(exc)), "error")
+            self.toast(str(exc), "error")
             return False
         self.workspace.notify_columns_changed()
         self.workspace.notify_records_changed()
@@ -1020,7 +1075,7 @@ class PeoplePage(BasePage):
         try:
             store.remove_column(name)
         except DataError as exc:
-            self.toast(_plain(str(exc)), "error")
+            self.toast(str(exc), "error")
             return False
         self.workspace.notify_columns_changed()
         return True
@@ -1260,8 +1315,3 @@ def _ro(word: str) -> bool:
             return (ord(ch) - 0xAC00) % 28 not in (0, 8)
         break
     return False
-
-
-def _plain(message: str) -> str:
-    """데이터 쪽 안내문의 '열'을 이 화면의 말인 '항목'으로 바꾼다."""
-    return message.replace(" 열", " 항목").replace("열 이름", "항목 이름")

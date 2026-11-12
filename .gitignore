@@ -210,3 +210,5 @@ models/
 output/
 temp/
 logs/
+# 이 PC의 라이선스 인증 정보
+license.json

@@ -12,7 +12,10 @@ from design import renderer, storage
 from design.binding import ColumnSource, FixedSource
 from ui.widgets import Divider, ProgressBar, SecondaryButton, SegmentedControl, label
 
-from ..background import DEFAULT_THRESHOLD, RemovalJob, RembgEngine, save_mask
+from ..background import (
+    DEFAULT_THRESHOLD, MAX_THRESHOLD, MIN_THRESHOLD, RemovalJob, RembgEngine, save_mask, stored_threshold,
+    with_threshold,
+)
 from ..common import NoteRow, group, hbox, use_local_icon
 from .base import InspectorContext, Section
 from .detail import ColumnCombo
@@ -33,7 +36,7 @@ class ImageSection(Section):
         self._job: RemovalJob | None = None
         self._job_item_id: str | None = None
         self._error: tuple[str, str] | None = None
-        # 항목 id -> (asset, alpha, CutoutPreview, threshold)
+        # 항목 id -> (asset, alpha, CutoutPreview, threshold). 알파를 기억해 두어 정도를 바꿀 때 다시 계산하지 않는다.
         self._results: dict[str, tuple] = context.state.setdefault("cutouts", {})
 
         app = QApplication.instance()
@@ -78,7 +81,7 @@ class ImageSection(Section):
         self.preview.setAlignment(Qt.AlignCenter)
         self.preview.setAccessibleName("배경을 지운 모습")
         self.threshold_slider = QSlider(Qt.Horizontal)
-        self.threshold_slider.setRange(5, 250)
+        self.threshold_slider.setRange(MIN_THRESHOLD, MAX_THRESHOLD)
         self.threshold_slider.setSingleStep(5)
         self.threshold_slider.setPageStep(25)
         self.threshold_slider.setAccessibleName("지우는 정도")
@@ -178,10 +181,14 @@ class ImageSection(Section):
         self.redo_button.setVisible(has_mask and not adjustable and not busy and has_file)
         self.restore_button.setVisible(has_mask and not busy)
         if adjustable:
+            # 항목에 적어 둔 값이 기준이다(되돌리기를 하면 막대도 그때 값으로 돌아간다).
+            threshold = stored_threshold(item)
+            if threshold is None:
+                threshold = int(result[3])
             self.threshold_slider.blockSignals(True)
-            self.threshold_slider.setValue(int(result[3]))
+            self.threshold_slider.setValue(threshold)
             self.threshold_slider.blockSignals(False)
-            self._update_preview(int(result[3]))
+            self._update_preview(threshold)
 
     # ---- 그림 / 연결 ----
     def set_mode(self, mode: str) -> None:
@@ -217,13 +224,14 @@ class ImageSection(Section):
             self.controller.message.emit(str(exc))
             return False
         values = {"asset": asset, "mask_asset": None}
+        if stored_threshold(item) is not None:
+            values["extra"] = with_threshold(item, None)
         if isinstance(item.source, FixedSource):
             values["source"] = None
         return self.edit(values, text="그림 바꾸기")
 
     def _workdir(self) -> str:
-        document = self.controller.document
-        return document.base_dir or self.controller._ensure_workdir()
+        return self.controller.ensure_workdir()
 
     def _on_fit(self, fit: str) -> None:
         self.fit_hint.setText(FIT_HINTS[fit])
@@ -281,7 +289,9 @@ class ImageSection(Section):
         if item is None:
             self.reload()
             return
-        threshold = self._default_threshold()
+        threshold = stored_threshold(item)
+        if threshold is None:
+            threshold = self._default_threshold()
         self._results[item_id] = (item.asset, alpha, preview, threshold)
         self._commit_mask(item_id, threshold, merge=False)
         self.reload()
@@ -297,7 +307,8 @@ class ImageSection(Section):
 
     def _commit_mask(self, item_id: str, threshold: int, merge: bool) -> bool:
         result = self._results.get(item_id)
-        if result is None:
+        item = self.controller.item(item_id)
+        if result is None or item is None:
             return False
         asset, alpha, preview, _old = result
         self._results[item_id] = (asset, alpha, preview, int(threshold))
@@ -307,7 +318,8 @@ class ImageSection(Section):
             self.controller.message.emit(f"배경을 지운 결과를 저장하지 못했습니다. {exc}")
             return False
         key = self.context.session.key("mask") if merge else None
-        return self.controller.set_properties(item_id, {"mask_asset": mask}, key, text="배경 지우기")
+        values = {"mask_asset": mask, "extra": with_threshold(item, int(threshold))}
+        return self.controller.set_properties(item_id, values, key, text="배경 지우기")
 
     def _update_preview(self, threshold: int) -> None:
         result = self._results.get(self.item.id) if self.item is not None else None

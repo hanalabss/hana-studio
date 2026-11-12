@@ -85,7 +85,44 @@ class ImageProcessor:
             
         except Exception as e:
             raise RuntimeError(f"배경 제거 처리 중 오류: {e}")
-        
+
+    def extract_alpha(self, image_path: str, session=None) -> np.ndarray:
+        """
+        임계값을 적용하지 않은 알파(전경 불투명도)를 그대로 돌려준다.
+
+        remove_background와 달리 마스크로 바꾸지 않으므로, 한 번 얻은 결과에
+        임계값만 바꿔 가며 다시 적용할 수 있다 (모델을 다시 돌리지 않음).
+
+        Args:
+            image_path: 처리할 이미지 경로
+            session: AI 모델 세션 (None이면 이미 로딩된 세션을 사용)
+
+        Returns:
+            np.ndarray: uint8, (높이, 너비). 255 = 사람·물건, 0 = 배경
+
+        Raises:
+            ValueError: 사용할 세션이 없는 경우
+            RuntimeError: 배경 제거 처리 중 오류 발생
+        """
+        if session is None:
+            session = get_ai_session()
+        if not session:
+            raise ValueError("AI 세션이 제공되지 않았습니다. ModelLoadingManager에서 세션을 먼저 로딩해야 합니다.")
+
+        try:
+            with open(image_path, 'rb') as f:
+                input_data = f.read()
+
+            # 배경 제거 수행 (지연 import)
+            from rembg import remove
+            result = remove(input_data, session=session)
+
+            with Image.open(io.BytesIO(result)) as img:
+                return np.array(img.convert("RGBA").split()[-1], dtype=np.uint8)
+
+        except Exception as e:
+            raise RuntimeError(f"배경 제거 처리 중 오류: {e}")
+
     def create_composite_preview(self, original_image: np.ndarray, mask_image: np.ndarray) -> np.ndarray:
         """합성 미리보기 이미지 생성"""
         try:

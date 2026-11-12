@@ -102,7 +102,7 @@ def _names(records: list[Mapping[str, Any]], name_column: str | None) -> str:
     shown = []
     for record in records[:NAMES_SHOWN]:
         text = to_text(record.get(name_column)).strip() if name_column else ""
-        shown.append(text or f"{record.get('_id')}번 레코드")
+        shown.append(text or f"{record.get('_id')}번째 사람")
     text = ", ".join(shown)
     rest = len(records) - len(shown)
     return f"{text} 외 {rest}명" if rest > 0 else text
@@ -148,7 +148,7 @@ def check(
             gone = [i for i in dict.fromkeys(wanted) if i not in found]
             if gone:
                 report.add("record_missing", ERROR,
-                           f"명단에서 지워진 레코드가 {len(gone)}건 있습니다. 인쇄 대상을 다시 선택하세요.",
+                           f"명단에서 지워진 사람이 {len(gone)}명 있습니다. 뽑을 사람을 다시 고르세요.",
                            record_ids=gone)
     uses_data = bool(bound) or bool(magnetic_mapping(document, options))
     report.cards = len(records) * copies if (store is not None and (uses_data or record_ids is not None)) else copies
@@ -158,7 +158,7 @@ def check(
                    "이 디자인은 명단의 값을 넣어 인쇄합니다. 명단을 먼저 열거나 가져오세요.",
                    item_ids=[item.id for _, item in bound])
     elif store is not None and (uses_data or record_ids is not None) and not records:
-        report.add("no_records", ERROR, "인쇄할 레코드가 없습니다. 인쇄 대상을 선택하세요.")
+        report.add("no_records", ERROR, "뽑을 사람이 없습니다. 뽑을 사람을 먼저 고르세요.")
 
     name_column = guess_name_column(store, options.name_column)
     if store is not None:
@@ -186,8 +186,8 @@ def _check_columns(report: PreflightReport, bound, columns: set[str]) -> None:
         labels = ", ".join(dict.fromkeys(f"'{_label(item)}'" for item in items))
         report.add(
             "missing_column", ERROR,
-            f"디자인의 {labels} 항목이 명단에 없는 '{column}' 열을 사용합니다. "
-            f"명단에 '{column}' 열을 추가하거나 디자인에서 다른 열을 고르세요.",
+            f"카드의 {labels} 칸에 넣을 '{column}' 항목이 명단에 없습니다. "
+            f"명단에 '{column}' 항목을 추가하거나 디자인에서 다른 항목을 고르세요.",
             item_ids=[item.id for item in items],
         )
 
@@ -196,7 +196,7 @@ def _check_magnetic_columns(report, document, options, columns: set[str]) -> Non
     for track, column in magnetic_mapping(document, options).items():
         if column not in columns:
             report.add("missing_column", ERROR,
-                       f"마그네틱 {track}에 넣을 '{column}' 열이 명단에 없습니다. 인쇄 옵션에서 열을 다시 고르세요.")
+                       f"마그네틱 {track}에 넣을 '{column}' 항목이 명단에 없습니다. 인쇄 설정에서 항목을 다시 고르세요.")
 
 
 def _check_photos(report, store: DataStore, bound, records, name_column) -> None:
@@ -216,7 +216,7 @@ def _check_photos(report, store: DataStore, bound, records, name_column) -> None
         report.add(
             "missing_photo", ERROR,
             f"사진이 없는 사람이 {len(missing)}명 있습니다: {_names(missing, name_column)}. "
-            f"'{column}' 열의 파일 이름과 사진 폴더를 확인하세요. 그대로 인쇄하면 사진 자리가 비어 나옵니다.",
+            f"'{column}' 항목의 파일 이름과 사진 폴더를 확인하세요. 그대로 인쇄하면 사진 자리가 비어 나옵니다.",
             record_ids=[record["_id"] for record in missing],
             item_ids=[item.id for item in items],
         )
@@ -321,7 +321,7 @@ def _check_codes(report, document, store, records, name_column, columns, options
         if not bad:
             continue
         bad_records = [records[i] for i in bad]
-        note = f" (전체 {len(records)}건 중 일부만 뽑아 크기를 검사했습니다.)" if sampled else ""
+        note = f" (모두 {len(records)}명 중 일부만 뽑아 크기를 검사했습니다.)" if sampled else ""
         report.add(
             "invalid_barcode", ERROR,
             f"'{label}'에 넣을 수 없는 값이 {len(bad)}명 있습니다: {_names(bad_records, name_column)}. "
@@ -364,7 +364,7 @@ def _check_capabilities(report, document, device, capabilities, options) -> None
         items = [item.id for _, item in _active_items(document)
                  if item.layer == "white" or getattr(item, "mask_asset", None)]
         report.add("no_white", WARNING,
-                   "이 프린터는 화이트 인쇄를 지원하지 않습니다. 화이트 레이어는 빼고 컬러만 인쇄됩니다.",
+                   "이 프린터는 화이트 인쇄를 지원하지 않습니다. 화이트로 찍는 부분은 빼고 컬러만 인쇄됩니다.",
                    item_ids=items)
     if uses_uv(document) and CAP_UV not in caps:
         items = [item.id for _, item in _active_items(document) if item.layer == "uv"]

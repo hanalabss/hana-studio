@@ -615,9 +615,9 @@ class ReadyView(QWidget):
         warnings = sum(1 for p in problems if p.tone == "warn")
         parts = []
         if errors:
-            parts.append(f"고쳐야 할 것 {errors}건")
+            parts.append(f"고쳐야 할 것 {errors}개")
         if warnings:
-            parts.append(f"알아 둘 것 {warnings}건")
+            parts.append(f"알아 둘 것 {warnings}개")
         self.findings_title.setText("인쇄 전 확인" + (f" ({', '.join(parts)})" if parts else ""))
 
     def problems(self) -> list[Problem]:

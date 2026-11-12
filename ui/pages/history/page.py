@@ -341,7 +341,23 @@ class HistoryPage(BasePage):
         found: set[int] = set()
         for record_id in ids:
             found |= {card.job_id for card in self.history.cards_for_record(record_id)}
-        return found
+        # 사람 번호는 명단마다 다시 세므로, 다른 명단으로 뽑은 기록은 뺀다.
+        return {job_id for job_id in found if self._same_list(self.history.get_job(job_id)) is not False}
+
+    def _same_list(self, job: JobRecord | None) -> bool | None:
+        """이 기록을 지금 열린 명단으로 뽑았는지. 예전 기록이라 알 수 없으면 None."""
+        if job is None:
+            return False
+        list_id = getattr(job, "list_id", None)
+        if not list_id:
+            return None
+        store = self.workspace.store
+        if store is None:
+            return False
+        try:
+            return store.list_id() == list_id
+        except Exception:
+            return False
 
     def _query(self) -> tuple[list[JobRecord], int]:
         since = period_start(self._period)
@@ -410,6 +426,18 @@ class HistoryPage(BasePage):
         if self.jobs_model.rowCount():
             self.jobs_table.selectRow(0)
 
+    def show_job(self, job_id: int | None) -> bool:
+        """그 인쇄 기록을 골라 보여 준다. 걸러 보던 조건은 풀고, 다른 쪽에 있으면 그쪽으로 넘긴다."""
+        if job_id is None or self.history.get_job(job_id) is None:
+            return False
+        self.clear_filters()
+        if self.select_job(job_id):
+            return True
+        newer = sum(1 for job in self.history.list_jobs(100000, 0) if job.id > job_id)
+        self._offset = newer - newer % self.page_size
+        self.reload()
+        return self.select_job(job_id)
+
     def select_job(self, job_id: int) -> bool:
         row = self.jobs_model.find(lambda r: r["id"] == job_id)
         if row < 0:
@@ -444,19 +472,26 @@ class HistoryPage(BasePage):
         self.detail_error.setVisible(bool(self.detail_error.text()))
 
         store = self.workspace.store
-        name_column = guess_name_column(store)
+        same_list = self._same_list(job)        # True | False | None(예전 기록이라 모름)
+        lookup = store if (store is not None and same_list is not False) else None
+        name_column = guess_name_column(lookup)
         cards = self.history.list_cards(job.id)
         rows, people, failed = [], [], []
-        known = 0
+        known = guessed = 0
         for card in cards:
             record_id = _record_id(card.record_id)
-            record = store.get(record_id) if (store is not None and record_id is not None) else None
+            record = lookup.get(record_id) if (lookup is not None and record_id is not None) else None
+            saved_name = (getattr(card, "record_name", None) or "").strip()
             if record_id is None:
                 person = f"{card.card_index}번째 카드"
-            elif record is None:
-                person = "명단에 없음"
-            else:
+            elif saved_name:
+                person = saved_name             # 인쇄할 때 적어 둔 이름. 명단이 바뀌어도 그대로다.
+            elif record is not None:
                 person = display_name(record, name_column, f"{card.card_index}번째 사람")
+                guessed += 1
+            else:
+                person = "명단에 없음"
+            if record is not None:
                 known += 1
                 if record_id not in people:
                     people.append(record_id)
@@ -481,14 +516,24 @@ class HistoryPage(BasePage):
         succeeded = {_record_id(c.record_id) for c in cards if c.status == CARD_SUCCESS}
         failed = [i for i in failed if i not in succeeded]
         self._detail_people, self._detail_failed = people, failed
-        if store is None:
+        has_people = any(_record_id(card.record_id) is not None for card in cards)
+        list_name = (getattr(job, "list_name", None) or "").strip()
+        if not has_people:
+            note = ""
+        elif same_list is False:
+            which = f"'{list_name}' 명단" if list_name else "다른 명단"
+            note = f"{which}으로 뽑은 기록입니다. 그 명단을 열면 여기서 다시 인쇄할 수 있습니다."
+        elif same_list is True:
+            note = "" if known else "이 기록의 사람들은 명단에서 지워졌습니다."
+        elif store is None:
             note = "명단을 열면 사람 이름이 보이고, 다시 인쇄할 수 있습니다."
-        elif known:
-            note = ("이름은 지금 열려 있는 명단에서 찾아 보여 줍니다. 다른 명단으로 뽑은 기록이면 "
-                    "이름이 맞지 않을 수 있습니다.")
+        elif guessed:
+            note = ("예전 기록이라 이름을 지금 열려 있는 명단에서 찾아 보여 줍니다. 다른 명단으로 뽑은 "
+                    "기록이면 이름이 맞지 않을 수 있습니다.")
         else:
-            note = "이 기록의 사람들은 지금 열려 있는 명단에 없습니다."
+            note = "" if known else "이 기록의 사람들은 지금 열려 있는 명단에 없습니다."
         self.names_note.setText(note)
+        self.names_note.setVisible(bool(note))
         self.show_failed_button.setVisible(bool(failed))
         self.show_failed_button.setText(f"실패한 {len(failed):,}명만 명단에서 보기")
         self.reprint_button.setVisible(bool(people))
@@ -511,10 +556,10 @@ class HistoryPage(BasePage):
             page = self.shell.page(PAGE_LIST)
         except KeyError:
             page = None
+        self.shell.navigate(PAGE_LIST)
         hook = getattr(page, "show_people", None)
         if callable(hook):
             hook(ids)
-        self.shell.navigate(PAGE_LIST)
 
     def reprint_selected(self) -> None:
         ids = list(self._detail_failed or self._detail_people)

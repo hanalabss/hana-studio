@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from PySide6.QtCore import QMimeData, QPoint, QSize, Qt, Signal
 from PySide6.QtGui import QDrag, QPainter
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QSizePolicy, QWidget
@@ -11,7 +13,12 @@ from ui.theme import SIZES
 from ._util import FocusRingMixin, on_theme_changed, set_prop
 from .icons import icon_pixmap, themed_icon
 
+# 예전 형식: 항목 이름(UTF-8)만 담는다. 호환용으로 계속 싣는다.
 FIELD_MIME = "application/x-hana-field"
+# 카드 편집기 캔버스가 받는 형식(ui.editor.controller.MIME_FIELD와 같은 값). JSON {"column", "kind"}.
+# 키트가 편집기를 import하지 않도록 값을 따로 적고, 같은지는 테스트가 지킨다.
+CANVAS_FIELD_MIME = "application/x-hanastudio-field"
+FIELD_CHIP_KINDS = ("text", "image", "barcode", "qr")
 
 STATUS_STATES = ("ready", "busy", "error", "offline")
 _STATUS_MARK = {"ready": "ok_mark", "busy": "busy_mark", "error": "danger_text", "offline": "idle_mark"}
@@ -67,15 +74,20 @@ class FilterChip(FocusRingMixin, QPushButton):
 class FieldChip(QLabel):
     """명단 항목 하나. 카드 위로 끌어다 놓는 출발점이고, 누르거나 Enter로도 넣을 수 있다.
 
-    끌 때 MIME `application/x-hana-field`에 항목 이름(UTF-8)을 담는다.
+    끌 때 캔버스가 받는 `application/x-hanastudio-field`(JSON: column, kind)를 싣고,
+    예전 `application/x-hana-field`(항목 이름 UTF-8)와 보통 글자도 함께 싣는다.
+    kind: "text"(글자 칸), "image"(사진 칸), "barcode", "qr".
     """
 
     clicked = Signal(str)
     dragStarted = Signal(str)
 
-    def __init__(self, name: str, parent: QWidget | None = None):
+    def __init__(self, name: str, parent: QWidget | None = None, *, kind: str = "text"):
         super().__init__(name, parent)
+        if kind not in FIELD_CHIP_KINDS:
+            raise ValueError(f"kind는 {FIELD_CHIP_KINDS} 중 하나여야 합니다: {kind}")
         self._name = name
+        self._kind = kind
         self._press_pos: QPoint | None = None
         self.setObjectName("FieldChip")
         self.setFixedHeight(SIZES["chip"])
@@ -95,8 +107,18 @@ class FieldChip(QLabel):
         self.setText(name)
         self.setAccessibleName(f"명단 항목 {name}")
 
+    def field_kind(self) -> str:
+        return self._kind
+
+    def set_field_kind(self, kind: str) -> None:
+        if kind not in FIELD_CHIP_KINDS:
+            raise ValueError(f"kind는 {FIELD_CHIP_KINDS} 중 하나여야 합니다: {kind}")
+        self._kind = kind
+
     def mime_data(self) -> QMimeData:
         mime = QMimeData()
+        payload = json.dumps({"column": self._name, "kind": self._kind}, ensure_ascii=False)
+        mime.setData(CANVAS_FIELD_MIME, payload.encode("utf-8"))
         mime.setData(FIELD_MIME, self._name.encode("utf-8"))
         mime.setText(self._name)
         return mime

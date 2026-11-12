@@ -31,7 +31,7 @@ def test_field_bound_to_a_missing_column(store, simple_document):
     report = preflight.check(simple_document, store)
     finding = only(report, "missing_column")
     assert finding.severity == ERROR and not report.ok
-    assert "'직함' 열" in finding.message and "'직함'" in finding.message and "'소속'" in finding.message
+    assert "'직함' 항목" in finding.message and "'직함'" in finding.message and "'소속'" in finding.message
     assert finding.item_ids == [title.id, both.id]
 
 

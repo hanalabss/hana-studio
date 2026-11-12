@@ -35,7 +35,7 @@ def test_screenshot_export_writes_real_images_for_both_themes(preview, qapp, tmp
             assert f"shell_{page}_{theme}.png" in names
         for section, _factory in preview.GALLERY_SECTIONS:
             assert f"gallery_{section}_{theme}.png" in names
-        for extra in ("gallery_focus", "dialog", "menu", "popover"):
+        for extra in ("gallery_focus", "dialog", "menu", "popover", "calendar"):
             assert f"{extra}_{theme}.png" in names
 
     for path in files:

@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable
@@ -193,6 +194,7 @@ class PrintService(QObject):
         self._queue = queue
         if history is not None:
             queue.set_history(history)
+        self._history = history
         self._counter = 0
         self._jobs: dict[int, PrintJobHandle] = {}
         self._by_queue_id: dict[int, PrintJobHandle] = {}
@@ -246,10 +248,10 @@ class PrintService(QObject):
             render_job = RenderJob.for_copies(document, options.copies, options, capabilities)
         else:
             if store is None:
-                raise PrintServiceError("명단이 없어 인쇄할 대상을 정할 수 없습니다. 명단을 먼저 여세요.")
+                raise PrintServiceError("명단이 없어 누구를 뽑을지 정할 수 없습니다. 명단을 먼저 여세요.")
             record_ids = self._resolve(store, selection, filter, order)
             if not record_ids:
-                raise PrintServiceError("인쇄할 레코드가 없습니다.")
+                raise PrintServiceError("뽑을 사람이 없습니다.")
             render_job = RenderJob.for_records(document, store, record_ids, options, capabilities)
         name = options.job_name or document.name
         return self._enqueue(render_job, store, device, name)
@@ -282,7 +284,7 @@ class PrintService(QObject):
         except Exception as exc:
             self._jobs.pop(handle.id, None)
             self._dispose(handle)
-            raise PrintServiceError(f"인쇄 작업을 시작하지 못했습니다: {exc}") from exc
+            raise PrintServiceError(f"인쇄를 시작하지 못했습니다: {exc}") from exc
         handle.queue_job_id = queue_id
         self._by_queue_id[queue_id] = handle
         self.job_queued.emit(handle)
@@ -322,9 +324,9 @@ class PrintService(QObject):
         """끝난 작업에서 실패한 카드만 다시 인쇄한다. include_unprinted면 인쇄하지 못하고 남은 카드도 포함한다."""
         handle = self._handle(job)
         if handle is None:
-            raise PrintServiceError("다시 인쇄할 작업을 찾을 수 없습니다.")
+            raise PrintServiceError("다시 인쇄할 기록을 찾을 수 없습니다.")
         if handle.is_active:
-            raise PrintServiceError("작업이 끝난 뒤에 다시 인쇄할 수 있습니다.")
+            raise PrintServiceError("인쇄가 끝난 뒤에 다시 인쇄할 수 있습니다.")
         indices = set(handle.failed_indices)
         if include_unprinted:
             indices |= set(handle.unprinted_indices)
@@ -350,6 +352,7 @@ class PrintService(QObject):
         handle.state = STATE_PRINTING
         if handle.queue_job_id is not None:
             handle.history_id = self._queue.history_id_for(handle.queue_job_id)
+        self._note_list_in_history(handle)
         self.job_started.emit(handle)
         self._emit_progress(handle, "프린터 연결 중...", stage_key=STAGE_CONNECT)
 
@@ -409,6 +412,8 @@ class PrintService(QObject):
             warnings=warnings,
         )
         handle.results.append(result)
+        if spec.record_id is not None:
+            self._history_call("set_card_name", handle, card_index, spec.display_name)
         if ok and spec.record_id is not None and handle._store is not None:
             try:
                 handle._store.mark_printed([spec.record_id])
@@ -437,6 +442,36 @@ class PrintService(QObject):
         handle = self._by_queue_id.get(queue_id)
         if handle is not None and handle.is_active:
             self._finalize(handle, cancelled=handle.cancel_mode is not None)
+
+    # -- 인쇄 기록에 덧붙이는 것 ---------------------------------------------
+    def _history_store(self) -> Any:
+        return self._history if self._history is not None else getattr(self._queue, "_history", None)
+
+    def _history_call(self, method: str, handle: PrintJobHandle, *args: Any) -> None:
+        """기록에 이름·명단을 적는다. 실패해도 인쇄에는 영향을 주지 않는다."""
+        history = self._history_store()
+        if handle.history_id is None and handle.queue_job_id is not None:
+            handle.history_id = self._queue.history_id_for(handle.queue_job_id)
+        call = getattr(history, method, None)
+        if handle.history_id is None or not callable(call):
+            return
+        try:
+            call(handle.history_id, *args)
+        except Exception:
+            log.exception("인쇄 기록에 덧붙이지 못했습니다 (%s)", method)
+
+    def _note_list_in_history(self, handle: PrintJobHandle) -> None:
+        store = handle._store
+        if store is None or not any(spec.record_id is not None for spec in handle._render_job.specs):
+            return
+        try:
+            list_id = store.list_id()
+            path = str(getattr(store, "path", "") or "")
+            name = os.path.splitext(os.path.basename(path))[0] if path and path != ":memory:" else ""
+        except Exception:
+            log.exception("명단 이름표를 읽지 못했습니다.")
+            return
+        self._history_call("set_job_list", handle, list_id, name)
 
     # -- 마무리 ------------------------------------------------------------
     def _finalize(self, handle: PrintJobHandle, cancelled: bool) -> None:

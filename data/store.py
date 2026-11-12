@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import uuid
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -128,7 +129,7 @@ class DataStore:
             self._migrate()
         except sqlite3.Error as exc:
             self.close()
-            raise DataError(f"데이터 파일을 열 수 없습니다: {self.path}") from exc
+            raise DataError(f"명단 파일을 열 수 없습니다: {self.path}") from exc
         except DataError:
             self.close()
             raise
@@ -160,8 +161,23 @@ class DataStore:
     @property
     def _db(self) -> sqlite3.Connection:
         if self._conn is None:
-            raise DataError("데이터 파일이 닫혀 있습니다.")
+            raise DataError("명단 파일이 닫혀 있습니다.")
         return self._conn
+
+    def list_id(self) -> str:
+        """이 명단 파일만의 이름표. 처음 물을 때 만들어 파일에 적어 두고, 파일을 옮기거나 이름을 바꿔도 같다.
+
+        사람 _id는 명단마다 1부터 다시 세므로, 인쇄 기록이 "어느 명단의 몇 번 사람"인지 가릴 때 쓴다.
+        """
+        with self._lock:
+            row = self._db.execute("SELECT value FROM meta WHERE key = 'list_id'").fetchone()
+            if row and row[0]:
+                return str(row[0])
+            value = uuid.uuid4().hex
+            self._db.execute(
+                "INSERT INTO meta (key, value) VALUES ('list_id', ?)"
+                " ON CONFLICT(key) DO UPDATE SET value = excluded.value", (value,))
+            return value
 
     def _migrate(self) -> None:
         conn = self._db
@@ -170,7 +186,7 @@ class DataStore:
         target = len(MIGRATIONS)
         if current > target:
             raise DataError(
-                "이 데이터 파일은 더 최신 버전의 프로그램에서 만들어졌습니다. 프로그램을 업데이트한 뒤 다시 열어 주세요."
+                "이 명단 파일은 더 최신 버전의 프로그램에서 만들어졌습니다. 프로그램을 업데이트한 뒤 다시 열어 주세요."
             )
         for version in range(current, target):
             with self.transaction():
@@ -223,7 +239,7 @@ class DataStore:
                 "SELECT id, name, type, options FROM columns WHERE name = ?", (name,)
             ).fetchone()
         if row is None:
-            raise DataError(f"'{name}' 열을 찾을 수 없습니다.")
+            raise DataError(f"'{name}' 항목을 찾을 수 없습니다.")
         return Column(row[1], row[2], json.loads(row[3] or "{}"), row[0])
 
     def has_column(self, name: str) -> bool:
@@ -232,19 +248,19 @@ class DataStore:
 
     def _check_name(self, name: Any, ignore_id: int | None = None) -> str:
         if not isinstance(name, str) or name.strip() == "":
-            raise DataError("열 이름을 입력하세요.")
+            raise DataError("항목 이름을 입력하세요.")
         name = name.strip()
         if name.startswith("_"):
-            raise DataError(f"열 이름은 밑줄(_)로 시작할 수 없습니다: {name}")
+            raise DataError(f"항목 이름은 밑줄(_)로 시작할 수 없습니다: {name}")
         row = self._db.execute("SELECT id FROM columns WHERE name = ?", (name,)).fetchone()
         if row is not None and row[0] != ignore_id:
-            raise DataError(f"'{name}' 열이 이미 있습니다. 다른 이름을 사용하세요.")
+            raise DataError(f"'{name}' 항목이 이미 있습니다. 다른 이름을 사용하세요.")
         return name
 
     @staticmethod
     def _check_type(type_: str) -> str:
         if type_ not in COLUMN_TYPES:
-            raise DataError(f"지원하지 않는 열 종류입니다: {type_}")
+            raise DataError(f"지원하지 않는 항목 종류입니다: {type_}")
         return type_
 
     def add_column(
@@ -289,9 +305,9 @@ class DataStore:
             existing = self.column_names()
             for name in wanted:
                 if name not in existing:
-                    raise DataError(f"'{name}' 열을 찾을 수 없습니다.")
+                    raise DataError(f"'{name}' 항목을 찾을 수 없습니다.")
             if len(set(wanted)) != len(wanted):
-                raise DataError("열 순서에 같은 열이 두 번 들어 있습니다.")
+                raise DataError("항목 순서에 같은 항목이 두 번 들어 있습니다.")
             self._set_order(wanted + [n for n in existing if n not in set(wanted)])
 
     def move_column(self, name: str, position: int) -> None:
@@ -431,7 +447,7 @@ class DataStore:
     def _column_map(self, values: Mapping, columns: dict[str, Column]) -> None:
         for key in values:
             if key not in columns and not (isinstance(key, str) and key.startswith("_")):
-                raise DataError(f"'{key}' 열을 찾을 수 없습니다.")
+                raise DataError(f"'{key}' 항목을 찾을 수 없습니다.")
 
     def insert(self, values: Mapping[str, Any]) -> int:
         with self.transaction():
@@ -580,7 +596,7 @@ class DataStore:
             column_id = self.column(column).id
             zoom, x, y = self._check_adjustment(adjustment)
             if self._db.execute("SELECT 1 FROM records WHERE id = ?", (int(record_id),)).fetchone() is None:
-                raise DataError("레코드를 찾을 수 없습니다.")
+                raise DataError("그 사람을 명단에서 찾을 수 없습니다.")
             self._db.execute(
                 "INSERT OR REPLACE INTO photo_adjust (record_id, column_id, zoom, offset_x, offset_y)"
                 " VALUES (?, ?, ?, ?, ?)",

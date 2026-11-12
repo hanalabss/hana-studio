@@ -13,6 +13,7 @@ from data.store import DataStore, PhotoAdjustment
 from design import renderer
 from design.binding import BindingContext, ColumnSource
 from design.model import Crop
+from services.render_job import crop_from_adjustment
 from ui.theme import SPACE
 from ui.widgets import (
     Divider,
@@ -39,22 +40,8 @@ def _drawn_size(image_size, frame_size, fit: str, zoom: float) -> tuple[float, f
     return w, h
 
 
-def crop_for_adjustment(adjustment: PhotoAdjustment, image_size, frame_size, fit: str = "fill") -> Crop:
-    """명단의 조정값(틀 크기 대비 이동)을 렌더러의 Crop(남는 폭 대비 비율)으로 바꾼다."""
-    zoom = float(adjustment.zoom) if adjustment.zoom and adjustment.zoom > 0 else 1.0
-    draw_w, draw_h = _drawn_size(image_size, frame_size, fit, zoom)
-
-    def convert(offset: float, drawn: float, frame: float) -> float:
-        slack = abs(drawn - frame) / 2.0
-        if slack <= _EPS or frame <= 0:
-            return 0.0
-        return max(-1.0, min(1.0, float(offset) * frame / slack))
-
-    return Crop(
-        offset_x=convert(adjustment.offset_x, draw_w, float(frame_size[0])),
-        offset_y=convert(adjustment.offset_y, draw_h, float(frame_size[1])),
-        zoom=zoom,
-    )
+# 명단 미리 보기와 인쇄가 같은 계산을 쓴다(services.render_job 하나뿐).
+crop_for_adjustment = crop_from_adjustment
 
 
 def clamp_adjustment(adjustment: PhotoAdjustment, image_size, frame_size, fit: str = "fill") -> PhotoAdjustment:
@@ -110,7 +97,7 @@ def render_card_image(
                 if image is None:
                     continue
                 applied.append((item, item.record_crops.get(key)))
-                item.set_record_crop(key, crop_for_adjustment(
+                item.set_record_crop(key, crop_from_adjustment(
                     adjustment, (image.width(), image.height()), (item.w, item.h), item.fit))
         rendered = renderer.render_side(document, side_key, record, dpi, context, crop_bleed=True)
     finally:

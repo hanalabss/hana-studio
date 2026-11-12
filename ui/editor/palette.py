@@ -28,6 +28,8 @@ class EditorPalette:
     locked: str = "#8A93A1"
     tag_bg: str = "#2456E6"
     tag_text: str = "#FFFFFF"
+    field_tint: str = "#FFF7D6"          # 명단에서 가져오는 항목에 형광펜처럼 곱해 얹는 옅은 노랑(화면에만 보인다)
+    field_tint_line: str = "#80E0A800"
     readout_bg: str = "#1B2430"
     readout_text: str = "#FFFFFF"
     ruler_bg: str = "#FFFFFF"
@@ -63,6 +65,8 @@ class EditorPalette:
             locked="#8A919C",
             tag_bg="#FF4D8D",
             tag_text="#15171A",
+            field_tint="#FFF5CC",
+            field_tint_line="#99E0A800",
             readout_bg="#F2F3F5",
             readout_text="#15171A",
             ruler_bg="#1E2126",

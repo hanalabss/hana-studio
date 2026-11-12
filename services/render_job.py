@@ -331,7 +331,7 @@ class RenderJob:
         specs = []
         for position, record_id in enumerate(record_ids):
             record = records.get(record_id)
-            name = display_name(record, name_column, f"{position + 1}번째 레코드")
+            name = display_name(record, name_column, f"{position + 1}번째 사람")
             for _ in range(copies):
                 specs.append(CardSpec(int(record_id), options.counter_offset + position, position, name))
         return cls(document, store, specs, options, capabilities)
@@ -418,7 +418,7 @@ class RenderJob:
             return {}
         record = self.store.get(spec.record_id)
         if record is None:
-            raise RenderJobError(f"{spec.display_name}: 명단에서 지워진 레코드라 인쇄할 수 없습니다.")
+            raise RenderJobError(f"{spec.display_name}: 명단에서 지워진 사람이라 인쇄할 수 없습니다.")
         if self._resolver is None:
             self._resolver = PhotoResolver(self.store)
         return self._resolver.binding_record(record)

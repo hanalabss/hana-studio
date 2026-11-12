@@ -13,7 +13,7 @@ from PySide6.QtWidgets import QFrame, QGraphicsView, QPlainTextEdit, QWidget
 
 from design import renderer
 from design.binding import FixedSource
-from ui.editor import geometry, snapping
+from ui.editor import geometry, snapping, tag_placement
 from ui.editor.controller import (
     EditorController, EditorError, bound_columns, image_paths_from_mime, parse_field_mime,
 )
@@ -25,6 +25,7 @@ HANDLE_PX = 8.0
 HANDLE_HIT_PX = 7.0
 ROTATE_OFFSET_PX = 26.0
 SNAP_PX = 6.0
+TAG_HEIGHT_PX = 20.0
 HIT_PX = 4.0
 DRAG_THRESHOLD_PX = 3
 MIN_ZOOM, MAX_ZOOM = 0.1, 16.0
@@ -326,7 +327,7 @@ class EditorView(QGraphicsView):
 
     def set_zoom(self, zoom: float, anchor: QPointF | None = None, *, keep_auto_fit: bool = False) -> None:
         """anchor(뷰포트 좌표) 아래의 지점이 제자리에 있도록 확대한다."""
-        self._commit_text_edit()
+        self.commit_text_edit()
         if not keep_auto_fit:
             self._auto_fit = False
         if anchor is None:
@@ -374,7 +375,7 @@ class EditorView(QGraphicsView):
         zoom = min(available_w / (rect.width() * self._base_px_per_mm),
                    available_h / (rect.height() * self._base_px_per_mm))
         previous = self._zoom
-        self._commit_text_edit()
+        self.commit_text_edit()
         self._apply_zoom(zoom)
         self.centerOn(rect.center())
         self.refresh_overlay()
@@ -507,7 +508,7 @@ class EditorView(QGraphicsView):
 
     def mousePressEvent(self, event) -> None:
         self.setFocus(Qt.FocusReason.MouseFocusReason)
-        self._commit_text_edit()
+        self.commit_text_edit()
         position = event.position()
         self._press_view = position.toPoint()
         self._press_scene = self._to_scene(position)
@@ -831,7 +832,7 @@ class EditorView(QGraphicsView):
             return False
         if item.source is not None and not isinstance(item.source, FixedSource):
             return False
-        self._commit_text_edit()
+        self.commit_text_edit()
         editor = _InlineTextEdit(self.viewport())
         self._editor, self._editing_id = editor, item_id
         text = item.source.value if isinstance(item.source, FixedSource) else item.text
@@ -905,9 +906,12 @@ class EditorView(QGraphicsView):
             self.controller.set_text(item_id, text)
         self.refresh_overlay()
 
-    def _commit_text_edit(self) -> None:
+    def commit_text_edit(self) -> None:
+        """캔버스에서 고치던 글자를 확정한다(저장하기 직전 등). 고치는 중이 아니면 아무 일도 없다."""
         if self._editor is not None:
             self._finish_text_edit(self._editor.toPlainText())
+
+    _commit_text_edit = commit_text_edit
 
     def _cancel_text_edit(self) -> None:
         self._close_editor()
@@ -1106,6 +1110,7 @@ class EditorView(QGraphicsView):
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawPath(cut_path)
 
+        self._paint_field_tints(painter, card_path)
         self._paint_warnings(painter)
         self._paint_hover(painter)
         self._paint_selection(painter)
@@ -1171,6 +1176,35 @@ class EditorView(QGraphicsView):
             a, b = geometry.line_endpoints(item)
             return QPolygonF([self._to_view(*a), self._to_view(*b)])
         return QPolygonF([self._to_view(x, y) for x, y in geometry.corners(geometry.box_of(item))])
+
+    def _paint_field_tints(self, painter, card_path: QPainterPath) -> None:
+        """명단에서 가져오는 항목을 옅은 노랑으로 알려 준다. 화면에만 그리고 인쇄에는 나오지 않는다."""
+        controller = self.controller
+        if not controller.field_tint_visible:
+            return
+        selected = set(controller.selection)
+        painter.save()
+        painter.setClipPath(card_path)
+        outlines = [
+            self._outline(item) for item in controller.side().items
+            if item.visible and item.kind != "line" and item.id not in selected
+            and item.id != self._editing_id and bound_columns(item)
+        ]
+        # 곱하기로 얹어 흰 바탕만 물들이고 글자·바코드의 검정은 그대로 둔다.
+        # 실제 사람을 넣어 미리 볼 때는 사진과 글자가 나올 모습 그대로 보이도록 물들이지 않고 테두리만 남긴다.
+        if controller.preview_record is None:
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Multiply)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(self.palette_colors.field_tint))
+            for outline in outlines:
+                painter.drawPolygon(outline)
+        # 어두운 바탕 위에서는 물든 것이 안 보이므로 가는 테두리로도 알린다.
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+        painter.setPen(QPen(QColor(self.palette_colors.field_tint_line), 1.0))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        for outline in outlines:
+            painter.drawPolygon(outline)
+        painter.restore()
 
     def _paint_warnings(self, painter) -> None:
         warnings = self.controller.warnings
@@ -1249,7 +1283,7 @@ class EditorView(QGraphicsView):
 
         item = items[0]
         if item.locked or not item.visible:
-            self._paint_tag(painter, item, "잠김" if item.locked else "숨김", QColor(palette.locked), QColor("#FFFFFF"))
+            self._paint_tag(painter, item)
             return
         points = self._handle_points(item)
         dragging_other = self._dragging and self._mode in ("move",)
@@ -1268,23 +1302,73 @@ class EditorView(QGraphicsView):
                     painter.drawEllipse(center, half + 0.5, half + 0.5)
                 else:
                     painter.drawRect(QRectF(center.x() - half, center.y() - half, HANDLE_PX, HANDLE_PX))
-        columns = bound_columns(item)
-        if columns:
-            self._paint_tag(painter, item, "명단: " + ", ".join(columns), QColor(palette.tag_bg), QColor(palette.tag_text))
+        self._paint_tag(painter, item)
 
-    def _paint_tag(self, painter, item, text: str, background: QColor, foreground: QColor) -> None:
-        font = _ui_font(11, bold=True)
-        metrics = QFontMetricsF(font)
-        bounds = self._outline(item).boundingRect()
-        width, height = metrics.horizontalAdvance(text) + 14, 20.0
-        if bounds.width() >= width + 44 and item.kind != "line":
-            rect = QRectF(bounds.left(), bounds.top() - height - 7, width, height)
+    def _tag_text(self, item) -> str:
+        if item.locked:
+            return "잠김"
+        if not item.visible:
+            return "숨김"
+        columns = bound_columns(item)
+        return "명단: " + ", ".join(columns) if columns else ""
+
+    def _tag_layout(self, item, text: str) -> tuple[str, QRectF]:
+        """꼬리표를 놓을 자리. 다른 항목이나 회전 손잡이를 가리지 않는 곳을 고른다."""
+        def as_tuple(rect: QRectF) -> tuple[float, float, float, float]:
+            return (rect.left(), rect.top(), rect.right(), rect.bottom())
+
+        width = QFontMetricsF(_ui_font(11, bold=True)).horizontalAdvance(text) + 14
+        box = self._outline(item).boundingRect()
+        obstacles = [
+            as_tuple(self._outline(other).boundingRect())
+            for other in self.controller.side().items if other.id != item.id and other.visible
+        ]
+        keep_clear = []
+        if not item.locked and item.visible:
+            rotate = self._handle_points(item).get("rotate")
+            if rotate is not None:
+                stem = self._to_view(*geometry.to_scene(geometry.box_of(item), 0.5, 0.0))
+                reach = HANDLE_PX / 2.0 + 3.0
+                keep_clear.append((
+                    min(stem.x(), rotate.x()) - reach, min(stem.y(), rotate.y()) - reach,
+                    max(stem.x(), rotate.x()) + reach, max(stem.y(), rotate.y()) + reach,
+                ))
+        where, (left, top, right, bottom) = tag_placement.place_tag(
+            as_tuple(box), (width, TAG_HEIGHT_PX), obstacles,
+            viewport=as_tuple(QRectF(self.viewport().rect())), keep_clear=keep_clear,
+            allow_inside=item.kind != "line",
+        )
+        return where, QRectF(left, top, right - left, bottom - top)
+
+    def selection_tag(self) -> tuple[str, str, QRectF] | None:
+        """하나만 골랐을 때 붙는 꼬리표의 (글자, 자리 "above" | "below" | "inside", 뷰포트 사각형)."""
+        items = self.controller.selected_items()
+        if len(items) != 1 or self._editor is not None:
+            return None
+        text = self._tag_text(items[0])
+        if not text:
+            return None
+        where, rect = self._tag_layout(items[0], text)
+        return text, where, rect
+
+    def _paint_tag(self, painter, item) -> None:
+        text = self._tag_text(item)
+        if not text:
+            return
+        palette = self.palette_colors
+        if item.locked or not item.visible:
+            background, foreground = QColor(palette.locked), QColor("#FFFFFF")
         else:
-            rect = QRectF(bounds.left(), bounds.bottom() + 9, width, height)
-        painter.setPen(Qt.PenStyle.NoPen)
+            background, foreground = QColor(palette.tag_bg), QColor(palette.tag_text)
+        where, rect = self._tag_layout(item, text)
+        if where == tag_placement.INSIDE:
+            # 사진 위에 얹힐 때도 읽히도록 글자색으로 가는 테두리를 두른다.
+            painter.setPen(QPen(foreground, 1.0))
+        else:
+            painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(background)
         painter.drawRoundedRect(rect, 4, 4)
-        painter.setFont(font)
+        painter.setFont(_ui_font(11, bold=True))
         painter.setPen(foreground)
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
 

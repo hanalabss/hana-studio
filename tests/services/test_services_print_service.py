@@ -111,7 +111,7 @@ def test_start_refuses_impossible_requests(store, document, rtai_device, service
         service.start(document, store, None, None)
     with pytest.raises(PrintServiceError, match="명단"):
         service.start(document, None, [1, 2], rtai_device)
-    with pytest.raises(PrintServiceError, match="레코드가 없습니다"):
+    with pytest.raises(PrintServiceError, match="뽑을 사람이 없습니다"):
         service.start(document, store, [], rtai_device)
     with pytest.raises(PrintServiceError):
         service.start(document, store, PrintSelection.ranges("9-12"), rtai_device)
@@ -214,7 +214,7 @@ def test_render_failure_fails_that_card_only(app, store, simple_document, stub_d
     store.delete([ids[1]])
     wait_until(app, lambda: recorder.finished)
     assert [c.status for c in recorder.cards] == [CARD_SUCCESS, CARD_FAILED, CARD_SUCCESS]
-    assert "지워진 레코드" in recorder.cards[1].message
+    assert "지워진 사람" in recorder.cards[1].message
     assert stub.printed == [ids[0], ids[2]]
     assert handle.summary.failed_record_ids == [ids[1]]
 

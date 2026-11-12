@@ -1394,7 +1394,7 @@ class ImportWizard(Dialog):
 
     # ================================================================ 공통
     def _set_heading(self, title: str, description: str | None) -> None:
-        self._title.setText(title)      # 키트 Dialog에 제목을 바꾸는 공개 메서드가 없다
+        self.set_title(title, window_title=False)
         self._heading_description = description or ""
         self.set_description(description)
 

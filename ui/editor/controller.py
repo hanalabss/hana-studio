@@ -15,7 +15,7 @@ from shiboken6 import isValid
 from design import barcodes, presets, renderer, storage
 from design.binding import BindingContext, ColumnSource, FixedSource, Source
 from design.model import (
-    ALIGN_MODES, DISTRIBUTE_AXES, ITEM_TYPES, LAYERS, ORIENTATIONS, Document, Item, Side,
+    ALIGN_MODES, DISTRIBUTE_AXES, ITEM_TYPES, LAYERS, ORIENTATIONS, Document, Item, ItemGeometry, Side,
     align_items, distribute_items, item_from_dict,
 )
 from ui.editor import commands
@@ -104,6 +104,12 @@ def geometry_warnings(document: Document, side_key: str, item: Item) -> list[tup
     return []
 
 
+def _same_geometry(a: ItemGeometry, b: ItemGeometry) -> bool:
+    return all(
+        abs(p - q) < 1e-9 for p, q in ((a.x, b.x), (a.y, b.y), (a.w, b.w), (a.h, b.h), (a.rotation, b.rotation))
+    )
+
+
 class EditorController(QObject):
     document_changed = Signal()
     card_changed = Signal()
@@ -139,6 +145,7 @@ class EditorController(QObject):
         self._grid_step_mm = 1.0
         self._snap_enabled = True
         self._cut_line_visible = True
+        self._field_tint_visible = True
         if document is not None:
             self.set_document(document)
         else:
@@ -226,11 +233,14 @@ class EditorController(QObject):
         if was_modified:
             self.modified_changed.emit(False)
 
-    def _ensure_workdir(self) -> str:
+    def ensure_workdir(self) -> str:
+        """문서의 그림 파일(assets/)을 두는 작업 폴더. 없으면 만들어서 돌려준다."""
         if not self._document.base_dir:
             self._document.base_dir = storage.new_workdir()
             self._owns_workdir = True
         return self._document.base_dir
+
+    _ensure_workdir = ensure_workdir
 
     # ================================================================ 면
 
@@ -394,7 +404,7 @@ class EditorController(QObject):
         if image is None:
             raise EditorError(f"이미지를 열 수 없습니다: {os.path.basename(source)}")
         try:
-            asset = storage.import_asset(self._ensure_workdir(), source)
+            asset = storage.import_asset(self.ensure_workdir(), source)
         except storage.StorageError as exc:
             raise EditorError(str(exc)) from exc
         left, top, right, bottom = self._document.side_bounds(self._side_key, inside_bleed=True)
@@ -480,13 +490,18 @@ class EditorController(QObject):
         self, ids: Iterable[str] | str | None, values: Mapping[str, Any], merge_key: Any = None, *,
         text: str = "속성 변경",
     ) -> bool:
+        """여러 속성을 한 번에 바꾼다(실행 취소 한 단계).
+
+        "extra"에는 dict를 통째로 넘긴다. 모델에 없는 부가 값(배경 지우기 기준 등)이 여기 담겨
+        파일에 함께 저장된다. 일부만 바꾸려면 {**item.extra, 키: 값}으로 넘긴다.
+        """
         side = self.side()
         changes: dict[str, dict[str, Any]] = {}
         for item_id in self._ids(ids):
             item = side.get(item_id)
             if item is None:
                 continue
-            valid = {f.name for f in fields(item)} - {"id", "kind", "extra", "z"}
+            valid = {f.name for f in fields(item)} - {"id", "kind", "z"}
             attrs = {k: self._coerce(item, k, v) for k, v in values.items() if k in valid}
             if attrs:
                 changes[item_id] = attrs
@@ -499,6 +514,10 @@ class EditorController(QObject):
 
     @staticmethod
     def _coerce(item: Item, name: str, value: Any) -> Any:
+        if name == "extra":
+            if not isinstance(value, Mapping) or not all(isinstance(key, str) for key in value):
+                raise EditorError("부가 정보는 이름과 값의 묶음이어야 합니다.")
+            return dict(value)
         current = getattr(item, name)
         if isinstance(current, float) and isinstance(value, int) and not isinstance(value, bool):
             return float(value)
@@ -722,7 +741,7 @@ class EditorController(QObject):
         if renderer.load_image(source) is None:
             raise EditorError(f"이미지를 열 수 없습니다: {os.path.basename(source)}")
         try:
-            asset = storage.import_asset(self._ensure_workdir(), source)
+            asset = storage.import_asset(self.ensure_workdir(), source)
         except storage.StorageError as exc:
             raise EditorError(str(exc)) from exc
         return self.set_side_background(asset, side_key)
@@ -730,9 +749,13 @@ class EditorController(QObject):
     def set_card_setup(
         self, *, preset: presets.CardPreset | str | None = None, width_mm: float | None = None,
         height_mm: float | None = None, bleed_mm: float | None = None, dual_side: bool | None = None,
-        name: str | None = None, orientation: str | None = None,
+        name: str | None = None, orientation: str | None = None, reflow: bool = True,
     ) -> bool:
-        """카드 크기·도련·양면·이름·방향을 한 번에 바꾼다(실행 취소 한 단계)."""
+        """카드 크기·도련·양면·이름·방향을 한 번에 바꾼다(실행 취소 한 단계).
+
+        크기나 방향이 바뀌면 항목들도 새 카드 안으로 함께 옮긴다(같은 실행 취소 단계).
+        reflow=False면 항목은 제자리에 둔다.
+        """
         changes: dict[str, Any] = {}
         if isinstance(preset, str):
             preset = presets.get_preset(preset)
@@ -754,14 +777,39 @@ class EditorController(QObject):
             orientations = {key: orientation for key in self._document.sides}
         if changes.get("dual_side"):
             self._document.ensure_side("back")
-        return self._push(commands.CardSetupCommand(self, "카드 설정", changes, orientations))
+        geometry = self._reflowed(changes, orientations or {}) if reflow else None
+        return self._push(commands.CardSetupCommand(self, "카드 설정", changes, orientations, geometry))
 
-    def set_orientation(self, orientation: str, side_key: str | None = None) -> bool:
-        """landscape|portrait. side_key가 None이면 모든 면."""
+    def _reflowed(
+        self, changes: Mapping[str, Any], orientations: Mapping[str, str],
+    ) -> dict[str, dict[str, ItemGeometry]]:
+        """카드 크기·방향이 바뀐 뒤 항목들이 놓일 자리: 면 → {항목 id: 위치}. 달라지는 항목만 담는다."""
+        document = self._document
+        size = (
+            changes.get("card_width_mm", document.card_width_mm),
+            changes.get("card_height_mm", document.card_height_mm),
+        )
+        moved: dict[str, dict[str, ItemGeometry]] = {}
+        for side_key, side in document.sides.items():
+            if not side.items:
+                continue
+            placed = document.reflow_side(side_key, orientation=orientations.get(side_key), card_size_mm=size)
+            changed = {
+                item.id: placed[item.id] for item in side.items
+                if item.id in placed and not _same_geometry(placed[item.id], ItemGeometry.of(item))
+            }
+            if changed:
+                moved[side_key] = changed
+        return moved
+
+    def set_orientation(self, orientation: str, side_key: str | None = None, *, reflow: bool = True) -> bool:
+        """landscape|portrait. side_key가 None이면 모든 면. 항목도 새 방향의 카드 안으로 옮긴다."""
         if orientation not in ORIENTATIONS:
             raise EditorError(f"알 수 없는 방향입니다: {orientation}")
         keys = [side_key] if side_key else list(self._document.sides)
-        return self._push(commands.CardSetupCommand(self, "카드 방향", {}, {key: orientation for key in keys}))
+        orientations = {key: orientation for key in keys}
+        geometry = self._reflowed({}, orientations) if reflow else None
+        return self._push(commands.CardSetupCommand(self, "카드 방향", {}, orientations, geometry))
 
     # ================================================================ 목록 / 문제
 
@@ -918,6 +966,14 @@ class EditorController(QObject):
 
     def set_cut_line_visible(self, visible: bool) -> None:
         self._set_option("_cut_line_visible", bool(visible))
+
+    @property
+    def field_tint_visible(self) -> bool:
+        """명단에서 가져오는 항목을 캔버스에서 옅은 노랑으로 알려 줄지. 인쇄와는 상관없다."""
+        return self._field_tint_visible
+
+    def set_field_tint_visible(self, visible: bool) -> None:
+        self._set_option("_field_tint_visible", bool(visible))
 
     def _set_option(self, attr: str, value: Any) -> None:
         if getattr(self, attr) != value:
