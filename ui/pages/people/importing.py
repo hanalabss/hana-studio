@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 
 from data.errors import DataError
 from data.importers import ImportPreview, ImportResult, import_into, preview_file, suggest_column_map
+from data.photo_match import folder_has_photos, match_folder
 from data.photos import PhotoLocator, PhotoResolver, set_photo_folder
 from data.store import Column, DataStore
 from data.values import is_empty
@@ -65,6 +66,8 @@ from .text import (
 FILE_FILTER = "명단 파일 (*.xlsx *.xlsm *.csv *.txt *.tsv);;엑셀 (*.xlsx *.xlsm);;CSV (*.csv *.txt *.tsv)"
 IMPORT_SUFFIXES = (".xlsx", ".xlsm", ".csv", ".txt", ".tsv", ".tab", ".xls")
 DEFAULT_PHOTO_FIELD = "사진"
+AUTO_PHOTO_SOURCE = "::auto::"        # 사진 짝 맞추기: 열 하나가 아니라 파일 이름에서 알아서 찾는다
+AUTO_PHOTO_LABEL = "알아서 찾기"
 _KEY_WORDS = ("사번", "사원번호", "직원번호", "학번", "회원번호", "번호", "id", "no", "코드")
 _NAME_WORDS = ("이름", "성명", "name")
 PREVIEW_ROWS = 10
@@ -161,6 +164,21 @@ def _is_real_match(source: str, target: str, preview: ImportPreview, result: dic
     return source in {c.name for c in preview.columns} and source not in result.values()
 
 
+_auto_cache: dict[str, Any] = {}
+
+
+def auto_photo_names(preview: ImportPreview, folder: str | os.PathLike | None) -> list[str]:
+    """줄마다 알아서 찾은 사진 파일 이름("" = 못 찾았거나 정하지 못함)."""
+    if not folder:
+        return [""] * len(preview.rows)
+    key = (id(preview), len(preview.rows), str(folder))
+    if _auto_cache.get("key") != key:
+        _auto_cache["key"] = key
+        _auto_cache["names"] = [m.file_name if m.found else "" for m in match_folder(
+            preview.rows, folder, [c.name for c in preview.columns])]
+    return _auto_cache["names"]
+
+
 def suggest_photo_source(preview: ImportPreview, folder: str | os.PathLike | None,
                          preferred: str | None = None) -> str | None:
     """사진 파일 이름이 들어 있을 만한 열. 폴더가 있으면 실제로 가장 많이 맞는 열을 고른다."""
@@ -175,6 +193,9 @@ def suggest_photo_source(preview: ImportPreview, folder: str | os.PathLike | Non
             hits = sum(1 for row in sample if locator.find(row[index]) is not None)
             if hits > best_hits or (hits == best_hits and hits and name == preferred):
                 best, best_hits = name, hits
+        auto_hits = sum(1 for name in auto_photo_names(preview, folder)[:300] if name)
+        if auto_hits > best_hits:
+            return AUTO_PHOTO_SOURCE
         if best is not None:
             return best
     if preferred in names:
@@ -202,6 +223,9 @@ def suggest_key_field(field_names: list[str]) -> str | None:
 def count_photos(preview: ImportPreview, source: str | None, folder: str | os.PathLike | None) -> tuple[int, list[int]]:
     """(찾은 사람 수, 못 찾은 줄 번호들)."""
     names = [c.name for c in preview.columns]
+    if source == AUTO_PHOTO_SOURCE and folder:
+        missing = [i for i, name in enumerate(auto_photo_names(preview, folder)) if not name]
+        return len(preview.rows) - len(missing), missing
     if not source or source not in names or not folder:
         return 0, list(range(len(preview.rows)))
     index = names.index(source)
@@ -305,6 +329,16 @@ def resolve_plan(plan: ImportPlan) -> tuple[ImportPreview, dict[str, str | None]
             columns=list(preview.columns) + [Column(extra, "photo")],
             rows=[list(row) + [row[index]] for row in preview.rows],
             sample_rows=[list(row) + [row[index]] for row in preview.sample_rows],
+        )
+        column_map[extra] = plan.photo_field
+    if plan.photo_field and plan.photo_source == AUTO_PHOTO_SOURCE and plan.photo_folder:
+        found = auto_photo_names(plan.preview, plan.photo_folder)
+        extra = _unique_name(f"{plan.photo_field} 파일 이름", set(names))
+        preview = replace(
+            preview,
+            columns=list(preview.columns) + [Column(extra, "photo")],
+            rows=[list(row) + [found[i]] for i, row in enumerate(preview.rows)],
+            sample_rows=[list(row) + [found[i]] for i, row in enumerate(preview.sample_rows)],
         )
         column_map[extra] = plan.photo_field
     if not any(column_map.values()):
@@ -846,10 +880,13 @@ class ImportWizard(Dialog):
         self.photo_card.body.addLayout(folder_row)
         source_row = QHBoxLayout()
         source_row.setSpacing(SPACE["md"])
-        source_row.addWidget(label("사진 파일 이름과 같은 열", "label"))
+        source_row.addWidget(label("사진 짝 맞추는 방법", "label"))
         self.photo_source_combo = ComboBox()
         self.photo_source_combo.setMinimumWidth(180)
-        self.photo_source_combo.setAccessibleName("사진 파일 이름과 같은 열")
+        self.photo_source_combo.setAccessibleName("사진 짝 맞추는 방법")
+        self.photo_source_combo.setToolTip(
+            "'알아서 찾기'는 사진 파일 이름에 그 사람의 이름이나 사번이 들어 있으면 찾습니다. "
+            "열을 고르면 그 열의 값과 이름이 똑같은 파일만 찾습니다.")
         self.photo_source_combo.activated.connect(self._on_photo_source_picked)
         source_row.addWidget(self.photo_source_combo)
         source_row.addStretch(1)
@@ -914,6 +951,8 @@ class ImportWizard(Dialog):
         photo_fields = [f for f in self._fields if f.is_photo]
         self._photo_field = photo_fields[0].name if photo_fields else None
         file_has_photo = any(c.type == "photo" for c in preview.columns)
+        if self._photo_folder is None and self._path and folder_has_photos(Path(self._path).parent):
+            self._photo_folder = str(Path(self._path).parent)      # 명단 파일 옆에 사진이 있으면 그 폴더를 쓴다
         if self._photo_field is None and (file_has_photo or self._photo_folder):
             self._photo_field = DEFAULT_PHOTO_FIELD      # 사진 폴더를 이미 골랐으면 카드에 사진 칸이 없어도 쓴다
 
@@ -959,6 +998,7 @@ class ImportWizard(Dialog):
         self.photo_tag_holder.addWidget(_FieldTag(self._photo_field or DEFAULT_PHOTO_FIELD))
         self.photo_source_combo.blockSignals(True)
         self.photo_source_combo.clear()
+        self.photo_source_combo.addItem(AUTO_PHOTO_LABEL, AUTO_PHOTO_SOURCE)
         for name in names:
             self.photo_source_combo.addItem(name, name)
         self.photo_source_combo.blockSignals(False)
@@ -1036,13 +1076,26 @@ class ImportWizard(Dialog):
         if not self._photo_folder:
             self.folder_label.set_full_text("아직 고르지 않았습니다. 사진 없이 가져와도 됩니다.")
             self.photo_status.setText(
-                "사진 파일 이름이 사번이나 이름과 같으면, 폴더만 고르면 알아서 짝을 맞춥니다.")
+                "사진 파일 이름에 이름이나 사번이 들어 있으면, 폴더만 고르면 알아서 짝을 맞춥니다.")
             self.photo_card.set_warn(False)
             return
         self.folder_label.set_full_text(self._photo_folder)
         found, missing_rows = count_photos(preview, self.photo_source(), self._photo_folder)
         total = len(preview.rows)
         source = self.photo_source() or ""
+        if source == AUTO_PHOTO_SOURCE:
+            who = self._who(missing_rows)
+            if not missing_rows:
+                self.photo_status.setText(f"파일 이름에서 사람을 찾았습니다. {people(total)} 모두 사진이 있습니다.")
+            elif found == 0:
+                self.photo_status.setText("이 폴더에서 명단의 이름이나 사번이 들어간 사진을 찾지 못했습니다. "
+                                          "폴더를 다시 골라 주세요.")
+            else:
+                self.photo_status.setText(
+                    f"파일 이름에서 사람을 찾습니다. {people(total)} 중 {people(found)}은 찾았고, "
+                    f"{people(len(missing_rows))}은 못 찾았습니다{who}. 가져온 뒤 명단에서 한 명씩 넣을 수 있습니다.")
+            self.photo_card.set_warn(bool(missing_rows))
+            return
         if not missing_rows:
             self.photo_status.setText(f"'{source}' 열과 같은 이름의 파일을 찾았습니다. {people(total)} 모두 사진이 있습니다.")
             self.photo_card.set_warn(False)
@@ -1193,7 +1246,10 @@ class ImportWizard(Dialog):
         plan_field = self._photo_field
         if plan_field:
             source = self.photo_source_combo.currentData()
-            value = row[names.index(source)] if source in names else ""
+            if source == AUTO_PHOTO_SOURCE:
+                value = auto_photo_names(preview, self._photo_folder)[index] if self._photo_folder else ""
+            else:
+                value = row[names.index(source)] if source in names else ""
             found = PhotoLocator(self._photo_folder).find(value) if self._photo_folder else None
             record[plan_field] = str(found) if found else ""
         return record
