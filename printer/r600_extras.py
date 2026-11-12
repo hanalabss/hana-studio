@@ -70,7 +70,8 @@ SETTINGS_READ = 0
 
 def decode_sdk_text(raw: bytes) -> str:
     raw = raw.split(b"\0", 1)[0]
-    for encoding in ("utf-8", "cp949", "gbk"):
+    # 제조사 SDK의 문구는 영어 아니면 중국어(GBK)다. cp949로 먼저 풀면 중국어가 엉뚱한 한글로 바뀐다.
+    for encoding in ("utf-8", "gbk", "cp949"):
         try:
             return raw.decode(encoding).strip()
         except UnicodeDecodeError:

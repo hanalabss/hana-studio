@@ -49,6 +49,18 @@ _HINTS: Tuple[Tuple[Tuple[str, ...], str, bool], ...] = (
 )
 
 
+def readable_sdk_text(sdk_text: Optional[str]) -> str:
+    """사용자에게 보여 줘도 되는 SDK 문구만 돌려준다.
+
+    SDK 문구는 영어일 때도 있고 중국어(GBK)일 때도 있다. 중국어나 깨진 글자는 보여 줘도 도움이 되지
+    않으므로 영문·숫자·기본 기호로만 된 문구만 보여 주고, 나머지는 빈 문자열로 돌려준다(코드로 대신 안내).
+    """
+    text = (sdk_text or "").strip()
+    if not text or any(ord(ch) < 32 or ord(ch) > 126 for ch in text):
+        return ""
+    return text
+
+
 def hint_for(sdk_text: str) -> Optional[Tuple[str, bool]]:
     lowered = sdk_text.lower()
     for keywords, hint, recoverable in _HINTS:
@@ -179,8 +191,11 @@ class RtaiAdapter(CardPrinter):
         if hint:
             parts.append(hint[0])
             recoverable = hint[1]
-        if sdk_text:
-            parts.append(f"[프린터 메시지: {sdk_text}]")
+        shown = readable_sdk_text(sdk_text)
+        if shown:
+            parts.append(f"[프린터 메시지: {shown}]")
+        elif sdk_text and code is not None:
+            parts.append(f"(코드 0x{code:X})")
         elif code is None:
             parts.append(f"[{text}]")
         return PrinterError(" ".join(parts), code=code, recoverable=recoverable, detail=text)
@@ -200,11 +215,12 @@ class RtaiAdapter(CardPrinter):
         if code:
             sdk_text = self.describe_code(code)
             hint = hint_for(sdk_text) if sdk_text else None
+            shown = readable_sdk_text(sdk_text)
             status.message = (hint[0] if hint else "프린터가 오류 상태입니다.") + (
-                f" [프린터 메시지: {sdk_text}]" if sdk_text else "")
+                f" [프린터 메시지: {shown}]" if shown else f" (코드 0x{code:X})")
         if raw["warning_status"]:
-            warning = self.describe_code(raw["warning_status"])
-            status.warnings.append(warning or f"경고 상태 {raw['warning_status']}")
+            warning = readable_sdk_text(self.describe_code(raw["warning_status"]))
+            status.warnings.append(warning or f"프린터 경고 (코드 0x{raw['warning_status']:X})")
 
         def probe(call):
             try:
