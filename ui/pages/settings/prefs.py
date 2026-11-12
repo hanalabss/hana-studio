@@ -19,6 +19,8 @@ KEY_COPIES = "print/copies"
 KEY_STOP_ON_ERROR = "print/stop_on_error"
 KEY_OFFSET_X = "print/offset_x_mm"
 KEY_OFFSET_Y = "print/offset_y_mm"
+KEY_DENSITY = {"density": "print/density", "density_yellow": "print/density_yellow",
+               "density_magenta": "print/density_magenta", "density_cyan": "print/density_cyan"}
 KEY_COLOR = {"brightness": "print/brightness", "contrast": "print/contrast", "saturation": "print/saturation"}
 KEY_CARD_PRESET = "design/default_card"
 KEY_RETENTION = "history/retention_days"
@@ -175,12 +177,33 @@ class Prefs(QObject):
         self._settings.sync()
         self.changed.emit()
 
+    def density_adjust(self) -> tuple[int, int, int, int]:
+        """진하기 (전체, 노랑, 빨강, 파랑). 각 -100~100, 0이 원래대로."""
+        from printer.base import DENSITY_KEYS, density_adjust_from
+
+        return density_adjust_from({key: self._settings.value(KEY_DENSITY[key], 0) for key in DENSITY_KEYS})
+
+    def set_density_adjust(self, main: int, yellow: int, magenta: int, cyan: int) -> None:
+        from printer.base import DENSITY_KEYS, density_adjust_from
+
+        before = self.density_adjust()
+        after = density_adjust_from(dict(zip(DENSITY_KEYS, (main, yellow, magenta, cyan))))
+        if before == after:
+            return
+        for key, value in zip(DENSITY_KEYS, after):
+            self._settings.setValue(KEY_DENSITY[key], value)
+        self._settings.sync()
+        self.changed.emit()
+
     def print_options(self) -> PrintOptions:
+        from printer.base import DENSITY_KEYS
+
         x, y = self.offsets()
         brightness, contrast, saturation = self.color_adjust()
         return PrintOptions(copies=self.copies(), stop_on_error=self.stop_on_error(),
                             offset_x_mm=x, offset_y_mm=y,
-                            brightness=brightness, contrast=contrast, saturation=saturation)
+                            brightness=brightness, contrast=contrast, saturation=saturation,
+                            **dict(zip(DENSITY_KEYS, self.density_adjust())))
 
     # ---- 새 카드 크기 ----
     def card_preset_key(self) -> str:

@@ -8,8 +8,11 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QVBoxLayout, QWidget
 
 from design.model import Document
-from printer.base import (CAP_COLOR_ADJUST, CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_UV, CAP_WHITE,
-                          COLOR_ADJUST_MAX, COLOR_ADJUST_MIN)
+from printer.base import (CAP_COLOR_ADJUST, CAP_DENSITY_ADJUST, CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_UV,
+                          CAP_WHITE, COLOR_ADJUST_MAX, COLOR_ADJUST_MIN, DENSITY_KEYS)
+
+DENSITY_TITLES = {"density": "전체", "density_yellow": "노랑", "density_magenta": "빨강",
+                  "density_cyan": "파랑"}
 from services.render_job import PrintOptions, magnetic_mapping, uses_uv, uses_white
 from ui.pages.settings.prefs import COPIES_MAX, OFFSET_LIMIT_MM
 from ui.theme import SPACE
@@ -73,6 +76,9 @@ def summary_text(choices: PrintChoices, document: Document, capabilities: set[st
         parts.append(f"위치 가로 {options.offset_x_mm:+.1f} 세로 {options.offset_y_mm:+.1f}mm")
     if CAP_COLOR_ADJUST in capabilities and (options.brightness or options.contrast or options.saturation):
         parts.append(f"색 조정 밝기 {options.brightness:+d} 명암 {options.contrast:+d} 채도 {options.saturation:+d}")
+    if CAP_DENSITY_ADJUST in capabilities and any(getattr(options, key) for key in DENSITY_KEYS):
+        parts.append("진하기 " + " ".join(f"{DENSITY_TITLES[key]} {getattr(options, key):+d}"
+                                        for key in DENSITY_KEYS if getattr(options, key)))
     if not options.stop_on_error:
         parts.append("실패해도 계속")
     return ", ".join(parts)
@@ -144,6 +150,28 @@ class OptionsSheet(Dialog):
             colors.addWidget(self.reset_color, 0, Qt.AlignBottom)
             self.body.addLayout(colors)
 
+        # 진하기: 색 리본을 얼마나 진하게 찍을지(SMART 드라이버의 Color Correction과 같은 값).
+        self.density_fields: dict[str, StepperField] = {}
+        if CAP_DENSITY_ADJUST in capabilities:
+            self.body.addWidget(Divider())
+            self.body.addWidget(label("진하기", "title"))
+            self.body.addWidget(label(
+                "카드에 찍힌 색이 흐리거나 너무 진할 때만 바꾸세요. 0이 원래대로이고 "
+                f"{COLOR_ADJUST_MIN}부터 +{COLOR_ADJUST_MAX}까지, 클수록 진해집니다. '전체'는 모든 색을, "
+                "노랑·빨강·파랑은 그 색만 바꿉니다. 화면의 미리 보기에는 나타나지 않고 인쇄에만 "
+                "적용됩니다. 이 값은 다음 인쇄에도 그대로 씁니다.", "muted", wrap=True))
+            densities = QHBoxLayout()
+            densities.setSpacing(SPACE["lg"])
+            for key in DENSITY_KEYS:
+                field = StepperField(getattr(options, key), COLOR_ADJUST_MIN, COLOR_ADJUST_MAX, 5, 0)
+                field.setAccessibleName(f"진하기 {DENSITY_TITLES[key]}")
+                self.density_fields[key] = field
+                densities.addWidget(FormRow(DENSITY_TITLES[key], field))
+            self.reset_density = QuietButton("0으로 되돌리기", "sm", accent=True)
+            self.reset_density.clicked.connect(self._reset_density)
+            densities.addWidget(self.reset_density, 0, Qt.AlignBottom)
+            self.body.addLayout(densities)
+
         self.white: QCheckBox | None = None
         self.uv: QCheckBox | None = None
         self.magnetic: dict[str, ComboBox] = {}
@@ -204,6 +232,10 @@ class OptionsSheet(Dialog):
         self.offset_x.set_value(0.0)
         self.offset_y.set_value(0.0)
 
+    def _reset_density(self) -> None:
+        for field in self.density_fields.values():
+            field.set_value(0)
+
     def _reset_color(self) -> None:
         for field in self.color_fields.values():
             field.set_value(0)
@@ -216,6 +248,8 @@ class OptionsSheet(Dialog):
         options.offset_y_mm = float(self.offset_y.value())
         options.stop_on_error = self.stop_on_error.isChecked()
         for key, field in self.color_fields.items():
+            setattr(options, key, int(field.value()))
+        for key, field in self.density_fields.items():
             setattr(options, key, int(field.value()))
         if self.sides is not None and self.sides.isEnabled():
             result.front_only = self.sides.current() == "front"

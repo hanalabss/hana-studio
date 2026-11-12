@@ -35,16 +35,31 @@ COLOR_ADJUST_MIN, COLOR_ADJUST_MAX = -100, 100
 COLOR_ADJUST_KEYS = ("brightness", "contrast", "saturation")
 
 
-def color_adjust_from(options) -> tuple:
-    """인쇄 옵션에서 (밝기, 명암, 채도)를 꺼낸다. 없거나 잘못된 값은 0, 범위를 넘으면 끝값으로 맞춘다."""
+def _adjust_values(options, keys) -> tuple:
     values = []
-    for key in COLOR_ADJUST_KEYS:
+    for key in keys:
         try:
             value = int(round(float(options.get(key, 0) or 0)))
         except (TypeError, ValueError, AttributeError):
             value = 0
         values.append(max(COLOR_ADJUST_MIN, min(COLOR_ADJUST_MAX, value)))
     return tuple(values)
+
+
+def color_adjust_from(options) -> tuple:
+    """인쇄 옵션에서 (밝기, 명암, 채도)를 꺼낸다. 없거나 잘못된 값은 0, 범위를 넘으면 끝값으로 맞춘다."""
+    return _adjust_values(options, COLOR_ADJUST_KEYS)
+
+
+# 진하기 조정: 색 리본을 얼마나 진하게 찍을지(전체·노랑·빨강·파랑). SMART 드라이버의 'Color Correction'과 같은 값이다.
+# 범위는 색 조정과 같은 -100~100이고 클수록 진하다. SDK는 범위를 넘는 값도 그대로 받으므로 여기서 막는다.
+CAP_DENSITY_ADJUST = "density_adjust"
+DENSITY_KEYS = ("density", "density_yellow", "density_magenta", "density_cyan")
+
+
+def density_adjust_from(options) -> tuple:
+    """인쇄 옵션에서 (전체, 노랑, 빨강, 파랑) 진하기를 꺼낸다. 규칙은 color_adjust_from과 같다."""
+    return _adjust_values(options, DENSITY_KEYS)
 
 # (진행률 0~100, 사용자에게 보여 줄 한국어 문구)
 ProgressCallback = Callable[[int, str], None]

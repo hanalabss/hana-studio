@@ -375,6 +375,8 @@ class FakeSmartLibrary(FakeLibrary):
         self.ribbon_remain = 180
         self.printed_pages = 0
         self.drawn: List[Tuple[int, int, str]] = []
+        self.surfaces: Dict[int, Any] = {}
+        self.printed_density: List[Tuple[int, int, int, int]] = []   # SmartDCL_Print 때의 앞면 진하기
         self.mag_tracks: List[bytes] = [b"", b"", b""]
         self.mag_read_override: Optional[Tuple[bytes, bytes, bytes]] = None
         self.status_override: Optional[Tuple[int, int]] = None
@@ -406,6 +408,7 @@ class FakeSmartLibrary(FakeLibrary):
             return 0x80000003
         self.opened = device
         self.open_count += 1
+        self.surfaces = {}          # 설정은 연결마다 새로 시작한다
         _set(handle_ref, FAKE_SMART_HANDLE)
         return 0
 
@@ -494,6 +497,27 @@ class FakeSmartLibrary(FakeLibrary):
 
     def _h_SmartComm_DrawImage(self, handle, page, panel, x, y, cx, cy, path, area):
         self.drawn.append((page, panel, path))
+        return 0
+
+    def _surface(self, page: int):
+        buffer = self.surfaces.get(page)
+        if buffer is None:
+            buffer = (ctypes.c_ubyte * sp.SURFACE51_SIZE)()
+            head = sp._Surface51Head.from_buffer(buffer)
+            head.prop.width, head.prop.height = sp.DOC_SIZE_BY_GROUP[self._group()]
+            self.surfaces[page] = buffer
+        return buffer
+
+    def density(self, page: int = sp.PAGE_FRONT) -> Tuple[int, int, int, int]:
+        return tuple(sp._Surface51Head.from_buffer(self._surface(page)).density[:4])
+
+    def _h_SmartDCL_GetSurface2(self, handle, page, pointer_ref, length_ref):
+        if _target(length_ref).value >= sp.SURFACE51_SIZE:
+            _set(pointer_ref, ctypes.addressof(self._surface(page)))
+        return 0
+
+    def _h_SmartDCL_Print(self, handle, side):
+        self.printed_density.append(self.density())
         return 0
 
     def _h_SmartComm_DoPrint(self, handle):

@@ -13,12 +13,15 @@ IDP SMART 시리즈(SMART-30/50/31/51/81) SmartComm2.dll(x64) ctypes 바인딩.
 from __future__ import annotations
 
 import ctypes
+import logging
 import os
 import sys
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 from .base import PrinterError
+
+log = logging.getLogger(__name__)
 
 DLL_NAME = "SmartComm2.dll"
 
@@ -312,7 +315,28 @@ _OPTIONAL_SIGNATURES: Dict[str, list] = {
     "SmartComm_GetSystemInfo": [_H, ctypes.POINTER(SMART_SYSINFO)],
     "SmartComm_ClearStatus": [_H],
     "SmartComm_CardOutBack": [_H],
+    "SmartDCL_GetSurface2": [_H, _INT, ctypes.POINTER(ctypes.c_void_p), _PINT],
 }
+
+# SmartDCL_GetSurface2에 넘기는 SMART51_SURFACE의 크기. 실기(SMART-31)에서 이보다 작게 넘기면 성공을
+# 돌려주면서도 포인터를 주지 않았다.
+SURFACE51_SIZE = 13072
+
+
+class _Surface51Props(ctypes.Structure):
+    _fields_ = [(name, ctypes.c_uint32)
+                for name in ("side", "orientation", "ribbon", "ribbon_type", "width", "height")]
+
+
+class _Surface51Bitmaps(ctypes.Structure):
+    _fields_ = [(name, ctypes.c_void_p)
+                for name in ("hdcColor", "hdcResin", "hdcFluorescent", "hdcOverlay",
+                             "hBmpColor", "hBmpResin", "hBmpFluorescent", "hBmpOverlay", "lpPRN")]
+
+
+class _Surface51Head(ctypes.Structure):
+    """SMART51_SURFACE의 앞부분. density는 dwASMain·Yellow·Magenta·Cyan·Black·Overlay 순서다."""
+    _fields_ = [("prop", _Surface51Props), ("bmp", _Surface51Bitmaps), ("density", ctypes.c_int32 * 6)]
 
 
 @dataclass
@@ -664,6 +688,45 @@ class SmartPrinter:
     def do_print(self) -> None:
         """SmartComm_DoPrint: 전송된 데이터를 실제로 인쇄한다."""
         self._check(self.lib.SmartComm_DoPrint(self._h()), "인쇄")
+
+    # -- 진하기(Color Correction) ------------------------------------------
+    def _surface51(self, page: int) -> _Surface51Head:
+        handle = self._h()
+        if not self.has_function("SmartDCL_GetSurface2"):
+            raise PrinterError("이 라이브러리 버전은 진하기 조정을 지원하지 않습니다.")
+        pointer, length = ctypes.c_void_p(), ctypes.c_int(SURFACE51_SIZE)
+        self._check(self.lib.SmartDCL_GetSurface2(handle, page, ctypes.byref(pointer),
+                                                  ctypes.byref(length)), "인쇄 설정 조회")
+        if not pointer.value:
+            raise PrinterError("프린터의 인쇄 설정을 얻지 못했습니다.")
+        head = _Surface51Head.from_address(pointer.value)
+        size = {int(head.prop.width), int(head.prop.height)}
+        if size != set(DOC_SIZE_BY_GROUP[GROUP_SMART51]):
+            # 구조가 다른 기종이면 엉뚱한 자리에 쓰게 되므로 건드리지 않는다.
+            raise PrinterError("프린터의 인쇄 설정 구조가 예상과 달라 진하기를 바꾸지 않았습니다.",
+                               detail=f"width={head.prop.width} height={head.prop.height}")
+        return head
+
+    def get_color_density(self, page: int = PAGE_FRONT) -> Tuple[int, int, int, int]:
+        """지금 열린 연결의 (전체, 노랑, 빨강, 파랑) 진하기."""
+        return tuple(self._surface51(page).density[:4])
+
+    def set_color_density(self, main: int = 0, yellow: int = 0, magenta: int = 0,
+                          cyan: int = 0) -> Tuple[int, int, int, int]:
+        """색 리본의 진하기(각 -100~100, 클수록 진함)를 앞·뒷면 설정에 넣고, 넣기 전 앞면 값을 돌려준다.
+
+        SMART-51/31 전용. SmartDCL_Print가 인쇄 데이터를 만들 때 이 값을 쓴다(실기에서 확인).
+        프린터 본체에 기록하는 값이 아니라 열린 연결에만 머문다.
+        """
+        values = (int(main), int(yellow), int(magenta), int(cyan))
+        front = self._surface51(PAGE_FRONT)
+        previous = tuple(front.density[:4])
+        front.density[:4] = values
+        try:
+            self._surface51(PAGE_BACK).density[:4] = values
+        except PrinterError as exc:
+            log.debug("SMART 뒷면 설정을 얻지 못했습니다: %s", exc)
+        return previous
 
     # -- 마그네틱 ---------------------------------------------------------
     def mag_set_all(self, track1: Optional[bytes], track2: Optional[bytes],

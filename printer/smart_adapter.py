@@ -15,12 +15,12 @@ from typing import Any, Dict, List, Mapping, Optional, Set, Union
 
 from . import smart_printer as sp
 from .base import (
-    CAP_CARD_MOVE, CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_POSITION_OFFSET, CAP_RIBBON_LEVEL,
+    CAP_CARD_MOVE, CAP_DENSITY_ADJUST, CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_POSITION_OFFSET, CAP_RIBBON_LEVEL,
     CAP_STATUS, CAP_UV, FAMILY_SMART, ORIENTATION_PORTRAIT, STAGE_DONE, STAGE_EJECT, STAGE_FEED,
     STAGE_MAGNETIC, STAGE_PREPARE, STAGE_PRINT, STAGE_PRINT_BACK, STAGE_PRINT_FRONT, STAGE_SETUP,
     STAGE_UNKNOWN, UNIT_CARDS, UNIT_UNKNOWN, CardJob, CardPrinter,
     MagneticTracks, NotSupported, PrinterDevice, PrinterError, PrinterStatus, ProgressCallback,
-    SideImages,
+    SideImages, density_adjust_from,
 )
 
 log = logging.getLogger(__name__)
@@ -80,7 +80,9 @@ class SmartAdapter(CardPrinter):
         caps = {CAP_STATUS, CAP_RIBBON_LEVEL, CAP_CARD_MOVE, CAP_POSITION_OFFSET}
         if not self.is_connected:
             # 장착 옵션을 아직 모른다. 플리퍼·마그네틱 인코더가 있으면 가능한 기능까지 알린다.
-            return caps | {CAP_DUAL_SIDE, CAP_MAGNETIC}
+            return caps | {CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_DENSITY_ADJUST}
+        if self._can_adjust_density():
+            caps.add(CAP_DENSITY_ADJUST)
         if self._has_flipper:
             caps.add(CAP_DUAL_SIDE)
         if self._has_magnetic is not False:
@@ -88,6 +90,10 @@ class SmartAdapter(CardPrinter):
         if self._ribbon_type in sp.FLUORESCENT_RIBBONS:
             caps.add(CAP_UV)
         return caps
+
+    def _can_adjust_density(self) -> bool:
+        """진하기 조정은 설정 구조를 실기로 확인한 SMART-51/31에서만 쓴다."""
+        return self._group == sp.GROUP_SMART51 and self._binding.has_function("SmartDCL_GetSurface2")
 
     def connect(self, device: PrinterDevice) -> None:
         if self.is_connected:
@@ -318,6 +324,8 @@ class SmartAdapter(CardPrinter):
         dual = job.is_dual_side
         first = job.front or job.back
         tracks = MagneticTracks.coerce(options.get("magnetic"))
+        density = density_adjust_from(options) if self._can_adjust_density() else (0, 0, 0, 0)
+        density_before: Optional[tuple] = None
         temp_files: List[str] = []
         try:
             report(5, "이미지 준비 중...", STAGE_PREPARE)
@@ -336,6 +344,9 @@ class SmartAdapter(CardPrinter):
             self._cards_since_open += 1
             width, height = sp.DOC_SIZE_BY_GROUP[self._group]
             panel = sp.PANELID_BLACK if self._ribbon_type in sp.MONO_RIBBONS else sp.PANELID_COLOR
+            if any(density):
+                # 카드를 넣기 전에 한다. 실패하면 카드를 쓰지 않고 끝난다. 0이면 아예 건드리지 않는다.
+                density_before = binding.set_color_density(*density)
 
             binding.sbs_start()
             try:
@@ -371,6 +382,11 @@ class SmartAdapter(CardPrinter):
             finally:
                 self._end_sbs()
         finally:
+            if density_before is not None:
+                try:
+                    binding.set_color_density(*density_before)
+                except PrinterError as exc:
+                    log.warning("SMART 진하기 값을 되돌리지 못했습니다: %s", exc)
             for path in temp_files:
                 try:
                     os.remove(path)
