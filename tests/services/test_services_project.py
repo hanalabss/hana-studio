@@ -136,7 +136,8 @@ def test_save_without_a_location_is_refused():
 
 
 # ── 최근 프로젝트 ───────────────────────────────────────────────────────────
-def test_recent_projects_live_under_the_user_profile(tmp_path, workspace):
+def test_recent_projects_live_under_the_user_profile(tmp_path, workspace, monkeypatch):
+    monkeypatch.delenv("HANA_STUDIO_RECENT_FILE", raising=False)      # 기본 위치를 확인하는 테스트
     folder, design_path, _ = workspace
     first = Project.new(folder / "first.hsproj", design_path=design_path)
     second = Project.new(folder / "second.hsproj", design_path=design_path)

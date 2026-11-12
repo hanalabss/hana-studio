@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
+
 from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QImage, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
 
-from design import presets, renderer
+from design import presets, renderer, storage
 from ui.theme import SPACE, ThemeManager
 from ui.widgets import SecondaryButton, SegmentedControl, label, theme_color
 
@@ -86,9 +89,23 @@ class TemplateCard(ClickFrame):
         self.setMinimumWidth(168)
 
 
-class StartPanel(QWidget):
-    """startRequested(template_key), openRequested(), imageRequested()를 보낸다."""
+RECENT_SHOWN = 5
 
+
+def recent_pixmap(path: str, box_w: int, box_h: int, dpr: float = 1.0) -> QPixmap | None:
+    """저장된 디자인의 앞면 그림. 열 수 없는 파일이면 None."""
+    try:
+        with tempfile.TemporaryDirectory(prefix="hana_recent_") as workdir:
+            document = storage.load(path, workdir)
+            return card_pixmap(document, "front", None, box_w, box_h, dpr=dpr)
+    except Exception:
+        return None
+
+
+class StartPanel(QWidget):
+    """startRequested(template_key), openRequested(), imageRequested(), openPathRequested(path)를 보낸다."""
+
+    openPathRequested = Signal(str)
     startRequested = Signal(str)
     openRequested = Signal()
     imageRequested = Signal()
@@ -139,7 +156,26 @@ class StartPanel(QWidget):
         column.addWidget(options)
         column.addSpacing(SPACE["xl"])
 
-        column.addWidget(label("시작할 모양", "title"))
+        # 최근에 작업한 디자인(있을 때만 보인다). 새로 만드는 것보다 하던 것을 다시 여는 일이 더 잦다.
+        self.recent_box = QWidget()
+        recent_column = QVBoxLayout(self.recent_box)
+        recent_column.setContentsMargins(0, 0, 0, 0)
+        recent_column.setSpacing(0)
+        recent_column.addWidget(label("최근에 작업한 디자인", "title"))
+        recent_column.addSpacing(SPACE["sm"] + 2)
+        self.recent_grid = QGridLayout()
+        self.recent_grid.setContentsMargins(0, 0, 0, 0)
+        self.recent_grid.setSpacing(SPACE["md"])
+        recent_column.addLayout(self.recent_grid)
+        recent_column.addSpacing(SPACE["xl"])
+        column.addWidget(self.recent_box)
+        self.recent_box.setVisible(False)
+        self.recent_cards: list[TemplateCard] = []
+        self._recent_entries: list = []
+        self._recent_thumbs: dict[tuple[str, float], QPixmap] = {}
+
+        self.templates_title = label("시작할 모양", "title")
+        column.addWidget(self.templates_title)
         column.addSpacing(SPACE["sm"] + 2)
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
@@ -174,8 +210,54 @@ class StartPanel(QWidget):
         self.size_control.currentChanged.connect(self._on_options_changed)
         self.orientation_control.currentChanged.connect(self._on_options_changed)
         ThemeManager.instance().themeChanged.connect(self.refresh_thumbnails)
+        ThemeManager.instance().themeChanged.connect(self._on_theme_for_recents)
         self._thumbs_stale = True
         self._sync_hint()
+
+    # ---- 최근에 작업한 디자인 ----
+    def set_recents(self, entries) -> None:
+        """entries: path, name, opened_at이 있는 것들(최근 것부터). 없는 파일은 빼고 넘겨야 한다."""
+        self._recent_entries = list(entries)[:RECENT_SHOWN]
+        while self.recent_grid.count():
+            child = self.recent_grid.takeAt(0)
+            if child.widget() is not None:
+                child.widget().hide()
+                child.widget().deleteLater()
+        self.recent_cards = []
+        for index, entry in enumerate(self._recent_entries):
+            name = entry.name or os.path.splitext(os.path.basename(entry.path))[0]
+            when = (entry.opened_at or "")[:10]
+            card = TemplateCard(entry.path, name, f"{when}에 작업" if when else "저장한 디자인")
+            card.setAccessibleName(f"{name} 다시 열기")
+            card.setToolTip(entry.path)
+            card.clicked.connect(lambda path=entry.path: self.openPathRequested.emit(path))
+            self.recent_cards.append(card)
+            self.recent_grid.addWidget(card, 0, index)
+        for index in range(RECENT_SHOWN):
+            self.recent_grid.setColumnStretch(index, 1)
+        self.recent_box.setVisible(bool(self._recent_entries))
+        self.templates_title.setText("새로 만들기" if self._recent_entries else "시작할 모양")
+        if self.isVisible():
+            self._refresh_recent_thumbnails()
+
+    def _refresh_recent_thumbnails(self) -> None:
+        dpr = self.devicePixelRatioF()
+        for card, entry in zip(self.recent_cards, self._recent_entries):
+            try:
+                key = (entry.path, os.path.getmtime(entry.path))
+            except OSError:
+                continue
+            if key not in self._recent_thumbs:
+                pixmap = recent_pixmap(entry.path, _THUMB_W, _THUMB_H, dpr)
+                if pixmap is None:
+                    continue
+                self._recent_thumbs[key] = pixmap
+            card.thumb.setPixmap(self._recent_thumbs[key])
+
+    def _on_theme_for_recents(self, *_args) -> None:
+        self._recent_thumbs.clear()
+        if self.isVisible():
+            self._refresh_recent_thumbnails()
 
     # ---- 고른 값 ----
     def preset_key(self) -> str:
@@ -204,6 +286,7 @@ class StartPanel(QWidget):
         super().showEvent(event)
         if self._thumbs_stale:
             self.refresh_thumbnails()
+        self._refresh_recent_thumbnails()
 
     def refresh_thumbnails(self, *_args) -> None:
         preset = presets.get_preset(self.preset_key())

@@ -24,6 +24,8 @@ from .insert_panel import InsertPanel
 from .inspector import Inspector, InspectorContext
 from .layers_panel import LayersPanel
 from .preview_bar import PreviewBar
+from services.project import RecentProjects
+
 from .start_panel import StartPanel, pil_to_qimage
 from .style import SIDE_WIDTH, build_stylesheet, palette_for
 
@@ -104,6 +106,8 @@ class DesignPage(BasePage):
         self.start_panel.startRequested.connect(self.start_with_template)
         self.start_panel.openRequested.connect(lambda: self.open_design())
         self.start_panel.imageRequested.connect(lambda: self.start_from_image())
+        self.start_panel.openPathRequested.connect(lambda path: self.open_design(path))
+        self.refresh_recents()
         self._stack.addWidget(self.start_panel)
 
         self.editor_host = QWidget(self)
@@ -408,6 +412,7 @@ class DesignPage(BasePage):
 
     def show_start(self) -> None:
         self._started = False
+        self.refresh_recents()
         self._sync_view()
 
     def _confirm_replace(self) -> bool:
@@ -445,6 +450,7 @@ class DesignPage(BasePage):
         except (storage.StorageError, EditorError, OSError, ValueError) as exc:
             self.notify(f"디자인을 열지 못했습니다. {exc}", "error")
             return False
+        self._remember(path)
         self._begin()
         return True
 
@@ -482,8 +488,23 @@ class DesignPage(BasePage):
             self.notify(f"저장하지 못했습니다. {exc}", "error")
             return False
         self._sync_document_state()
+        self._remember(saved)
         self.notify(f"{os.path.basename(saved)}에 저장했습니다.", "ok")
         return True
+
+    # ---- 최근에 작업한 디자인 ----
+    def _remember(self, path: str) -> None:
+        try:
+            RecentProjects().add(str(path), self.controller.document.name)
+        except Exception:
+            pass
+        self.refresh_recents()
+
+    def refresh_recents(self) -> None:
+        try:
+            self.start_panel.set_recents(RecentProjects().entries(existing_only=True))
+        except Exception:
+            pass
 
     def export_preview(self, path: str | None = None) -> bool:
         """지금 보이는 면을 (미리 보는 사람의 내용으로) PNG 그림으로 저장한다."""

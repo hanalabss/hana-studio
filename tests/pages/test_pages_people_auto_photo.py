@@ -42,3 +42,27 @@ def test_import_links_every_person_to_their_photo(tmp_path):
     found = {row["성명"]: resolver.path(row, "사진") for row in store.rows()}
     assert found["서하늘"].name == "철도1부_서하늘_부사장.jpg" and found["이도윤"] is None
     store.close()
+
+
+def test_newest_dated_sheet_is_opened_first(tmp_path):
+    import openpyxl
+    from ui.pages.people.importing import newest_dated_sheet, preview_newest_sheet, sheet_date
+
+    assert sheet_date("26.09.01") == (2026, 9, 1) and sheet_date("2026-11-12 발주") == (2026, 11, 12)
+    assert sheet_date("260813") == (2026, 8, 13) and sheet_date("9월 1일") == (0, 9, 1)
+    assert sheet_date("안내") is None and sheet_date("Sheet1") is None
+    assert newest_dated_sheet(["26.08.13", "26.11.12", "26.09.01"]) == "26.11.12"
+    assert newest_dated_sheet(["안내", "26.09.01"]) is None and newest_dated_sheet(["26.09.01"]) is None
+
+    path = tmp_path / "발주.xlsx"
+    book = openpyxl.Workbook()
+    book.remove(book.active)
+    for day, people in (("26.08.13", ["가"]), ("26.11.12", ["라", "마", "바"]), ("26.09.01", ["나", "다"])):
+        sheet = book.create_sheet(day)
+        sheet.append(["연번", "성명"])
+        for number, name in enumerate(people, 1):
+            sheet.append([number, name])
+    book.save(path)
+    preview = preview_newest_sheet(path, {}, first=True)
+    assert preview.sheet == "26.11.12" and preview.total_rows == 3
+    assert preview_newest_sheet(path, {"sheet": "26.08.13"}, first=True).sheet == "26.08.13"   # 고른 시트는 그대로

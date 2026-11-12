@@ -70,7 +70,8 @@ class RecentProjects:
     """최근에 연 프로젝트 목록. 기본 위치는 %LOCALAPPDATA%\\HanaStudio\\recent_projects.json."""
 
     def __init__(self, path: str | None = None, limit: int = RECENT_LIMIT) -> None:
-        self.path = path or os.path.join(app_data_dir(), RECENT_FILE)
+        self.path = (path or os.environ.get("HANA_STUDIO_RECENT_FILE")
+                     or os.path.join(app_data_dir(), RECENT_FILE))
         self.limit = limit
 
     def entries(self, existing_only: bool = False) -> list[RecentEntry]:

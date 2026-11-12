@@ -164,6 +164,45 @@ def _is_real_match(source: str, target: str, preview: ImportPreview, result: dic
     return source in {c.name for c in preview.columns} and source not in result.values()
 
 
+_SHEET_DATE = re.compile(r"(\d{2,4})\D{0,2}(\d{1,2})\D{0,2}(\d{1,2})")
+
+
+def sheet_date(name: str) -> tuple[int, int, int] | None:
+    """시트 이름에 든 날짜. '26.09.01', '2026-09-01', '260901 발주', '9월 1일'(올해로 본다) 같은 이름을 읽는다."""
+    text = str(name)
+    packed = re.search(r"(?<!\d)(\d{2}|\d{4})(\d{2})(\d{2})(?!\d)", text)      # 260901, 20260901
+    found = packed or _SHEET_DATE.search(text)
+    if found:
+        year, month, day = (int(part) for part in found.groups())
+        year += 2000 if year < 100 else 0
+    else:
+        short = re.search(r"(\d{1,2})\s*[월./-]\s*(\d{1,2})", text)
+        if not short:
+            return None
+        year, month, day = 0, int(short.group(1)), int(short.group(2))
+    if not (1 <= month <= 12 and 1 <= day <= 31):
+        return None
+    return year, month, day
+
+
+def newest_dated_sheet(sheets: list[str]) -> str | None:
+    """시트를 날짜별로 나눠 둔 파일이면 가장 최근 날짜의 시트. 날짜로 읽히지 않는 시트가 섞여 있으면 None."""
+    dated = [(sheet_date(name), name) for name in sheets]
+    if len(dated) < 2 or any(date is None for date, _ in dated):
+        return None
+    return max(dated)[1]
+
+
+def preview_newest_sheet(path: str | os.PathLike, options: dict[str, Any], first: bool) -> ImportPreview:
+    """파일을 읽는다. 처음 열 때 시트가 날짜별이면 가장 최근 시트를 먼저 보여 준다(시트는 화면에서 바꿀 수 있다)."""
+    preview = preview_file(path, **options)
+    if first and "sheet" not in options and len(preview.sheets) > 1:
+        newest = newest_dated_sheet(list(preview.sheets))
+        if newest and newest != preview.sheet:
+            return preview_file(path, **dict(options, sheet=newest))
+    return preview
+
+
 _auto_cache: dict[str, Any] = {}
 
 
@@ -737,7 +776,7 @@ class ImportWizard(Dialog):
         self.error = None
         self._show_page(PAGE_FILE)
         self.loading_label.setText(f"{Path(path).name} 파일을 읽는 중입니다")
-        self._run(lambda report, cancelled: preview_file(path, **options),
+        self._run(lambda report, cancelled: preview_newest_sheet(path, options, first),
                   self._preview_ready, self._preview_failed, loading=True)
 
     def _preview_failed(self, message: str) -> None:
