@@ -32,9 +32,11 @@ KEEP_RELEASES = 2
 RUNTIME_LEFTOVERS = ("masks", "output", "temp", "license.json", "hana_debug.log")
 
 
-def run(command: list[str], **kwargs) -> subprocess.CompletedProcess:
+def run(command: list[str], token: str | None = None, **kwargs) -> subprocess.CompletedProcess:
+    """명령을 화면에 적고 실행한다. 토큰은 명령줄에 넣지 않고 환경 변수(VPK_TOKEN)로만 넘긴다(기록에 남지 않게)."""
     print(">", " ".join(str(part) for part in command), flush=True)
-    return subprocess.run(command, cwd=ROOT, check=True, **kwargs)
+    env = dict(os.environ, VPK_TOKEN=token) if token else None
+    return subprocess.run(command, cwd=ROOT, check=True, env=env, **kwargs)
 
 
 def app_version() -> str:
@@ -77,10 +79,8 @@ def gh_token() -> str:
 def fetch_previous(vpk: str, token: str | None) -> None:
     """직전 버전을 받아 둔다. 있어야 '바뀐 부분만 담은 파일'(delta)이 만들어진다. 첫 배포면 받을 것이 없다."""
     command = [vpk, "download", "github", "--repoUrl", REPO_URL, "--outputDir", str(OUT)]
-    if token:
-        command += ["--token", token]
     try:
-        run(command)
+        run(command, token=token)
     except subprocess.CalledProcessError:
         print("직전 버전을 받지 못했습니다(첫 배포라면 정상입니다). 전체 파일만 만듭니다.")
 
@@ -96,9 +96,9 @@ def pack(vpk: str, version: str) -> None:
 
 
 def upload(vpk: str, version: str, token: str) -> None:
-    run([vpk, "upload", "github", "--repoUrl", REPO_URL, "--outputDir", str(OUT), "--token", token,
+    run([vpk, "upload", "github", "--repoUrl", REPO_URL, "--outputDir", str(OUT),
          "--publish", "--tag", f"v{version}", "--releaseName", f"{TITLE} {version}",
-         "--targetCommitish", current_commit(), "--timeout", "60"])
+         "--targetCommitish", current_commit(), "--timeout", "60"], token=token)
 
 
 def current_commit() -> str:
