@@ -152,8 +152,8 @@ def test_dual_side_matches_the_legacy_flow_for_every_orientation_pair(front, bac
 def test_back_portrait_mask_is_rotated_180_like_the_legacy_flow(adapter, r600_lib, make_image, tmp_path):
     from PIL import Image
     mask = str(tmp_path / "mask.png")
-    image = Image.new("RGB", (540, 860), "white")
-    image.paste((0, 0, 0), (0, 0, 100, 100))                 # 왼쪽 위에 검은 사각형
+    image = Image.new("RGB", (540, 860), "black")           # 앱의 마스크: 흰색 = 흰 잉크를 까는 곳
+    image.paste((255, 255, 255), (0, 0, 100, 100))           # 왼쪽 위에 잉크 사각형 (SDK에는 검게 간다)
     image.save(mask)
     adapter.print_card(CardJob(front=SideImages(make_image()),
                                back=SideImages(make_image(), white_mask_path=mask)))
@@ -552,3 +552,20 @@ def test_no_card_in_printer_is_not_reported_as_empty_feeder():
     hint, recoverable = hint_for("No card in the printer")
     assert "프린터 안에 카드가 없습니다" in hint and "공급함" not in hint and recoverable
     assert "공급함" in hint_for("Card feeder is empty")[0]
+
+
+def test_white_mask_is_sent_to_the_sdk_dark_where_white_ink_goes(adapter, r600_lib, make_image, tmp_path):
+    """실기 확인: R600DrawWaterMark는 검은 부분에 흰색·은색을 찍는다(기존 빠른 인쇄의 마스크와 같은 모양).
+
+    앱 안에서는 흰색 = 잉크이므로 SDK에 넘기기 직전에 뒤집어야 한다. 안 뒤집으면 배경에 깔린다.
+    """
+    from PIL import Image
+    mask = str(tmp_path / "mask.png")
+    image = Image.new("L", (540, 860), 0)
+    image.paste(255, (200, 300, 340, 560))                   # 가운데 = 사람 자리(잉크)
+    image.save(mask)
+    adapter.print_card(CardJob(front=SideImages(make_image(), white_mask_path=mask)))
+    sent = r600_lib.calls_named("R600DrawWaterMark")[0].args[4].decode("cp949")
+    with Image.open(sent) as given:
+        assert given.convert("L").getpixel((270, 430)) < 60      # 사람 자리는 검게
+        assert given.convert("L").getpixel((10, 10)) > 200       # 배경은 희게

@@ -105,6 +105,23 @@ def code_from_error(error: Exception) -> Optional[int]:
     return int(match.group(1)) & 0xFFFFFFFF if match else None
 
 
+def sdk_white_mask(path: str) -> str:
+    """앱의 화이트 마스크(흰색 = 흰 잉크를 까는 곳)를 SDK가 받는 모양(검은색 = 까는 곳)으로 뒤집는다.
+
+    R600DrawWaterMark는 검은 부분에 흰색(W)·은색(S) 패널을 찍는다. 기존 '빠른 인쇄'의 마스크가
+    그 모양(사람 = 검정, 배경 = 흰색)이고 실기에서 맞게 찍혔다. 뒤집은 그림은 원본 옆에 둔다
+    (같은 작업 폴더라 작업이 끝나면 함께 지워진다).
+    """
+    from PIL import Image, ImageOps
+
+    with Image.open(path) as source:
+        inverted = ImageOps.invert(source.convert("L"))
+    base, _ = os.path.splitext(path)
+    target = base + "_sdk.png"
+    inverted.save(target)
+    return target
+
+
 class RtaiAdapter(CardPrinter):
     family = FAMILY_RTAI
 
@@ -498,10 +515,11 @@ class RtaiAdapter(CardPrinter):
         else:
             printer.setup_canvas(side.orientation)
         if side.white_mask_path:
+            mask_path = sdk_white_mask(side.white_mask_path)
             if rotation:
-                printer.draw_watermark_rotated(x, y, width, height, side.white_mask_path, rotation)
+                printer.draw_watermark_rotated(x, y, width, height, mask_path, rotation)
             else:
-                printer.draw_watermark(x, y, width, height, side.white_mask_path)
+                printer.draw_watermark(x, y, width, height, mask_path)
         printer.draw_image(x, y, width, height, side.color_path)
         if side.uv_path:
             printer.draw_uv_layer(x, y, width, height, side.uv_path,
