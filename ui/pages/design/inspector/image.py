@@ -121,7 +121,8 @@ class ImageSection(Section):
         self.fit_control.currentChanged.connect(self._on_fit)
         self.fit_hint = label("", "hint", wrap=True)
         self.fill_card_button = SecondaryButton("카드 전체로 맞추기", size="sm")
-        self.fill_card_button.setToolTip("사진 칸을 카드 크기에 딱 맞게 키우고, 그림이 카드를 가득 채우게 합니다.")
+        self.fill_card_button.setToolTip(
+            "사진 칸을 카드 크기에 딱 맞게 키워 그림이 카드를 가득 채우게 하고, 글자와 바코드 뒤로 보냅니다.")
         self.fill_card_button.clicked.connect(self.fill_card)
         self.column.addWidget(group("칸에 맞추는 방법", self.fit_control, self.fit_hint, self.fill_card_button))
 
@@ -214,16 +215,18 @@ class ImageSection(Section):
         self.redo_button.clicked.connect(self.start_removal)
 
         # 흰색을 깔 자리를 직접 만든 그림으로 정한다(기존 '수동 마스킹').
-        self.manual_mask_button = SecondaryButton("흰색 깔 자리를 그림으로 직접 고르기", size="sm")
+        self.manual_mask_title = label("흰색 깔 자리 직접 정하기", "label")
+        self.manual_mask_button = SecondaryButton("마스크 그림 고르기", size="sm")
         self.manual_mask_button.setToolTip(
             "직접 만든 흑백 그림으로 흰색을 깔 자리를 정합니다. 검은 부분에 흰색이 깔립니다(기존 수동 마스킹과 같은 방식).")
         self.manual_mask_button.clicked.connect(self.choose_manual_mask)
         self.manual_mask_invert = QCheckBox("반대로: 흰 부분에 흰색 깔기")
         self.manual_mask_invert.setToolTip("고른 그림이 흰 부분을 칠할 자리로 그린 것이면 켜세요.")
-        self.manual_mask_clear = SecondaryButton("직접 고른 자리 빼기", size="sm")
+        self.manual_mask_clear = SecondaryButton("빼기", size="sm")
         self.manual_mask_clear.clicked.connect(self.clear_manual_mask)
         self.manual_mask_box = self._box(
-            hbox(self.manual_mask_button, self.manual_mask_clear, None), self.manual_mask_invert)
+            self.manual_mask_title, hbox(self.manual_mask_button, self.manual_mask_clear, None),
+            self.manual_mask_invert)
 
         self.column.addWidget(self._box(
             self.cutout_title, self.cutout_hint, self.method_box, self.remove_button, self.progress_box,
@@ -348,8 +351,10 @@ class ImageSection(Section):
         elif has_cut:
             self.done_row.set_text("배경을 지웠습니다. 뒤에 있는 카드 색이나 무늬가 보입니다.")
         else:
-            self.done_row.set_text("사람·물건 밑에만 흰색이 깔립니다. 카드에 보이는 그림은 그대로입니다. "
-                                   "'다시 다듬기'를 누르면 배경도 투명해집니다.")
+            if item.extra.get(self.MANUAL_MASK_KEY):
+                self.done_row.set_text("직접 고른 자리에 흰색이 깔립니다.")
+            else:
+                self.done_row.set_text("흰색만 깔립니다. 카드에 보이는 그림은 그대로입니다.")
 
         self.preview.setVisible(adjustable or pending is not None)
         self.adjust_box.setVisible(adjustable)
@@ -452,6 +457,7 @@ class ImageSection(Section):
             self.controller.set_geometry(item.id, {"x": 0.0, "y": 0.0, "w": width, "h": height, "rotation": 0.0})
             if item.fit != "fill":
                 self.edit({"fit": "fill"})
+            self.controller.send_to_back([item.id])      # 카드 전체를 덮으니 글자·바코드 뒤로 보낸다
         finally:
             stack.endMacro()
         self.fit_control.set_current("fill", emit=False)

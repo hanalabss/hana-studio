@@ -121,7 +121,8 @@ def flat_background(rgb: np.ndarray, alpha: np.ndarray) -> Color | None:
     return (int(middle[0]), int(middle[1]), int(middle[2]))
 
 
-def _fill_pockets(keep: np.ndarray, alpha: np.ndarray, threshold: float, sure_bg: np.ndarray) -> np.ndarray:
+def _fill_pockets(keep: np.ndarray, alpha: np.ndarray, threshold: float, sure_bg: np.ndarray,
+                  not_background: np.ndarray | None = None) -> np.ndarray:
     """남는 부분에 둘러싸인 '애매한' 구멍을 메운다.
 
     모델은 배경과 색이 비슷한 옷 같은 곳을 반쯤만 사람으로 보곤 한다. 그런 곳은 테두리 안쪽에 갇혀 있고
@@ -141,6 +142,11 @@ def _fill_pockets(keep: np.ndarray, alpha: np.ndarray, threshold: float, sure_bg
     for edge in (labels[0], labels[-1], labels[:, 0], labels[:, -1]):
         border[edge] = True
     pocket = ~border & (sure < np.maximum(4.0, sizes * 0.02))
+    if not_background is not None:
+        # 배경이 한 가지 색일 때: 갇힌 구멍의 색이 배경색과 뚜렷이 다르면 모델이 뭐라 했든 그림의 일부다
+        # (옷에 찍힌 무늬 속처럼, 모델이 배경으로 잘못 본 곳).
+        different = np.bincount(flat, weights=not_background.ravel(), minlength=count)
+        pocket |= ~border & (different > sizes * 0.6)
     pocket[0] = False                      # 0번은 남는 부분 자체
     return keep | pocket[labels]
 
@@ -159,10 +165,12 @@ def soft_alpha(alpha: np.ndarray, threshold: int, rgb: np.ndarray | None = None)
     keep = alpha > t
     sure_bg = alpha < t / 4.0
     key = flat_background(rgb, alpha) if rgb is not None else None
+    not_background = None
     if key is not None:
         distance = np.abs(np.asarray(rgb, dtype=np.int16) - np.array(key, dtype=np.int16)).max(axis=2)
         sure_bg |= ~keep & (distance <= 12)
-    keep = _fill_pockets(keep, alpha, t, sure_bg)
+        not_background = distance > 30
+    keep = _fill_pockets(keep, alpha, t, sure_bg, not_background)
     scale = max(1.0, max(alpha.shape) / 1000.0)
     mask = Image.fromarray(np.where(keep, 255, 0).astype(np.uint8), "L")
     return np.asarray(mask.filter(ImageFilter.GaussianBlur(0.7 * scale)), dtype=np.uint8)

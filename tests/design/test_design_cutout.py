@@ -250,3 +250,19 @@ def test_lost_ratio_notices_a_logo_whose_inside_was_removed():
     photo = np.random.default_rng(1).integers(0, 255, rgb.shape, dtype=np.uint8)
     assert cutout.lost_ratio(photo, model, final) == 0.0              # 바탕이 여러 색인 사진은 판단하지 않는다
     assert cutout.work_size((6000, 3000)) == (2400, 1200) and cutout.work_size((800, 840)) == (800, 840)
+
+
+def test_enclosed_hole_with_a_colour_unlike_the_background_is_kept():
+    """옷 무늬 속처럼 모델이 배경으로 잘못 본 갇힌 곳은, 색이 배경색과 다르면 메운다. 배경색과 같은 구멍은 둔다."""
+    rgb = np.full((120, 120, 3), (140, 170, 210), dtype=np.uint8)        # 한 가지 색 배경
+    rgb[20:100, 20:100] = (230, 230, 235)                                # 옷
+    rgb[40:55, 40:55] = (250, 250, 250)                                  # 무늬 속(배경색과 다름)
+    rgb[70:85, 70:85] = (140, 170, 210)                                  # 팔과 몸 사이(진짜 배경)
+    model = np.zeros((120, 120), dtype=np.uint8)
+    model[20:100, 20:100] = 255
+    model[40:55, 40:55] = 0
+    model[70:85, 70:85] = 0
+    alpha = cutout.soft_alpha(model, 128, rgb)
+    assert alpha[47, 47] > 200          # 무늬 속은 남는다
+    assert alpha[77, 77] < 50           # 진짜 배경 구멍은 투명
+    assert alpha[5, 5] < 50 and alpha[30, 30] > 200
