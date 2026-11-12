@@ -20,6 +20,32 @@ from supabase import create_client
 from .config import SUPABASE_URL, SUPABASE_KEY
 from .admin import generate_user_key, generate_admin_key
 
+ADMIN_ERRORS = {
+    'NOT_ADMIN': '관리자 인증번호로 인증한 PC에서만 할 수 있습니다.',
+    'DUPLICATE': '같은 인증번호가 이미 있습니다. 다시 만들어 주세요.',
+    'BAD_KEY': '인증번호 형식이 올바르지 않습니다.',
+    'BAD_STATUS': '바꿀 수 없는 상태입니다.',
+    'SELF_REVOKE': '지금 쓰고 있는 관리자 인증번호는 정지할 수 없습니다.',
+    'NOT_FOUND': '그 인증번호를 찾지 못했습니다.',
+}
+
+
+def admin_call(function: str, params: dict) -> dict:
+    """관리자용 서버 함수를 부른다. 이 PC에 저장된 인증번호를 관리자 키로 함께 보낸다.
+
+    표(licenses)는 직접 열 수 없다. 서버가 보낸 키가 관리자 키인지 확인한 뒤에만 처리한다.
+    """
+    from .dialog import load_license_key
+
+    admin_key = load_license_key()
+    if not admin_key:
+        raise RuntimeError(ADMIN_ERRORS['NOT_ADMIN'])
+    client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    data = client.rpc(function, dict(params, p_admin_key=admin_key)).execute().data or {}
+    if not data.get('success'):
+        raise RuntimeError(ADMIN_ERRORS.get(data.get('code'), '서버가 요청을 처리하지 못했습니다.'))
+    return data
+
 
 @dataclass
 class LicenseInfo:
@@ -40,11 +66,10 @@ class LoadLicensesThread(QThread):
 
     def run(self):
         try:
-            client = create_client(SUPABASE_URL, SUPABASE_KEY)
-            result = client.table('licenses').select('*').order('created_at', desc=True).execute()
+            rows = admin_call('admin_list_licenses', {}).get('licenses') or []
 
             licenses = []
-            for row in result.data:
+            for row in rows:
                 licenses.append(LicenseInfo(
                     license_key=row.get('license_key', ''),
                     status=row.get('status', 'active'),
@@ -73,8 +98,6 @@ class CreateLicenseThread(QThread):
 
     def run(self):
         try:
-            client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
             # 키 생성
             if self.is_admin:
                 license_key = generate_admin_key()
@@ -87,13 +110,12 @@ class CreateLicenseThread(QThread):
                 expires_at = (datetime.now() + timedelta(days=self.days)).isoformat()
 
             # DB 등록
-            client.table('licenses').insert({
-                'license_key': license_key,
-                'is_admin': self.is_admin,
-                'expires_at': expires_at,
-                'memo': self.memo,
-                'status': 'active'
-            }).execute()
+            admin_call('admin_create_license', {
+                'p_license_key': license_key,
+                'p_is_admin': self.is_admin,
+                'p_expires_at': expires_at,
+                'p_memo': self.memo,
+            })
 
             self.finished.emit(license_key)
         except Exception as e:
@@ -112,10 +134,10 @@ class UpdateStatusThread(QThread):
 
     def run(self):
         try:
-            client = create_client(SUPABASE_URL, SUPABASE_KEY)
-            client.table('licenses').update({
-                'status': self.new_status
-            }).eq('license_key', self.license_key).execute()
+            admin_call('admin_set_license_status', {
+                'p_license_key': self.license_key,
+                'p_status': self.new_status,
+            })
 
             self.finished.emit()
         except Exception as e:

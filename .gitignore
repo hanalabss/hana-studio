@@ -31,6 +31,8 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+# 빌드 설정은 직접 관리하는 파일이라 버전 관리에 넣는다
+!HanaStudio.spec
 
 # Installer logs
 pip-log.txt
@@ -208,3 +210,16 @@ models/
 output/
 temp/
 logs/
+# 이 PC의 라이선스 인증 정보
+license.json
+
+# 2.0 빌드 산출물
+dist_v2/
+build_v2/
+build_v2.log
+iscc_v2.log
+installer_output/
+releases_v2/
+releases_test/
+release_test.log
+release_v2.log

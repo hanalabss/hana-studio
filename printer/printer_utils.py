@@ -58,7 +58,22 @@ def get_default_dll_paths() -> List[str]:
 
     return paths
 
+_found_dll_path: Optional[str] = None
+
+
 def find_printer_dll() -> Optional[str]:
+    """사용 가능한 프린터 DLL 찾기 - 한글/영어 사용자명 환경 모두 지원
+
+    한 번 찾은 경로는 기억해 둔다. 상태를 주기적으로 확인할 때마다 같은 탐색과 기록을 되풀이하지 않기 위해서다.
+    """
+    global _found_dll_path
+    if _found_dll_path and os.path.exists(_found_dll_path):
+        return _found_dll_path
+    _found_dll_path = _find_printer_dll()
+    return _found_dll_path
+
+
+def _find_printer_dll() -> Optional[str]:
     """사용 가능한 프린터 DLL 찾기 - 한글/영어 사용자명 환경 모두 지원"""
     print("\n" + "="*60)
     print("🔍 프린터 DLL 탐색 시작")

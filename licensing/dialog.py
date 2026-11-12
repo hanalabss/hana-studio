@@ -30,6 +30,10 @@ def _get_app_dir() -> str:
 # 라이선스 파일 경로 (exe 옆 / 프로젝트 루트)
 LICENSE_FILE = os.path.join(_get_app_dir(), "license.json")
 
+# 설치 폴더에 쓸 수 없을 때(관리자 권한 없이 Program Files) 쓰는 사용자 폴더 경로
+USER_LICENSE_FILE = os.path.join(
+    os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "HanaStudio", "license.json")
+
 # 이전 버전 경로 (빌드 시 _internal 폴더 안에 저장되던 위치)
 LEGACY_LICENSE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "license.json")
 
@@ -43,7 +47,7 @@ def _is_same_path(a: str, b: str) -> bool:
 
 def load_license_key() -> Optional[str]:
     """저장된 라이선스 키 로드 (새 경로 → 이전 경로 순)"""
-    for path in (LICENSE_FILE, LEGACY_LICENSE_FILE):
+    for path in (LICENSE_FILE, USER_LICENSE_FILE, LEGACY_LICENSE_FILE):
         try:
             if os.path.exists(path):
                 with open(path, 'r', encoding='utf-8') as f:
@@ -55,14 +59,38 @@ def load_license_key() -> Optional[str]:
     return None
 
 
+def _save_user_copy(license_key: str) -> bool:
+    """사용자 폴더(%LOCALAPPDATA%\\HanaStudio)에 인증번호를 둔다.
+
+    온라인 업데이트는 설치 폴더를 통째로 새것으로 바꾸므로, 설치 폴더에만 두면 업데이트 뒤에 인증이 풀린다.
+    """
+    try:
+        os.makedirs(os.path.dirname(USER_LICENSE_FILE), exist_ok=True)
+        with open(USER_LICENSE_FILE, 'w', encoding='utf-8') as f:
+            json.dump({'license_key': license_key}, f, indent=2)
+        return True
+    except Exception as e:
+        print(f"[LICENSE] 사용자 폴더 저장 실패 ({USER_LICENSE_FILE}): {type(e).__name__}: {e}")
+        return False
+
+
 def save_license_key(license_key: str) -> bool:
     """라이선스 키 저장 (이전 경로 파일은 정리)"""
+    _save_user_copy(license_key)
     try:
         with open(LICENSE_FILE, 'w', encoding='utf-8') as f:
             json.dump({'license_key': license_key}, f, indent=2)
     except Exception as e:
         print(f"[LICENSE] 라이선스 파일 저장 실패 ({LICENSE_FILE}): {type(e).__name__}: {e}")
-        return False
+        # 설치 폴더에 쓸 수 없으면 사용자 폴더에 저장한다.
+        try:
+            os.makedirs(os.path.dirname(USER_LICENSE_FILE), exist_ok=True)
+            with open(USER_LICENSE_FILE, 'w', encoding='utf-8') as f:
+                json.dump({'license_key': license_key}, f, indent=2)
+            return True
+        except Exception as e2:
+            print(f"[LICENSE] 사용자 폴더 저장도 실패 ({USER_LICENSE_FILE}): {type(e2).__name__}: {e2}")
+            return False
 
     if not _is_same_path(LICENSE_FILE, LEGACY_LICENSE_FILE) and os.path.exists(LEGACY_LICENSE_FILE):
         try:
@@ -111,7 +139,7 @@ class LicenseDialog(QDialog):
 
     def _setup_dialog(self):
         """다이얼로그 설정"""
-        self.setWindowTitle("라이선스 인증 - Hana Studio")
+        self.setWindowTitle("라이선스 인증 - hanaStudio")
         self.setModal(True)
         self.setFixedSize(400, 280)
         self.setStyleSheet("""
@@ -381,6 +409,8 @@ def check_license(parent=None) -> tuple:
             # 이전 경로(_internal)에 있던 키는 새 경로로 이동
             if not os.path.exists(LICENSE_FILE):
                 save_license_key(saved_key)
+            elif not os.path.exists(USER_LICENSE_FILE):
+                _save_user_copy(saved_key)      # 예전에 인증한 PC도 업데이트 뒤에 인증이 유지되게
             return (True, result.is_admin)
 
         print(f"[LICENSE] 자동 인증 실패: {result.code}")

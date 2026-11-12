@@ -52,7 +52,31 @@ class FastHanaStudioBuilder:
             "R600StatusReference"
         ]
         
+        # SMART 프린터 SDK (dll/smart 폴더째 빌드에 들어간다)
+        required_smart_files = [
+            "SmartComm2.dll",
+        ]
+
+        # 새 기능 패키지 (HanaStudio.spec이 폴더를 훑어 모듈을 모두 넣는다)
+        required_packages = ["design", "data", "services", "printer", "ui", "utils"]
+
+        # 늦게 임포트하는 외부 모듈 (requirements.txt)
+        required_modules = ["openpyxl", "qrcode", "barcode"]
+
         missing_files = []
+
+        for package in required_packages:
+            if not (self.project_root / package).is_dir():
+                missing_files.append(f"{package} 패키지 폴더")
+
+        for file_name in required_smart_files:
+            if not (self.project_root / "dll" / "smart" / file_name).exists():
+                missing_files.append(f"dll/smart/{file_name}")
+
+        import importlib.util
+        for module_name in required_modules:
+            if importlib.util.find_spec(module_name) is None:
+                missing_files.append(f"파이썬 모듈 {module_name} (pip install -r requirements.txt)")
         
         # 기본 파이썬 파일들 확인
         for file_name in required_py_files:

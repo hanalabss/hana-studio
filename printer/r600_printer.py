@@ -7,13 +7,22 @@ import ctypes
 import os
 import io
 import time
+import uuid
 from typing import List, Optional, Tuple
+from config import config
+from utils.bleed_crop import crop_bleed
 from .exceptions import R600PrinterError, PrinterInitializationError, DLLNotFoundError
 from .printer_discovery import PrinterInfo
+from .r600_extras import R600ExtrasMixin
 
 
-class R600Printer:
+class R600Printer(R600ExtrasMixin):
     """R600 프린터 제어 클래스 - 개별 면 방향 지원 + 마스킹 회전 수정"""
+
+    # 이미지·마스크·UV 레이어를 그릴 때 비율 기반 도련 제거(utils.bleed_crop)를 할지.
+    # 기본값(True)이 기존 동작이다. RtaiAdapter가 이미 칼선 크기로 만든 카드
+    # (options["bleed_handled"])를 인쇄하는 동안만 False로 바꾼다.
+    bleed_crop_enabled = True
     
     def __init__(self, dll_path: str = './libDSRetransfer600App.dll', selected_printer: Optional[PrinterInfo] = None):
         """R600 프린터 초기화"""
@@ -23,6 +32,8 @@ class R600Printer:
         self.front_img_info = None
         self.back_img_info = None
         self.is_initialized = False
+        self.offset_x = 0.0  # 인쇄 위치 조정값 (mm)
+        self.offset_y = 0.0
 
         try:
             print(f"[R600Printer] DLL 경로 시도: {dll_path}")
@@ -68,6 +79,28 @@ class R600Printer:
         except Exception as e:
             print(f"[R600Printer] ✗ 초기화 실패: {type(e).__name__}: {e}")
             raise PrinterInitializationError(f"프린터 초기화 실패: {e}")
+
+    @classmethod
+    def from_library(cls, lib, selected_printer: Optional[PrinterInfo] = None) -> "R600Printer":
+        """이미 로드된(또는 테스트용 가짜) 라이브러리 객체로 프린터를 만든다."""
+        self = cls.__new__(cls)
+        self.lib = lib
+        self.selected_printer_info = selected_printer
+        self.selected_printer_name = None
+        self.front_img_info = None
+        self.back_img_info = None
+        self.is_initialized = False
+        self.offset_x = 0.0
+        self.offset_y = 0.0
+        try:
+            self._setup_function_signatures()
+            self._initialize_library()
+            self.is_initialized = True
+        except Exception as e:
+            raise PrinterInitializationError(f"프린터 초기화 실패: {e}")
+        if self.selected_printer_info:
+            self.auto_select_printer()
+        return self
 
     def _setup_function_signatures(self):
         """함수 시그니처 정의"""
@@ -171,6 +204,7 @@ class R600Printer:
             printer_name = self.selected_printer_info.name
             print(f"🎯 선택된 프린터로 자동 설정: {printer_name} ({self.selected_printer_info.connection_type})")
             
+            self._ensure_enumerated()
             ret = self.lib.R600SelectPrt(printer_name.encode('cp949'))
             self._check_result(ret, f"프린터 자동 선택 ({printer_name})")
             self.selected_printer_name = printer_name
@@ -194,6 +228,7 @@ class R600Printer:
         # TCP 프린터 조회
         tcp_printers = self._enum_tcp_printers()
         all_printers.extend(tcp_printers)
+        self._enumerated = True      # 이 세션에서 목록을 조회했다(select_printer가 다시 조회하지 않게)
         
         # USB 프린터 조회
         usb_printers = self._enum_usb_printers()
@@ -308,8 +343,22 @@ class R600Printer:
         ret = self.lib.R600TcpSetTimeout(timeout_ms, timeout_ms)
         self._check_result(ret, "타임아웃 설정")
     
+    def _ensure_enumerated(self):
+        """프린터를 선택하기 전에 SDK로 목록을 한 번 조회해 둔다.
+
+        이 SDK는 라이브러리를 초기화한 뒤 목록 조회(R600EnumTcpPrt / R600EnumUsbPrt)를 거쳐야
+        R600SelectPrt가 성공한다. 조회 없이 이름만으로 선택하면 오류 코드 8404992로 실패한다.
+        기존 인쇄 흐름(enum_printers → select_printer)과 같은 순서(TCP, USB)로 조회한다.
+        """
+        if getattr(self, "_enumerated", False):
+            return
+        self._enum_tcp_printers()
+        self._enum_usb_printers()
+        self._enumerated = True
+
     def select_printer(self, printer_name: str):
         """프린터 선택"""
+        self._ensure_enumerated()
         ret = self.lib.R600SelectPrt(printer_name.encode('cp949'))
         self._check_result(ret, f"프린터 선택 ({printer_name})")
         self.selected_printer_name = printer_name
@@ -349,12 +398,20 @@ class R600Printer:
         self._check_result(ret, f"이미지 파라미터 설정 (회전 {rotation}도)")
 
         
+    def set_position_offset(self, x: float, y: float):
+        """인쇄 위치 조정값 설정 (mm). 이후 앞/뒷면 이미지와 마스크에 동일하게 적용"""
+        self.offset_x = float(x)
+        self.offset_y = float(y)
+        print(f"[PRINTER] 위치 조정 적용: X={self.offset_x:+.2f}mm, Y={self.offset_y:+.2f}mm")
+
     def get_card_dimensions(self, orientation: str) -> tuple:
-        """카드 방향에 따른 크기 반환"""
+        """카드 방향에 따른 인쇄 영역 크기 반환 (config.json printer.card_width/height)"""
+        short = float(config.get("printer.card_width", 55))
+        long_ = float(config.get("printer.card_height", 86.6))
         if orientation == "portrait":
-            return 55, 86.6  # 세로형
+            return short, long_  # 세로형
         else:
-            return 86.6, 55  # 가로형
+            return long_, short  # 가로형
         
     def clear_canvas(self):
         """캔버스 클리어"""
@@ -383,6 +440,8 @@ class R600Printer:
                     with open(image_path, 'rb') as f:
                         original_watermark = PILImage.open(io.BytesIO(f.read()))
                 print(f"  워터마크 원본 크기: {original_watermark.size}")
+                if self.bleed_crop_enabled:
+                    original_watermark = crop_bleed(original_watermark)
                 
                 # RGB 모드로 변환 (EXIF 정보 자동 제거됨)
                 if original_watermark.mode in ('RGBA', 'LA', 'P'):
@@ -395,9 +454,11 @@ class R600Printer:
                     clean_watermark.paste(original_watermark)
                 
                 # 임시 파일로 저장 (EXIF 없음)
+                # 이름에 초 단위 시각만 쓰면 같은 카드의 앞·뒷면 마스크가 같은 초에 겹쳐 덮어쓴다.
                 temp_dir = tempfile.gettempdir()
-                temp_name = f"watermark_clean_{int(time.time())}.jpg"
+                temp_name = f"watermark_clean_{int(time.time())}_{uuid.uuid4().hex[:10]}.jpg"
                 temp_path = os.path.join(temp_dir, temp_name)
+                self._remember_session_file(temp_path)
                 
                 # 고품질로 저장
                 clean_watermark.save(temp_path, 'JPEG', quality=95, optimize=True)
@@ -416,7 +477,7 @@ class R600Printer:
                     # 한글 경로 처리
                     import shutil
                     temp_dir = tempfile.gettempdir()
-                    temp_name = f"temp_watermark_{int(time.time())}.jpg"
+                    temp_name = f"temp_watermark_{int(time.time())}_{uuid.uuid4().hex[:10]}.jpg"
                     temp_path = os.path.join(temp_dir, temp_name)
                     shutil.copy2(image_path, temp_path)
                     path_encoded = temp_path.encode('cp949')
@@ -526,6 +587,8 @@ class R600Printer:
             
             # 🎯 핵심: EXIF 회전을 실제 픽셀에 적용
             rotated_image = ImageOps.exif_transpose(original_image)
+            if self.bleed_crop_enabled:
+                rotated_image = crop_bleed(rotated_image)  # 도련(58x90) -> 칼선(54x86)
             print(f"  EXIF 회전 적용 후 크기: {rotated_image.size}")
             
             # 회전이 적용되었는지 확인
@@ -589,7 +652,7 @@ class R600Printer:
                 # 한글 경로 처리
                 import shutil
                 temp_dir = tempfile.gettempdir()
-                temp_name = f"temp_image_{int(time.time())}.jpg"
+                temp_name = f"temp_image_{int(time.time())}_{uuid.uuid4().hex[:10]}.jpg"
                 temp_path = os.path.join(temp_dir, temp_name)
                 shutil.copy2(image_path, temp_path)
                 path_encoded = temp_path.encode('cp949')
@@ -628,10 +691,10 @@ class R600Printer:
         
         # 워터마크 그리기 (레이어 모드인 경우)
         if watermark_path:
-            self.draw_watermark(0.0, 0.0, card_width, card_height, watermark_path)
+            self.draw_watermark(self.offset_x, self.offset_y, card_width, card_height, watermark_path)
         
         # 앞면 이미지 그리기
-        self.draw_image(0.0, 0.0, card_width, card_height, front_image_path)
+        self.draw_image(self.offset_x, self.offset_y, card_width, card_height, front_image_path)
         
         # 캔버스 커밋
         self.front_img_info = self.commit_canvas()
@@ -659,14 +722,14 @@ class R600Printer:
                 if card_orientation == "portrait":
                     # 세로형: 마스킹을 180도 더 회전 (총 360도 = 0도와 동일한 효과)
                     print("세로형 뒷면: 마스킹 이미지 180도 추가 회전 적용")
-                    self.draw_watermark_rotated(0.0, 0.0, card_width, card_height, watermark_path, 180)
+                    self.draw_watermark_rotated(self.offset_x, self.offset_y, card_width, card_height, watermark_path, 180)
                 else:
                     # 가로형: 마스킹 회전 없음 (현재 상태 유지)
                     print("가로형 뒷면: 마스킹 이미지 회전 없음")
-                    self.draw_watermark(0.0, 0.0, card_width, card_height, watermark_path)
+                    self.draw_watermark(self.offset_x, self.offset_y, card_width, card_height, watermark_path)
             
             # 뒷면 이미지 그리기 (기존과 동일)
-            self.draw_image(0.0, 0.0, card_width, card_height, back_image_path)
+            self.draw_image(self.offset_x, self.offset_y, card_width, card_height, back_image_path)
         else:
             # 뒷면 이미지가 없으면 빈 캔버스 또는 기본 이미지
             print("뒷면 이미지가 없습니다. 빈 뒷면으로 설정합니다.")
@@ -845,6 +908,11 @@ class R600Printer:
                 print("[DEBUG] 카드 배출 건너뜀 (정상)")
             
             # 2. 임시 파일 정리 (회전된 마스킹 파일 포함)
+            try:
+                self.cleanup_layer_files()    # 이 객체가 만든 UV 레이어 임시 파일
+                self.cleanup_session_files()  # 이 객체가 만든 워터마크 임시 파일
+            except Exception as e:
+                print(f"[DEBUG] 레이어 임시 파일 정리 오류: {e}")
             try:
                 import tempfile
                 import glob
