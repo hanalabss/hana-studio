@@ -10,11 +10,8 @@ from printer.printer_discovery import PrinterInfo
 from printer.r600_printer import R600Printer
 from printer.rtai_adapter import RtaiAdapter, code_from_error, hint_for
 
-CONNECT_CALLS = [
-    ("R600LibInit", ()),
-    ("R600SelectPrt", (b"RTAI R600 FAKE",)),
-    ("R600TcpSetTimeout", (15000, 15000)),
-]
+# 실기 SDK는 목록을 조회한 뒤에야 프린터를 선택할 수 있다(조회 없이 선택하면 오류 8404992).
+CONNECT_CALLS = ["R600LibInit", "R600EnumTcpPrt", "R600EnumUsbPrt", "R600SelectPrt", "R600TcpSetTimeout"]
 
 
 @pytest.fixture
@@ -42,7 +39,9 @@ def test_connect_selects_the_requested_device(r600_lib, rtai_device):
     adapter = RtaiAdapter(lib=r600_lib)
     adapter.connect(rtai_device)
     assert adapter.is_connected and adapter.device == rtai_device
-    assert r600_lib.calls == CONNECT_CALLS
+    assert r600_lib.call_names() == CONNECT_CALLS
+    assert r600_lib.calls_named("R600SelectPrt") == [("R600SelectPrt", (b"RTAI R600 FAKE",))]
+    assert r600_lib.calls_named("R600TcpSetTimeout") == [("R600TcpSetTimeout", (15000, 15000))]
     assert r600_lib.selected == "RTAI R600 FAKE"
 
 

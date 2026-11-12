@@ -121,7 +121,8 @@ def test_legacy_job_uses_the_selected_printer_not_the_first(qapp, queue, two_pri
     wait_until(qapp, lambda: recorder.finished)
     assert two_printers.selected == "SECOND"
     assert two_printers.calls_named("R600SelectPrt") == [("R600SelectPrt", (b"SECOND",))]
-    assert "R600EnumUsbPrt" not in two_printers.call_names()
+    names = two_printers.call_names()       # 목록을 조회한 뒤에 고른 프린터를 선택한다(실기 SDK의 요구)
+    assert names.index("R600EnumUsbPrt") < names.index("R600SelectPrt")
     assert recorder.finished == [(1, 0, 1, 0, "")]
 
 

@@ -204,6 +204,7 @@ class R600Printer(R600ExtrasMixin):
             printer_name = self.selected_printer_info.name
             print(f"🎯 선택된 프린터로 자동 설정: {printer_name} ({self.selected_printer_info.connection_type})")
             
+            self._ensure_enumerated()
             ret = self.lib.R600SelectPrt(printer_name.encode('cp949'))
             self._check_result(ret, f"프린터 자동 선택 ({printer_name})")
             self.selected_printer_name = printer_name
@@ -227,6 +228,7 @@ class R600Printer(R600ExtrasMixin):
         # TCP 프린터 조회
         tcp_printers = self._enum_tcp_printers()
         all_printers.extend(tcp_printers)
+        self._enumerated = True      # 이 세션에서 목록을 조회했다(select_printer가 다시 조회하지 않게)
         
         # USB 프린터 조회
         usb_printers = self._enum_usb_printers()
@@ -341,8 +343,22 @@ class R600Printer(R600ExtrasMixin):
         ret = self.lib.R600TcpSetTimeout(timeout_ms, timeout_ms)
         self._check_result(ret, "타임아웃 설정")
     
+    def _ensure_enumerated(self):
+        """프린터를 선택하기 전에 SDK로 목록을 한 번 조회해 둔다.
+
+        이 SDK는 라이브러리를 초기화한 뒤 목록 조회(R600EnumTcpPrt / R600EnumUsbPrt)를 거쳐야
+        R600SelectPrt가 성공한다. 조회 없이 이름만으로 선택하면 오류 코드 8404992로 실패한다.
+        기존 인쇄 흐름(enum_printers → select_printer)과 같은 순서(TCP, USB)로 조회한다.
+        """
+        if getattr(self, "_enumerated", False):
+            return
+        self._enum_tcp_printers()
+        self._enum_usb_printers()
+        self._enumerated = True
+
     def select_printer(self, printer_name: str):
         """프린터 선택"""
+        self._ensure_enumerated()
         ret = self.lib.R600SelectPrt(printer_name.encode('cp949'))
         self._check_result(ret, f"프린터 선택 ({printer_name})")
         self.selected_printer_name = printer_name

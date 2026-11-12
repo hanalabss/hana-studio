@@ -135,6 +135,7 @@ class FakeLibrary:
 R600_ERR_FEEDER_EMPTY = 0x00808002
 R600_ERR_RIBBON_OUT = 0x00808010
 R600_ERR_PRINT = 0x00808020
+R600_ERR_SELECT_WITHOUT_ENUM = 8404992   # 0x804000: 목록 조회 없이 R600SelectPrt를 부르면 실기가 돌려주는 값
 R600_ERR_NO_PRINTER = 0x00800001
 
 
@@ -177,13 +178,26 @@ class FakeR600Library(FakeLibrary):
         _set(count_ref, len(names))
         return 0
 
+    def _h_R600LibInit(self):
+        self.enumerated = False      # 새 세션: 목록을 다시 조회해야 선택할 수 있다
+        return 0
+
+    def _h_R600LibClear(self):
+        self.enumerated = False
+        return 0
+
     def _h_R600EnumUsbPrt(self, buffer, length_ref, count_ref):
+        self.enumerated = True
         return self._enum(self.usb_printers, buffer, length_ref, count_ref)
 
     def _h_R600EnumTcpPrt(self, buffer, length_ref, count_ref):
+        self.enumerated = True
         return self._enum(self.tcp_printers, buffer, length_ref, count_ref)
 
     def _h_R600SelectPrt(self, name):
+        # 실제 SDK처럼, 목록을 조회하지 않고 선택하면 실패한다(실기에서 확인된 오류 코드).
+        if not getattr(self, "enumerated", False):
+            return R600_ERR_SELECT_WITHOUT_ENUM
         text = (_normalize(name) or b"").decode("cp949")
         if text not in self.usb_printers + self.tcp_printers:
             return R600_ERR_NO_PRINTER

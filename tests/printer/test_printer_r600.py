@@ -59,7 +59,9 @@ def test_legacy_public_methods_keep_their_names_and_parameters():
 def test_from_library_initialises_and_selects_the_given_printer(r600_lib, printer):
     assert printer.is_initialized
     assert printer.selected_printer_name == "RTAI R600 FAKE"
-    assert r600_lib.calls == [("R600LibInit", ()), ("R600SelectPrt", (b"RTAI R600 FAKE",))]
+    # 실기 SDK는 목록 조회 뒤에야 선택할 수 있다.
+    assert r600_lib.call_names() == ["R600LibInit", "R600EnumTcpPrt", "R600EnumUsbPrt", "R600SelectPrt"]
+    assert r600_lib.calls_named("R600SelectPrt") == [("R600SelectPrt", (b"RTAI R600 FAKE",))]
 
 
 def test_from_library_reports_init_failure(r600_lib):
@@ -343,3 +345,19 @@ def test_cleanup_and_close_removes_the_watermark_files_it_made(make_image):
     printer.cleanup_and_close()
     assert not os.path.exists(sent)
     assert lib.call_names()[-2:] == ["R600CardEject", "R600LibClear"]
+
+
+def test_selecting_without_enumeration_fails_like_the_real_sdk(r600_lib):
+    """다른 PC 실기에서 확인된 동작: 목록 조회 없이 R600SelectPrt를 부르면 8404992가 돌아온다."""
+    from printer.fakes import R600_ERR_SELECT_WITHOUT_ENUM
+
+    r600_lib.R600LibInit()
+    assert r600_lib.R600SelectPrt(b"RTAI R600 FAKE") == R600_ERR_SELECT_WITHOUT_ENUM
+
+
+def test_select_printer_enumerates_first_but_only_once(r600_lib, printer):
+    printer.select_printer("RTAI R600 FAKE")
+    printer.select_printer("RTAI R600 FAKE")
+    names = r600_lib.call_names()
+    assert names.count("R600EnumUsbPrt") == 1 and names.count("R600EnumTcpPrt") == 1
+    assert names.index("R600EnumUsbPrt") < names.index("R600SelectPrt")
