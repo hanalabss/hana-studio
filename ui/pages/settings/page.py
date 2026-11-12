@@ -281,7 +281,29 @@ class SettingsPage(BasePage):
             row.addWidget(label(value, None, wrap=True), 1)
             panel.body.addLayout(row)
             self.version_labels[name] = value
+        self.update_button = SecondaryButton("업데이트 확인")
+        self.update_button.setToolTip("새 버전이 있는지 인터넷에서 확인합니다")
+        self.update_button.clicked.connect(self.check_for_updates)
+        update_row = QHBoxLayout()
+        update_row.addWidget(self.update_button)
+        update_row.addStretch(1)
+        panel.body.addLayout(update_row)
+        self._update_flow = None
         return panel
+
+    def check_for_updates(self) -> None:
+        """새 버전이 있는지 확인하고, 있으면 받아서 다시 켤지 묻는다."""
+        from ui.update_flow import UpdateFlow
+
+        if self._update_flow is None:
+            self._update_flow = UpdateFlow(self.window(), is_busy=self._is_printing)
+        self._update_flow.check(silent=False)
+
+    def _is_printing(self) -> bool:
+        try:
+            return bool(self.services.printing.is_printing)
+        except Exception:
+            return False
 
     # ------------------------------------------------------------------ 값
     def _load(self) -> None:

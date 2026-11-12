@@ -219,3 +219,6 @@ build_v2/
 build_v2.log
 iscc_v2.log
 installer_output/
+releases_v2/
+releases_test/
+release_test.log

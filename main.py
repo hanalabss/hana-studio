@@ -294,6 +294,11 @@ def main():
                     loading.close()
                     state['main_window'].showMaximized()
                     print("[OK] 메인 윈도우 표시")
+                    try:
+                        from ui.update_flow import schedule_startup_check
+                        state['update_flow'] = schedule_startup_check(state['main_window'])
+                    except Exception as update_error:
+                        print(f"[UPDATE] 업데이트 확인을 시작하지 못했습니다: {update_error}")
                     return  # 더 이상 단계 없음
 
             except Exception as e:
@@ -325,4 +330,10 @@ def main():
 
 
 if __name__ == "__main__":
+    # 설치·업데이트·제거 직후에는 Velopack이 여기서 뒷정리를 하고 끝내거나 다시 켠다. 가장 먼저 불러야 한다.
+    try:
+        from services.updates import run_startup_hook
+        run_startup_hook()
+    except Exception:
+        pass
     main()

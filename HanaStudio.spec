@@ -84,6 +84,9 @@ a = Analysis(
         # === Qt ===
         'PySide6.QtCore', 'PySide6.QtWidgets', 'PySide6.QtGui',
 
+        # === 온라인 업데이트 ===
+        'velopack',
+
         # === rembg ===
         'rembg', 'rembg.bg', 'rembg.sessions', 'rembg.sessions.base',
         'rembg.sessions.u2net', 'rembg.sessions.u2netp',

@@ -31,3 +31,4 @@ pyinstaller>=6.0.0
 
 # Test (개발용)
 pytest>=8.0
+velopack>=1.2.161

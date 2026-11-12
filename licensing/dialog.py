@@ -59,8 +59,24 @@ def load_license_key() -> Optional[str]:
     return None
 
 
+def _save_user_copy(license_key: str) -> bool:
+    """사용자 폴더(%LOCALAPPDATA%\\HanaStudio)에 인증번호를 둔다.
+
+    온라인 업데이트는 설치 폴더를 통째로 새것으로 바꾸므로, 설치 폴더에만 두면 업데이트 뒤에 인증이 풀린다.
+    """
+    try:
+        os.makedirs(os.path.dirname(USER_LICENSE_FILE), exist_ok=True)
+        with open(USER_LICENSE_FILE, 'w', encoding='utf-8') as f:
+            json.dump({'license_key': license_key}, f, indent=2)
+        return True
+    except Exception as e:
+        print(f"[LICENSE] 사용자 폴더 저장 실패 ({USER_LICENSE_FILE}): {type(e).__name__}: {e}")
+        return False
+
+
 def save_license_key(license_key: str) -> bool:
     """라이선스 키 저장 (이전 경로 파일은 정리)"""
+    _save_user_copy(license_key)
     try:
         with open(LICENSE_FILE, 'w', encoding='utf-8') as f:
             json.dump({'license_key': license_key}, f, indent=2)
@@ -459,6 +475,8 @@ def check_license(parent=None) -> tuple:
             # 이전 경로(_internal)에 있던 키는 새 경로로 이동
             if not os.path.exists(LICENSE_FILE):
                 save_license_key(saved_key)
+            elif not os.path.exists(USER_LICENSE_FILE):
+                _save_user_copy(saved_key)      # 예전에 인증한 PC도 업데이트 뒤에 인증이 유지되게
             return (True, result.is_admin)
 
         print(f"[LICENSE] 자동 인증 실패: {result.code}")
