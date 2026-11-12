@@ -19,6 +19,7 @@ KEY_COPIES = "print/copies"
 KEY_STOP_ON_ERROR = "print/stop_on_error"
 KEY_OFFSET_X = "print/offset_x_mm"
 KEY_OFFSET_Y = "print/offset_y_mm"
+KEY_COLOR = {"brightness": "print/brightness", "contrast": "print/contrast", "saturation": "print/saturation"}
 KEY_CARD_PRESET = "design/default_card"
 KEY_RETENTION = "history/retention_days"
 KEY_MIGRATED = "print/legacy_migrated"
@@ -156,10 +157,30 @@ class Prefs(QObject):
         self._settings.sync()
         self.changed.emit()
 
+    def color_adjust(self) -> tuple[int, int, int]:
+        """(밝기, 명암, 채도). 각 -100~100, 0이 원래대로."""
+        from printer.base import COLOR_ADJUST_KEYS, color_adjust_from
+
+        return color_adjust_from({key: self._settings.value(KEY_COLOR[key], 0) for key in COLOR_ADJUST_KEYS})
+
+    def set_color_adjust(self, brightness: int, contrast: int, saturation: int) -> None:
+        from printer.base import color_adjust_from
+
+        before = self.color_adjust()
+        after = color_adjust_from({"brightness": brightness, "contrast": contrast, "saturation": saturation})
+        if before == after:
+            return
+        for key, value in zip(("brightness", "contrast", "saturation"), after):
+            self._settings.setValue(KEY_COLOR[key], value)
+        self._settings.sync()
+        self.changed.emit()
+
     def print_options(self) -> PrintOptions:
         x, y = self.offsets()
+        brightness, contrast, saturation = self.color_adjust()
         return PrintOptions(copies=self.copies(), stop_on_error=self.stop_on_error(),
-                            offset_x_mm=x, offset_y_mm=y)
+                            offset_x_mm=x, offset_y_mm=y,
+                            brightness=brightness, contrast=contrast, saturation=saturation)
 
     # ---- 새 카드 크기 ----
     def card_preset_key(self) -> str:

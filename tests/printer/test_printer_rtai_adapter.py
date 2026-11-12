@@ -22,6 +22,15 @@ def adapter(r600_lib, rtai_device):
     return adapter
 
 
+def flow(calls):
+    """색 조정 호출(R600SetImgVisualParam)을 뺀 호출 순서. 색 조정은 아래 전용 테스트에서 따로 본다."""
+    return [call for call in simplify(calls) if call[0] != "R600SetImgVisualParam"]
+
+
+def flow_names(lib):
+    return [name for name in lib.call_names() if name != "R600SetImgVisualParam"]
+
+
 def front_canvas(short, long_, mask=False, uv=False, x=0.0, y=0.0):
     calls = [("R600SetCanvasPortrait", (1,)), ("R600PrepareCanvas", (0, 0)),
              ("R600SetImagePara", (1, 0, 0.0))]
@@ -88,7 +97,7 @@ def test_single_side_sequence(adapter, r600_lib, make_image, card_size):
     progress = []
     adapter.print_card(CardJob(front=SideImages(make_image(), orientation="portrait")),
                        progress=lambda percent, message: progress.append((percent, message)))
-    assert simplify(r600_lib.calls) == (
+    assert flow(r600_lib.calls) == (
         [("R600CardInject", (0,)), ("R600SetRibbonOpt", (1, 0, b"2", 1))]
         + front_canvas(short, long_)
         + [("R600PrintDraw", (b"FAKE_CANVAS_1", None)), ("R600CardEject", (0,))]
@@ -104,7 +113,7 @@ def test_single_side_matches_the_legacy_flow_call_for_call(r600_lib, adapter, ma
     legacy = R600Printer.from_library(legacy_lib, PrinterInfo("RTAI R600 FAKE", "USB"))
     legacy_lib.reset_calls()
     legacy.print_single_side_card(image, None, "landscape", "normal")
-    assert simplify(r600_lib.calls) == simplify(legacy_lib.calls)
+    assert flow(r600_lib.calls) == simplify(legacy_lib.calls)
 
 
 def test_dual_side_with_mask_sequence(adapter, r600_lib, make_image, card_size):
@@ -115,7 +124,7 @@ def test_dual_side_with_mask_sequence(adapter, r600_lib, make_image, card_size):
         options={"offset_x_mm": 1.5, "offset_y_mm": -0.5},
     )
     adapter.print_card(job)
-    assert simplify(r600_lib.calls) == (
+    assert flow(r600_lib.calls) == (
         [("R600CardInject", (0,)), ("R600SetRibbonOpt", (1, 0, b"2", 1))]
         + front_canvas(short, long_, mask=True, x=1.5, y=-0.5)
         + [("R600ClearCanvas", ()),
@@ -146,7 +155,7 @@ def test_dual_side_matches_the_legacy_flow_for_every_orientation_pair(front, bac
     legacy = R600Printer.from_library(legacy_lib, PrinterInfo("RTAI R600 FAKE", "USB"))
     legacy_lib.reset_calls()
     legacy.print_dual_side_card(images[0], images[1], images[2], images[3], front, back, "layered")
-    assert simplify(lib.calls) == simplify(legacy_lib.calls)
+    assert flow(lib.calls) == simplify(legacy_lib.calls)
 
 
 def test_back_portrait_mask_is_rotated_180_like_the_legacy_flow(adapter, r600_lib, make_image, tmp_path):
@@ -166,7 +175,7 @@ def test_back_portrait_mask_is_rotated_180_like_the_legacy_flow(adapter, r600_li
 def test_uv_layer_sequence(adapter, r600_lib, make_image, card_size):
     short, long_ = card_size
     adapter.print_card(CardJob(front=SideImages(make_image(), uv_path=make_image())))
-    assert simplify(r600_lib.calls) == (
+    assert flow(r600_lib.calls) == (
         [("R600CardInject", (0,)), ("R600SetRibbonOpt", (1, 0, b"2", 1))]
         + front_canvas(short, long_, uv=True)
         + [("R600PrintDraw", (b"FAKE_CANVAS_1", None)), ("R600CardEject", (0,))]
@@ -186,7 +195,7 @@ def test_magnetic_write_and_verify_happen_after_inject_and_before_canvas(
     job = CardJob(front=SideImages(make_image()),
                   options={"magnetic": {"track1": "HONG GILDONG", "track2": "1234567890"}})
     adapter.print_card(job)
-    assert simplify(r600_lib.calls) == (
+    assert flow(r600_lib.calls) == (
         [("R600CardInject", (0,)),
          ("R600CardMoveImpr", (6,)),
          ("R600SetMagCardOpt", (1,)),
@@ -216,8 +225,8 @@ def test_magnetic_verify_mismatch_ejects_and_does_not_print(adapter, r600_lib, m
         adapter.print_card(CardJob(front=SideImages(make_image()),
                                    options={"magnetic": {"track1": "RIGHT"}}))
     assert info.value.recoverable
-    assert r600_lib.call_names() == ["R600CardInject", "R600CardMoveImpr", "R600SetMagCardOpt",
-                                     "R600MAGCardWrite", "R600MAGCardRead", "R600CardEject"]
+    assert flow_names(r600_lib) == ["R600CardInject", "R600CardMoveImpr", "R600SetMagCardOpt",
+                                    "R600MAGCardWrite", "R600MAGCardRead", "R600CardEject"]
     assert r600_lib.printed_cards == 0
 
 
@@ -262,10 +271,10 @@ def test_print_error_ejects_card_and_raises_korean_error(adapter, r600_lib, make
     assert "단면 인쇄 실행에 실패했습니다." in error.message
     assert "리본을 확인해 주세요" in error.message
     assert "[프린터 메시지: Ribbon is used up]" in error.message
-    names = r600_lib.call_names()
+    names = flow_names(r600_lib)
     assert names[names.index("R600PrintDraw") + 1] == "R600CardEject"
     assert names[-1] == "R600GetErrorOuterInfo"
-    assert r600_lib.calls[-1].args[0] == R600_ERR_RIBBON_OUT
+    assert r600_lib.calls_named("R600GetErrorOuterInfo")[-1].args[0] == R600_ERR_RIBBON_OUT
 
 
 def test_feeder_empty_error_is_recoverable_and_still_tries_to_eject(adapter, r600_lib, make_image):
@@ -294,7 +303,7 @@ def test_error_text_falls_back_through_the_three_sdk_message_functions(adapter, 
     r600_lib.ribbon_out = True
     with pytest.raises(PrinterError, match="Ribbon is used up"):
         adapter.print_card(CardJob(front=SideImages(make_image())))
-    assert r600_lib.call_names()[-1] == "R600GetErrorInfo"
+    assert flow_names(r600_lib)[-1] == "R600GetErrorInfo"
 
 
 def test_missing_files_are_rejected_before_a_card_is_taken(adapter, r600_lib, make_image):

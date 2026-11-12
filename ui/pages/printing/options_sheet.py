@@ -8,7 +8,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QVBoxLayout, QWidget
 
 from design.model import Document
-from printer.base import CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_UV, CAP_WHITE
+from printer.base import (CAP_COLOR_ADJUST, CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_UV, CAP_WHITE,
+                          COLOR_ADJUST_MAX, COLOR_ADJUST_MIN)
 from services.render_job import PrintOptions, magnetic_mapping, uses_uv, uses_white
 from ui.pages.settings.prefs import COPIES_MAX, OFFSET_LIMIT_MM
 from ui.theme import SPACE
@@ -70,6 +71,8 @@ def summary_text(choices: PrintChoices, document: Document, capabilities: set[st
         parts.append("마그네틱 기록")
     if options.offset_x_mm or options.offset_y_mm:
         parts.append(f"위치 가로 {options.offset_x_mm:+.1f} 세로 {options.offset_y_mm:+.1f}mm")
+    if CAP_COLOR_ADJUST in capabilities and (options.brightness or options.contrast or options.saturation):
+        parts.append(f"색 조정 밝기 {options.brightness:+d} 명암 {options.contrast:+d} 채도 {options.saturation:+d}")
     if not options.stop_on_error:
         parts.append("실패해도 계속")
     return ", ".join(parts)
@@ -119,6 +122,27 @@ class OptionsSheet(Dialog):
         self.reset_position.clicked.connect(self._reset_position)
         position.addWidget(self.reset_position, 0, Qt.AlignBottom)
         self.body.addLayout(position)
+
+        # 색 조정: 프린터가 그림을 받을 때 밝기·명암·채도를 바꾼다(드라이버의 색 조정과 같은 일).
+        self.color_fields: dict[str, StepperField] = {}
+        if CAP_COLOR_ADJUST in capabilities:
+            self.body.addWidget(Divider())
+            self.body.addWidget(label("색 맞추기", "title"))
+            self.body.addWidget(label(
+                "카드에 찍힌 색이 화면보다 어둡거나 흐릴 때만 바꾸세요. 0이 원래대로이고 "
+                f"{COLOR_ADJUST_MIN}부터 +{COLOR_ADJUST_MAX}까지 넣을 수 있습니다. 화면의 미리 보기에는 "
+                "나타나지 않고 인쇄에만 적용됩니다. 이 값은 다음 인쇄에도 그대로 씁니다.", "muted", wrap=True))
+            colors = QHBoxLayout()
+            colors.setSpacing(SPACE["lg"])
+            for key, title in (("brightness", "밝기"), ("contrast", "명암"), ("saturation", "채도")):
+                field = StepperField(getattr(options, key), COLOR_ADJUST_MIN, COLOR_ADJUST_MAX, 5, 0)
+                field.setAccessibleName(title)
+                self.color_fields[key] = field
+                colors.addWidget(FormRow(title, field))
+            self.reset_color = QuietButton("0으로 되돌리기", "sm", accent=True)
+            self.reset_color.clicked.connect(self._reset_color)
+            colors.addWidget(self.reset_color, 0, Qt.AlignBottom)
+            self.body.addLayout(colors)
 
         self.white: QCheckBox | None = None
         self.uv: QCheckBox | None = None
@@ -180,6 +204,10 @@ class OptionsSheet(Dialog):
         self.offset_x.set_value(0.0)
         self.offset_y.set_value(0.0)
 
+    def _reset_color(self) -> None:
+        for field in self.color_fields.values():
+            field.set_value(0)
+
     def choices(self) -> PrintChoices:
         result = self._choices.clone()
         options = result.options
@@ -187,6 +215,8 @@ class OptionsSheet(Dialog):
         options.offset_x_mm = float(self.offset_x.value())
         options.offset_y_mm = float(self.offset_y.value())
         options.stop_on_error = self.stop_on_error.isChecked()
+        for key, field in self.color_fields.items():
+            setattr(options, key, int(field.value()))
         if self.sides is not None and self.sides.isEnabled():
             result.front_only = self.sides.current() == "front"
         if self.white is not None:

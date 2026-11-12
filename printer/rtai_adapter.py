@@ -16,7 +16,7 @@ import time
 from typing import Any, Dict, Mapping, Optional, Set, Tuple, Union
 
 from .base import (
-    CAP_CARD_MOVE, CAP_DUAL_SIDE, CAP_K_SPLIT, CAP_MAGNETIC, CAP_MIFARE, CAP_POSITION_OFFSET,
+    CAP_CARD_MOVE, CAP_DUAL_SIDE, CAP_K_SPLIT, CAP_MAGNETIC, CAP_MIFARE, CAP_POSITION_OFFSET, CAP_COLOR_ADJUST, color_adjust_from,
     CAP_RIBBON_LEVEL, CAP_STATUS, CAP_UV, CAP_WHITE, FAMILY_RTAI, ORIENTATION_PORTRAIT,
     STAGE_BACK_IMAGE, STAGE_DONE, STAGE_EJECT, STAGE_FEED, STAGE_FRONT_IMAGE, STAGE_MAGNETIC,
     STAGE_PRINT, STAGE_SETUP, STAGE_UNKNOWN, STAGE_WAIT, UNIT_UNKNOWN,
@@ -127,7 +127,7 @@ class RtaiAdapter(CardPrinter):
 
     CAPABILITIES = frozenset({
         CAP_DUAL_SIDE, CAP_WHITE, CAP_UV, CAP_MAGNETIC, CAP_STATUS, CAP_RIBBON_LEVEL,
-        CAP_K_SPLIT, CAP_MIFARE, CAP_CARD_MOVE, CAP_POSITION_OFFSET,
+        CAP_K_SPLIT, CAP_MIFARE, CAP_CARD_MOVE, CAP_POSITION_OFFSET, CAP_COLOR_ADJUST,
     })
 
     def __init__(self, lib: Any = None, dll_path: Optional[str] = None,
@@ -496,6 +496,14 @@ class RtaiAdapter(CardPrinter):
         finally:
             printer.bleed_crop_enabled = True
             printer.cleanup_layer_files()
+            self._reset_color_adjust()
+
+    def _reset_color_adjust(self) -> None:
+        """색 조정을 원래대로(0) 돌려 둔다. SDK에 값이 남아 같은 프로그램의 다른 인쇄(빠른 인쇄)에 번지지 않게 한다."""
+        try:
+            self._printer.set_image_visual_params(0, 0, 0)
+        except Exception as exc:
+            log.warning("색 조정 값을 되돌리지 못했습니다: %s", exc)
 
     def _precheck(self) -> None:
         status = self.status()
@@ -514,6 +522,8 @@ class RtaiAdapter(CardPrinter):
             printer.setup_canvas(side.orientation, rotation)
         else:
             printer.setup_canvas(side.orientation)
+        # 색 조정은 SDK에 남는 값이라, 조정하지 않는 카드도 0을 넣어 앞 카드의 값을 지운다.
+        printer.set_image_visual_params(*color_adjust_from(options))
         if side.white_mask_path:
             mask_path = sdk_white_mask(side.white_mask_path)
             if rotation:

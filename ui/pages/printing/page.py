@@ -330,7 +330,8 @@ class PrintPage(BasePage):
         self._defaults = defaults
         options = self._choices.options
         changed = False
-        for name in ("copies", "stop_on_error", "offset_x_mm", "offset_y_mm"):
+        for name in ("copies", "stop_on_error", "offset_x_mm", "offset_y_mm",
+                     "brightness", "contrast", "saturation"):
             old, new = getattr(before, name), getattr(defaults, name)
             if old != new and getattr(options, name) == old:
                 setattr(options, name, new)
@@ -670,8 +671,12 @@ class PrintPage(BasePage):
         self._choices = choices
         self.prefs.blockSignals(True)
         self.prefs.set_offsets(choices.options.offset_x_mm, choices.options.offset_y_mm)
+        self.prefs.set_color_adjust(choices.options.brightness, choices.options.contrast,
+                                    choices.options.saturation)
         self.prefs.blockSignals(False)
         self._defaults.offset_x_mm, self._defaults.offset_y_mm = self.prefs.offsets()
+        (self._defaults.brightness, self._defaults.contrast,
+         self._defaults.saturation) = self.prefs.color_adjust()
         self._recompute(True)
 
     # ------------------------------------------------------------------ 인쇄 전 확인

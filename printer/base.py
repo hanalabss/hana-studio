@@ -28,6 +28,23 @@ CAP_K_SPLIT = "k_split"
 CAP_MIFARE = "mifare"
 CAP_CARD_MOVE = "card_move"
 CAP_POSITION_OFFSET = "position_offset"
+CAP_COLOR_ADJUST = "color_adjust"      # 밝기·명암·채도를 프린터 쪽에서 조정
+
+# 색 조정 값의 범위. RTAI SDK(R600SetImgVisualParam)가 받는 범위를 실제로 넣어 보고 확인한 값이다.
+COLOR_ADJUST_MIN, COLOR_ADJUST_MAX = -100, 100
+COLOR_ADJUST_KEYS = ("brightness", "contrast", "saturation")
+
+
+def color_adjust_from(options) -> tuple:
+    """인쇄 옵션에서 (밝기, 명암, 채도)를 꺼낸다. 없거나 잘못된 값은 0, 범위를 넘으면 끝값으로 맞춘다."""
+    values = []
+    for key in COLOR_ADJUST_KEYS:
+        try:
+            value = int(round(float(options.get(key, 0) or 0)))
+        except (TypeError, ValueError, AttributeError):
+            value = 0
+        values.append(max(COLOR_ADJUST_MIN, min(COLOR_ADJUST_MAX, value)))
+    return tuple(values)
 
 # (진행률 0~100, 사용자에게 보여 줄 한국어 문구)
 ProgressCallback = Callable[[int, str], None]
