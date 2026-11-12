@@ -179,7 +179,7 @@ def set_setting(key: str, value: Any):
 
 class AppConstants:
     APP_NAME = "Hana Studio"
-    APP_VERSION = "1.0.0"
+    APP_VERSION = "2.0.0"
     
     class Colors:
         PRIMARY = "#4A90E2"

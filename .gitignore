@@ -212,3 +212,10 @@ temp/
 logs/
 # 이 PC의 라이선스 인증 정보
 license.json
+
+# 2.0 빌드 산출물
+dist_v2/
+build_v2/
+build_v2.log
+iscc_v2.log
+installer_output/
