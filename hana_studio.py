@@ -494,7 +494,8 @@ class HanaStudio(QMainWindow):
                 front_orientation=self.front_orientation,
                 back_orientation=self.back_orientation,
                 adjusted_x=self.adjusted_x,
-                adjusted_y=self.adjusted_y
+                adjusted_y=self.adjusted_y,
+                selected_printer=self.selected_printer_info
             )
 
             self.log(f"[OK] 인쇄 작업 #{job_id} 큐에 추가됨")
@@ -1737,6 +1738,7 @@ class HanaStudio(QMainWindow):
 
                     if reply == QMessageBox.StandardButton.Yes:
                         self._print_queue.cancel_all()
+                        self._print_queue.wait_idle(5000)
                     else:
                         event.ignore()
                         return

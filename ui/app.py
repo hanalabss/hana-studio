@@ -1,0 +1,62 @@
+"""새 앱 틀에 화면과 서비스를 올려 메인 창을 만든다."""
+from __future__ import annotations
+
+import logging
+
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QApplication
+
+log = logging.getLogger(__name__)
+
+
+def build_main_window(is_admin: bool = False, *, services=None, start_services: bool = True):
+    """메인 창(AppShell)을 만들어 돌려준다. QApplication과 테마 적용은 호출하는 쪽에서 먼저 한다."""
+    from ui.pages.design import DesignPage
+    from ui.pages.history import HistoryPage
+    from ui.pages.people import PeoplePage
+    from ui.pages.printer import PrinterPage
+    from ui.pages.printing import PrintPage
+    from ui.pages.services import AppServices
+    from ui.pages.settings import Prefs, SettingsPage
+    from ui.pages.workspace import Workspace
+    from ui.shell import (PAGE_DESIGN, PAGE_HISTORY, PAGE_LIST, PAGE_PRINT, PAGE_PRINTER,
+                          PAGE_SETTINGS, AppShell)
+
+    shell = AppShell(is_admin=is_admin)
+    workspace = Workspace(shell)
+    services = services or AppServices()
+
+    design = DesignPage(workspace)
+    people = PeoplePage(workspace)
+    printing = PrintPage(workspace, services)
+    history = HistoryPage(workspace, services)
+
+    shell.register_page(PAGE_DESIGN, design, "디자인", "design", step_label="카드 꾸미기")
+    shell.register_page(PAGE_LIST, people, "명단", "people", step_label="명단 넣기")
+    shell.register_page(PAGE_PRINT, printing, "인쇄", "print", step_label="인쇄하기")
+    shell.register_page(PAGE_HISTORY, history, "기록", "history")
+    shell.register_page(PAGE_PRINTER, PrinterPage(services), "프린터", "printer")
+    shell.register_page(PAGE_SETTINGS, SettingsPage(services=services), "설정", "settings")
+
+    shell.workspace = workspace
+    shell.services = services
+
+    def shutdown() -> None:
+        try:
+            services.shutdown()
+        except Exception:
+            log.exception("서비스 종료 실패")
+        try:
+            workspace.close()
+        except Exception:
+            log.exception("작업 상태 정리 실패")
+
+    app = QApplication.instance()
+    if app is not None:
+        app.aboutToQuit.connect(shutdown)
+
+    if start_services:
+        # 창이 뜬 뒤에 프린터를 찾는다(탐지가 창 표시를 늦추지 않게).
+        QTimer.singleShot(300, lambda: services.start(Prefs.instance().retention_days()))
+
+    return shell

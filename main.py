@@ -98,14 +98,20 @@ def main():
         #     print("[INFO] 이미 실행 중인 인스턴스가 있습니다.")
         #     sys.exit(0)
 
-        # Qt 환경 변수 설정
-        os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
-        os.environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "Floor"
+        try:
+            from utils.console import ensure_utf8_console
+            ensure_utf8_console()
+        except Exception:
+            pass
 
         # 최소한의 Qt import만
         from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel
         from PySide6.QtCore import Qt, QTimer
         from PySide6.QtGui import QFont
+
+        # 화면 배율(125%, 150%)에서도 새 화면이 선명하게 보이도록 설정
+        from ui.theme import configure_hidpi
+        configure_hidpi()
 
         # Qt 애플리케이션 생성
         app = QApplication(sys.argv)
@@ -122,6 +128,10 @@ def main():
             sys.exit(0)
 
         print(f"[OK] 라이선스 인증 완료 (Admin: {is_admin})")
+
+        # 새 화면 테마 적용 (라이선스 창은 기존 모습 유지)
+        from ui.theme import ThemeManager
+        ThemeManager.instance().apply(app)
 
         # 매우 심플한 로딩 화면
         loading = QWidget()
@@ -205,28 +215,20 @@ def main():
                     print("[IMPORT] image_viewer")
 
                 elif step == 5:
-                    status.setText("HanaStudio 생성 중...")
+                    status.setText("화면 준비 중...")
                     app.processEvents()
-                    from hana_studio import HanaStudio
-                    state['main_window'] = HanaStudio(is_admin=state['is_admin'])
-                    print(f"[INIT] HanaStudio 생성 (Admin: {state['is_admin']})")
+                    from ui.app import build_main_window
+                    state['main_window'] = build_main_window(is_admin=state['is_admin'])
+                    print(f"[INIT] 메인 화면 생성 (Admin: {state['is_admin']})")
 
-                elif step == 6:
-                    status.setText("패널 초기화...")
-                    app.processEvents()
-                    state['main_window'].ui.initialize_panels_deferred()
-                    print("[INIT] 패널 초기화")
-
-                elif step == 7:
-                    status.setText("뷰어 초기화...")
-                    app.processEvents()
-                    state['main_window'].ui.initialize_viewers_deferred()
-                    print("[INIT] 뷰어 초기화")
+                elif step in (6, 7):
+                    # 기존 화면(빠른 인쇄)의 패널·뷰어는 그 화면을 처음 열 때 초기화된다.
+                    pass
 
                 elif step == 8:
                     # 완료 - 로딩 화면 닫고 메인 윈도우 표시
                     loading.close()
-                    state['main_window'].show()
+                    state['main_window'].showMaximized()
                     print("[OK] 메인 윈도우 표시")
                     return  # 더 이상 단계 없음
 
