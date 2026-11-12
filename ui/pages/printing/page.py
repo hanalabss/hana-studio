@@ -61,6 +61,7 @@ _RUN_PREVIEW_DPI = 110.0
 class PrintPage(BasePage):
     """workspace: ui.pages.workspace.Workspace, services: ui.pages.services.AppServices."""
 
+    otherImageRequested = Signal()           # 다른 그림 한 장으로 바꿔서 또 뽑고 싶다
     showPeopleRequested = Signal(list)       # 명단 화면이 이 사람들만 보여 주면 된다
     stateChanged = Signal(str)
 
@@ -265,6 +266,7 @@ class PrintPage(BasePage):
         run.continueRequested.connect(self.continue_remaining)
         run.historyRequested.connect(self._open_history)
         run.backRequested.connect(self.back_to_ready)
+        run.otherImageRequested.connect(self.otherImageRequested)
 
     def on_enter(self) -> None:
         self._entered = True
@@ -1028,7 +1030,8 @@ class PrintPage(BasePage):
         failures = [(r.record_name, brief(r.message)) for r in job.results if r.status == CARD_FAILED]
         left = summary.cancelled        # 뽑지 않고 남은 카드(실패한 카드는 따로 센다)
         total, success, failed = summary.total, summary.success, summary.failed
-        view = SummaryView("", failures=failures, retry_count=failed, continue_count=left)
+        view = SummaryView("", failures=failures, retry_count=failed, continue_count=left,
+                           no_list=self._job_store is None)
         if left:
             view.continue_text = (f"실패한 카드까지 {failed + left:,}장 이어서 인쇄" if failed
                                   else f"남은 {left:,}장 이어서 인쇄")

@@ -451,18 +451,37 @@ class ImageSection(Section):
         if item is None or item.locked:
             return False
         width, height = self.controller.side_size_mm()
+        # 재단 여백(사방 2mm)까지 그려 둔 그림이면 그 여백을 카드 밖으로 내보낸다.
+        # 딱 맞춰 넣으면 그림 가장자리의 재단선·여백이 카드 위아래에 회색 선으로 찍힌다.
+        extra = self._bleed_in_picture(item, width, height)
         stack = self.controller.undo_stack
         stack.beginMacro("카드 전체로 맞추기")
         try:
-            self.controller.set_geometry(item.id, {"x": 0.0, "y": 0.0, "w": width, "h": height, "rotation": 0.0})
+            self.controller.set_geometry(item.id, {"x": -extra, "y": -extra, "w": width + 2 * extra,
+                                                   "h": height + 2 * extra, "rotation": 0.0})
             if item.fit != "fill":
                 self.edit({"fit": "fill"})
             self.controller.send_to_back([item.id])      # 카드 전체를 덮으니 글자·바코드 뒤로 보낸다
         finally:
             stack.endMacro()
         self.fit_control.set_current("fill", emit=False)
-        self.fit_hint.setText(self._fit_hint_text("fill"))
+        self.fit_hint.setText(
+            "그림에 재단 여백이 들어 있어, 가장자리 2mm는 카드 밖으로 내보냈습니다(인쇄되지 않습니다)."
+            if extra else self._fit_hint_text("fill"))
         return True
+
+    def _bleed_in_picture(self, item, card_w: float, card_h: float) -> float:
+        """이 그림에 든 재단 여백(mm). 카드 자체에 재단 여백이 있거나 그림을 알 수 없으면 0."""
+        document = self.controller.document
+        if getattr(document, "bleed_mm", 0) or not getattr(item, "asset", None):
+            return 0.0
+        try:
+            from PIL import Image
+
+            with Image.open(renderer.asset_path(document, item.asset)) as picture:
+                return storage.bleed_in_image(picture.size, (card_w, card_h))
+        except Exception:
+            return 0.0
 
     def _on_fit(self, fit: str) -> None:
         self.edit({"fit": fit})

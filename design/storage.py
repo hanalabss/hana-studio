@@ -14,7 +14,7 @@ from pathlib import Path, PurePosixPath
 from PIL import Image
 
 from design.model import Document, ImageItem
-from design.presets import CUT_54X86, CUT_54X86_BLEED, CardPreset
+from design.presets import CUT_54X86, CUT_54X86_BLEED, DEFAULT_BLEED_MM, CardPreset
 
 EXTENSION = ".hsd"
 DOCUMENT_ENTRY = "document.json"
@@ -209,6 +209,26 @@ def read_thumbnail(path: str | os.PathLike) -> bytes | None:
 
 def _ratio_matches(ratio: float, target: float) -> bool:
     return abs(ratio - target) / target <= _RATIO_TOLERANCE
+
+
+def bleed_in_image(image_size: tuple[int, int], card_size_mm: tuple[float, float],
+                   bleed_mm: float = DEFAULT_BLEED_MM) -> float:
+    """그림에 재단 여백이 들어 있다고 볼 수 있으면 그 여백(mm), 아니면 0.
+
+    디자인 프로그램에서 카드보다 사방 2mm씩 크게(54×86 카드면 58×90) 만든 그림은 가장자리에
+    재단선이나 여백이 들어 있다. 이런 그림을 카드에 딱 맞춰 넣으면 그 가장자리가 카드에 찍힌다.
+    그림의 가로세로 비가 카드보다 '카드 + 여백' 쪽에 더 가까울 때만 여백이 있다고 본다.
+    """
+    width_px, height_px = image_size
+    card_w, card_h = card_size_mm
+    if min(width_px, height_px, card_w, card_h) <= 0 or bleed_mm <= 0:
+        return 0.0
+    ratio = width_px / height_px
+    plain = card_w / card_h
+    with_bleed = (card_w + 2 * bleed_mm) / (card_h + 2 * bleed_mm)
+    if not _ratio_matches(ratio, with_bleed):
+        return 0.0
+    return bleed_mm if abs(ratio - with_bleed) < abs(ratio - plain) else 0.0
 
 
 def document_from_single_image(

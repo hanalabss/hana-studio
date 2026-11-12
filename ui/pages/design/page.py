@@ -13,7 +13,8 @@ from PySide6.QtWidgets import (
 
 from design import storage
 from ui.editor import IMAGE_EXTENSIONS, EditorError, EditorView, Problem
-from ui.shell import PAGE_LIST, BasePage, FooterAction
+from design import binding
+from ui.shell import PAGE_LIST, PAGE_PRINT, BasePage, FooterAction
 from ui.theme import SPACE, ThemeManager, mark_themed
 from ui.widgets import Dialog, Divider, IconButton, SecondaryButton, Toast
 
@@ -174,7 +175,8 @@ class DesignPage(BasePage):
         workspace.columns_changed.connect(self._sync_columns)
         ThemeManager.instance().themeChanged.connect(self._apply_theme)
 
-        self.set_footer_actions([FooterAction("다음: 명단 넣기", self.go_to_list)])
+        self._footer_mode = ""
+        self._sync_footer_actions()
         self._apply_theme()
         self._sync_columns()
         self._sync_view()
@@ -256,6 +258,34 @@ class DesignPage(BasePage):
     def go_to_list(self) -> None:
         self.go_to(PAGE_LIST)
 
+    def go_to_print(self) -> None:
+        self.go_to(PAGE_PRINT)
+
+    def needs_list(self) -> bool:
+        """명단이 있어야 하는 카드인가: 사람마다 바뀌는 칸이 있거나, 이미 명단을 넣어 두었을 때."""
+        try:
+            if binding.columns_used(self.controller.document):
+                return True
+            store = self.workspace.store
+            return store is not None and store.count() > 0
+        except Exception:
+            return True
+
+    def _sync_footer_actions(self) -> None:
+        mode = "list" if (not self._started or self.needs_list()) else "print"
+        if mode == self._footer_mode:
+            return
+        self._footer_mode = mode
+        if mode == "list":
+            self.set_footer_actions([FooterAction("다음: 명단 넣기", self.go_to_list)])
+        else:
+            # 캐릭터 카드처럼 모든 카드가 같은 그림이면 명단 없이 바로 인쇄한다.
+            self.set_footer_actions([
+                FooterAction("명단 넣기", self.go_to_list, "secondary",
+                             tooltip="사람마다 이름이나 사진이 바뀌는 카드를 만들 때 씁니다"),
+                FooterAction("다음: 인쇄하기", self.go_to_print),
+            ])
+
     def notify(self, text: str, kind: str = "info") -> None:
         if self._wired_shell is not None:
             self._wired_shell.show_toast(text, kind)
@@ -304,8 +334,11 @@ class DesignPage(BasePage):
             hint = "시작할 모양을 고르면 꾸미는 화면이 열립니다."
         else:
             count = len(self.controller.problems())
+            done = ("카드를 다 꾸몄으면 명단을 넣습니다." if self.needs_list()
+                    else "모든 카드가 같은 모습입니다. 명단 없이 바로 인쇄할 수 있습니다.")
             hint = (f"확인할 것이 {count}개 있습니다. 아무것도 고르지 않으면 오른쪽에 목록이 보입니다."
-                    if count else "카드를 다 꾸몄으면 명단을 넣습니다.")
+                    if count else done)
+        self._sync_footer_actions()
         if hint != self.footer_hint():
             self.set_footer_hint(hint)
 

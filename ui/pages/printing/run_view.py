@@ -63,6 +63,7 @@ class SummaryView:
     continue_count: int = 0
     continue_text: str = ""
     note: str = ""
+    no_list: bool = False                  # 명단 없이 같은 카드를 뽑은 작업
 
 
 class _StateFilter(QSortFilterProxyModel):
@@ -90,6 +91,7 @@ class RunView(QWidget):
     continueRequested = Signal()
     historyRequested = Signal()
     backRequested = Signal()
+    otherImageRequested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -299,8 +301,13 @@ class RunView(QWidget):
         self.retry_button = PrimaryButton("", "lg", icon="print")
         self.continue_button = SecondaryButton("", "lg")
         self.back_button = SecondaryButton("인쇄 준비로 돌아가기", "lg")
+        self.other_image_button = SecondaryButton("다른 그림으로 뽑기", "lg", icon="image")
+        self.other_image_button.setToolTip("카드로 쓸 다른 그림을 고르고 바로 인쇄 준비로 갑니다")
+        self.other_image_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.other_image_button.clicked.connect(self.otherImageRequested)
         self.history_button = QuietButton("기록에서 자세히 보기", accent=True, icon="history")
-        for button in (self.retry_button, self.continue_button, self.back_button, self.history_button):
+        for button in (self.retry_button, self.continue_button, self.back_button, self.other_image_button,
+                       self.history_button):
             button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             layout.addWidget(button)
         self.retry_button.clicked.connect(self.retryRequested)
@@ -485,7 +492,11 @@ class RunView(QWidget):
         self.continue_button.set_variant("primary" if summary.retry_count == 0 else "secondary")
         primary_back = summary.retry_count == 0 and summary.continue_count == 0
         self.back_button.set_variant("primary" if primary_back else "secondary")
-        self.back_button.setText("다른 카드 뽑기" if primary_back else "인쇄 준비로 돌아가기")
+        if summary.no_list and primary_back:
+            self.back_button.setText("같은 카드 또 뽑기")
+        else:
+            self.back_button.setText("다른 카드 뽑기" if primary_back else "인쇄 준비로 돌아가기")
+        self.other_image_button.setVisible(summary.no_list and primary_back)
         self.stack.setCurrentIndex(1)
 
     def failure_texts(self) -> list[str]:

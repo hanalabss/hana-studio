@@ -678,3 +678,25 @@ def test_manual_mask_goes_to_the_white_layer_and_is_undoable(editor, tmp_path):
     assert section.clear_manual_mask() and item.mask_asset is None and not section.has_manual_mask()
     editor.controller.undo_stack.undo()
     assert item.mask_asset and section.has_manual_mask()
+
+
+def test_fill_card_pushes_a_pictures_own_bleed_outside_the_card(editor, tmp_path):
+    """58×90 비율(카드 + 사방 2mm)로 만든 시안을 딱 맞춰 넣으면 가장자리 재단선이 카드에 찍힌다(현장 피드백)."""
+    controller = editor.controller
+    controller.new_document("cut_54x86", None, orientation="portrait")
+    item = editor.add_image_file(make_image(tmp_path / "sian.png", size=(685, 1063)))
+    editor.inspector.image.fill_card_button.click()
+    width, height = controller.side_size_mm()
+    assert (item.x, item.y) == (-2.0, -2.0)
+    assert (item.w, item.h) == pytest.approx((width + 4.0, height + 4.0))
+    assert "재단 여백" in editor.inspector.image.fit_hint.text()
+
+
+def test_bleed_in_image_only_when_the_ratio_says_so():
+    from design.storage import bleed_in_image
+
+    assert bleed_in_image((685, 1063), (54.0, 86.0)) == 2.0        # 58×90
+    assert bleed_in_image((685, 1063), (53.98, 85.6)) == 2.0       # 표준 카드에도
+    assert bleed_in_image((638, 1016), (54.0, 86.0)) == 0.0        # 카드와 같은 비율
+    assert bleed_in_image((200, 60), (85.6, 53.98)) == 0.0
+    assert bleed_in_image((0, 10), (54.0, 86.0)) == 0.0

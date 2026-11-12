@@ -44,6 +44,14 @@ def build_main_window(is_admin: bool = False, *, services=None, start_services: 
     printing = PrintPage(workspace, services)
     history = HistoryPage(workspace, services)
 
+    def print_another_image() -> None:
+        """인쇄가 끝난 뒤 '다른 그림으로 뽑기': 그림을 고르면 그 그림 카드로 바꾸고 인쇄 준비로 돌아간다."""
+        if design.start_from_image():
+            printing.back_to_ready()
+            printing.refresh_now()
+
+    printing.otherImageRequested.connect(print_another_image)
+
     shell.register_page(PAGE_DESIGN, design, "디자인", "design", step_label="카드 꾸미기")
     shell.register_page(PAGE_LIST, people, "명단", "people", step_label="명단 넣기")
     shell.register_page(PAGE_PRINT, printing, "인쇄", "print", step_label="인쇄하기")

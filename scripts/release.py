@@ -91,7 +91,8 @@ def pack(vpk: str, version: str) -> None:
     OUT.mkdir(exist_ok=True)
     run([vpk, "pack", "--packId", PACK_ID, "--packVersion", version, "--packDir", str(DIST),
          "--mainExe", "HanaStudio.exe", "--packTitle", TITLE, "--packAuthors", "Hana Platform",
-         "--icon", str(ROOT / "hana.ico"), "--outputDir", str(OUT)])
+         "--icon", str(ROOT / "hana.ico"), "--outputDir", str(OUT),
+         "--noPortable"])        # 설치 파일과 업데이트 파일만 만든다(휴대용 zip 432MB는 올리지 않는다)
 
 
 def upload(vpk: str, version: str, token: str) -> None:
