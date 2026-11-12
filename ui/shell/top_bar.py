@@ -15,7 +15,7 @@ from ui.widgets import (
     set_prop,
 )
 
-APP_NAME = "하나스튜디오"
+APP_NAME = "hanaStudio"
 
 
 class PrinterPopover(QFrame):

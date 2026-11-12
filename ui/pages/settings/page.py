@@ -34,9 +34,9 @@ def version_lines() -> list[tuple[str, str]]:
     try:
         from config import AppConstants
 
-        lines.append(("하나스튜디오", AppConstants.APP_VERSION))
+        lines.append(("hanaStudio", AppConstants.APP_VERSION))
     except Exception:
-        lines.append(("하나스튜디오", "알 수 없음"))
+        lines.append(("hanaStudio", "알 수 없음"))
     try:
         from printer.printer_utils import get_default_dll_paths
 

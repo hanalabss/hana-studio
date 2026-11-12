@@ -1,12 +1,12 @@
-﻿; 하나스튜디오 2 설치 스크립트 (1.0과 나란히 설치된다: 설치 폴더·시작 메뉴·등록 정보가 따로다)
+﻿; hanaStudio 설치 스크립트 (1.0과 나란히 설치된다: 설치 폴더·시작 메뉴·등록 정보가 따로다)
 ; 파일명: setup_v2.iss
 
 [Setup]
 ; 기본 정보
 AppId={{7B5E2B0C-4C1E-4E0B-9A57-2D0C5F6A21E2}
-AppName=하나스튜디오 2
+AppName=hanaStudio
 AppVersion=2.0.0
-AppVerName=하나스튜디오 2.0.0
+AppVerName=hanaStudio 2.0.0
 AppPublisher=Hana Studio Team
 AppPublisherURL=https://hanastudio.com
 AppSupportURL=https://hanastudio.com/support
@@ -15,7 +15,7 @@ AppCopyright=Copyright (C) 2025 Hana Studio Team
 
 ; 설치 경로 및 그룹
 DefaultDirName={autopf}\Hana Studio 2
-DefaultGroupName=하나스튜디오 2
+DefaultGroupName=hanaStudio
 AllowNoIcons=yes
 
 ; 출력 설정
@@ -39,7 +39,7 @@ DisableProgramGroupPage=yes
 
 ; 제거 프로그램
 UninstallDisplayIcon={app}\HanaStudio.exe
-UninstallDisplayName=하나스튜디오 2
+UninstallDisplayName=hanaStudio
 
 [Languages]
 Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
@@ -81,18 +81,18 @@ Name: "{app}\_internal"
 
 [Icons]
 ; 시작메뉴 바로가기
-Name: "{group}\하나스튜디오 2"; Filename: "{app}\HanaStudio.exe"; IconFilename: "{app}\hana.ico"; WorkingDir: "{app}"
-Name: "{group}\하나스튜디오 2 제거"; Filename: "{uninstallexe}"
+Name: "{group}\hanaStudio"; Filename: "{app}\HanaStudio.exe"; IconFilename: "{app}\hana.ico"; WorkingDir: "{app}"
+Name: "{group}\hanaStudio 제거"; Filename: "{uninstallexe}"
 
 ; 바탕화면 바로가기
-Name: "{autodesktop}\하나스튜디오 2"; Filename: "{app}\HanaStudio.exe"; IconFilename: "{app}\hana.ico"; Tasks: desktopicon; WorkingDir: "{app}"
+Name: "{autodesktop}\hanaStudio"; Filename: "{app}\HanaStudio.exe"; IconFilename: "{app}\hana.ico"; Tasks: desktopicon; WorkingDir: "{app}"
 
 ; 빠른 실행 바로가기 (Windows 10 이하)
-Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\하나스튜디오 2"; Filename: "{app}\HanaStudio.exe"; IconFilename: "{app}\hana.ico"; Tasks: quicklaunchicon; WorkingDir: "{app}"
+Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\hanaStudio"; Filename: "{app}\HanaStudio.exe"; IconFilename: "{app}\hana.ico"; Tasks: quicklaunchicon; WorkingDir: "{app}"
 
 [Run]
 ; 설치 완료 후 실행 옵션
-Filename: "{app}\HanaStudio.exe"; Description: "하나스튜디오 2 시작하기"; Flags: nowait postinstall skipifsilent; WorkingDir: "{app}"
+Filename: "{app}\HanaStudio.exe"; Description: "hanaStudio 시작하기"; Flags: nowait postinstall skipifsilent; WorkingDir: "{app}"
 
 ; Visual C++ 재배포 가능 패키지 설치 (필요한 경우)
 ; Filename: "{tmp}\vcredist_x64.exe"; Parameters: "/quiet"; StatusMsg: "Visual C++ 런타임 설치 중..."; Flags: waituntilterminated
@@ -245,9 +245,9 @@ DiskSpaceMBLabel=적어도 [mb] MB의 사용 가능한 디스크 공간이 필�
 
 [CustomMessages]
 ; 사용자 정의 메시지
-AppIsRunning=하나스튜디오 2가 현재 실행 중입니다. 프로그램을 종료한 후 설치를 계속하세요.
-LaunchProgram=하나스튜디오 2 시작하기
-InstallationComplete=하나스튜디오 2 설치가 완료되었습니다!
+AppIsRunning=hanaStudio가 현재 실행 중입니다. 프로그램을 종료한 후 설치를 계속하세요.
+LaunchProgram=hanaStudio 시작하기
+InstallationComplete=hanaStudio 설치가 완료되었습니다!
 SystemRequirements=시스템 요구사항:%n- Windows 10 64bit 이상%n- 메모리: 4GB RAM 권장%n- 저장공간: 1GB 이상%n- 프린터: RTAI LUKA R600 호환
 InstallPath=설치 경로: {app}
 DLLInstallSuccess=프린터 DLL이 성공적으로 설치되었습니다.

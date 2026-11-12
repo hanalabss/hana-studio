@@ -139,7 +139,7 @@ class LicenseDialog(QDialog):
 
     def _setup_dialog(self):
         """다이얼로그 설정"""
-        self.setWindowTitle("라이선스 인증 - Hana Studio")
+        self.setWindowTitle("라이선스 인증 - hanaStudio")
         self.setModal(True)
         self.setFixedSize(400, 280)
         self.setStyleSheet("""

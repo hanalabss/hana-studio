@@ -176,7 +176,7 @@ def main():
 
         # 로딩 화면: 로고, 이름, 지금 하는 일, 아래에 리본 색 띠
         loading = QWidget()
-        loading.setWindowTitle("하나스튜디오")
+        loading.setWindowTitle("hanaStudio")
         loading.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         loading.setFixedSize(420, 240)
         loading.setObjectName("Loading")
@@ -197,7 +197,7 @@ def main():
         logo.setPixmap(logo_pixmap(64, loading.devicePixelRatioF()))
         layout.addWidget(logo)
 
-        title = QLabel("하나스튜디오")
+        title = QLabel("hanaStudio")
         title.setAlignment(Qt.AlignCenter)
         title.setFont(QFont("Malgun Gothic", 17, QFont.Bold))
         title.setStyleSheet("color: #1B2430;")

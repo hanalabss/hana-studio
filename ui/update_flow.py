@@ -37,7 +37,7 @@ class DownloadDialog(Dialog):
     """새 버전을 받는 동안 보이는 창. 닫을 수 없다(받는 중에 끊기지 않게)."""
 
     def __init__(self, version: str, parent: QWidget | None = None) -> None:
-        super().__init__(f"하나스튜디오 {version}을 받는 중입니다",
+        super().__init__(f"hanaStudio {version}을 받는 중입니다",
                          "다 받으면 프로그램이 저절로 다시 켜집니다. 잠시만 기다려 주세요.", parent, width=460)
         self.bar = ProgressBar()
         self.bar.setRange(0, 100)
@@ -88,7 +88,7 @@ class UpdateFlow(QObject):
         if not self.updater.supported:
             if not silent:
                 inform(self._parent, "업데이트를 확인할 수 없습니다",
-                       "온라인 업데이트는 설치 파일로 설치한 하나스튜디오에서만 됩니다.")
+                       "온라인 업데이트는 설치 파일로 설치한 hanaStudio에서만 됩니다.")
             self.finished.emit("unsupported")
             return
         self._start(lambda worker: self.updater.check(), self._on_checked)

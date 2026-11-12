@@ -114,7 +114,7 @@ def test_navigate_switches_page_and_calls_hooks(shell, spy):
     assert shell.nav.current() == PAGE_LIST
     assert (design.leave_count, people.enter_count) == (1, 1)
     assert changed.calls == [(PAGE_LIST,)]
-    assert "명단" in shell.windowTitle() and "하나스튜디오" in shell.windowTitle()
+    assert "명단" in shell.windowTitle() and "hanaStudio" in shell.windowTitle()
 
     assert shell.navigate(PAGE_LIST) is True
     assert people.enter_count == 1 and len(changed) == 1, "같은 화면으로 다시 가면 아무 일도 없다"

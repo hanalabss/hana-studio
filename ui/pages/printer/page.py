@@ -55,7 +55,7 @@ def checklist_for(diagnostics: list[str]) -> list[str]:
                       and "찾을 수 없" in line for line in diagnostics)]
     if missing:
         items.append(f"{', '.join(missing)} 프린터를 쓰는 데 필요한 프로그램 파일이 빠져 있습니다. "
-                     "하나스튜디오를 다시 설치해 주세요.")
+                     "hanaStudio를 다시 설치해 주세요.")
     if "오류" in text:
         items.append("프린터를 찾다가 문제가 생겼습니다. 프린터를 껐다가 10초 뒤에 다시 켜 주세요.")
     items.append("확인했으면 위의 '다시 찾기'를 눌러 주세요.")

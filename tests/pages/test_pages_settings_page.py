@@ -140,8 +140,8 @@ def test_folders_and_versions(env, tmp_path):
     button.click()
     assert opened == [path]
     assert (tmp_path / "appdata" / "HanaStudio").is_dir(), "없는 폴더는 만들어서 연다"
-    assert set(page.version_labels) >= {"하나스튜디오", "RTAI 프린터용 파일", "SMART 프린터용 파일"}
-    assert page.version_labels["하나스튜디오"]
+    assert set(page.version_labels) >= {"hanaStudio", "RTAI 프린터용 파일", "SMART 프린터용 파일"}
+    assert page.version_labels["hanaStudio"]
 
 
 def test_app_services_bundle_starts_and_shuts_down(env, queue, history, tmp_path):

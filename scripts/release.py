@@ -1,4 +1,4 @@
-"""하나스튜디오 2 배포판 만들기 (온라인 업데이트용: Velopack + GitHub 릴리스).
+"""hanaStudio 배포판 만들기 (온라인 업데이트용: Velopack + GitHub 릴리스).
 
     python scripts/release.py                  빌드하고 releases_v2/ 에 설치 파일과 업데이트 파일을 만든다
     python scripts/release.py --skip-build     dist_v2/HanaStudio 를 그대로 써서 포장만 한다
@@ -23,7 +23,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PACK_ID = "HanaStudio2"
-TITLE = "하나스튜디오 2"
+TITLE = "hanaStudio"
 REPO_URL = "https://github.com/hanalabss/hana-studio"
 REPO = "hanalabss/hana-studio"
 DIST = ROOT / "dist_v2" / "HanaStudio"
@@ -134,7 +134,7 @@ def prune_local(keep: int = KEEP_RELEASES) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="하나스튜디오 2 배포판 만들기")
+    parser = argparse.ArgumentParser(description="hanaStudio 배포판 만들기")
     parser.add_argument("--version", help="버전(기본: config.py의 APP_VERSION)")
     parser.add_argument("--skip-build", action="store_true", help="PyInstaller 빌드를 건너뛴다")
     parser.add_argument("--no-previous", action="store_true", help="직전 버전을 받지 않는다(delta 없이 전체 파일만)")
