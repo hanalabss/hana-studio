@@ -16,7 +16,7 @@ from ui.widgets import theme_color
 
 log = logging.getLogger(__name__)
 
-PREVIEW_DPI = 150.0
+PREVIEW_DPI = 300.0        # 인쇄와 같은 해상도로 그린다. 낮게 그려 늘리면 사진과 글자가 뿌옇게 보인다
 _CORNER_RATIO = 3.18 / 85.6     # CR80 모서리 둥글기
 
 
@@ -97,6 +97,7 @@ class CardPreview(QWidget):
         super().__init__(parent)
         self._margin = float(margin)
         self._pixmap: QPixmap | None = None
+        self._scaled: QPixmap | None = None      # 화면에 놓이는 크기로 곱게 줄여 둔 것
         self._placeholder = "미리 볼 카드가 없습니다"
         self._aspect = 85.6 / 53.98
         self.setMinimumSize(minimum)
@@ -109,7 +110,19 @@ class CardPreview(QWidget):
         else:
             self._pixmap = QPixmap.fromImage(image)
             self._aspect = image.width() / max(1, image.height())
+        self._scaled = None
         self.update()
+
+    def _display_pixmap(self, rect: QRectF) -> QPixmap:
+        """카드가 놓이는 크기(화면 배율 포함)에 맞춘 그림. 그릴 때마다 대충 줄이면 흐리거나 거칠어진다."""
+        ratio = self.devicePixelRatioF()
+        target = QSize(max(1, round(rect.width() * ratio)), max(1, round(rect.height() * ratio)))
+        if self._scaled is None or self._scaled.size() != target:
+            if target.width() >= self._pixmap.width():
+                self._scaled = self._pixmap           # 늘려야 할 때는 원본을 그대로 쓴다
+            else:
+                self._scaled = self._pixmap.scaled(target, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+        return self._scaled
 
     def set_aspect(self, width_mm: float, height_mm: float) -> None:
         if width_mm > 0 and height_mm > 0:
@@ -144,7 +157,8 @@ class CardPreview(QWidget):
         if self._pixmap is not None:
             painter.save()
             painter.setClipPath(path)
-            painter.drawPixmap(rect, self._pixmap, QRectF(self._pixmap.rect()))
+            shown = self._display_pixmap(rect)
+            painter.drawPixmap(rect, shown, QRectF(shown.rect()))
             painter.restore()
             painter.setPen(QPen(theme_color("control_line"), 1))
             painter.setBrush(Qt.NoBrush)
