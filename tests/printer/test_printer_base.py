@@ -121,3 +121,82 @@ def test_context_manager_closes_the_printer():
         printer.connect(PrinterDevice("test", "x"))
         assert printer.is_connected
     assert not printer.is_connected
+
+
+# ── 구조화된 진행 · 잔량 단위 · 카드 공급자 ────────────────────────────────────
+def test_structured_progress_receives_events_and_plain_callbacks_keep_working():
+    from printer.base import STAGE_FEED, ProgressEvent, StructuredProgress, emit_progress
+
+    class Staged(_Minimal):
+        def print_card(self, job, progress=None):
+            self._report(15, "카드 삽입 중...", progress, stage=STAGE_FEED)
+            self._report(250, "끝", progress)
+
+    events, plain = [], []
+    Staged().print_card(CardJob(front=SideImages("a")), progress=StructuredProgress(events.append))
+    Staged().print_card(CardJob(front=SideImages("a")), progress=lambda p, m: plain.append((p, m)))
+    assert events == [ProgressEvent(15, "카드 삽입 중...", STAGE_FEED), ProgressEvent(100, "끝")]
+    assert (events[0].panel, events[0].fraction, events[0].side) == (None, None, None)
+    assert plain == [(15, "카드 삽입 중..."), (100, "끝")]
+
+    # 예전 방식으로 불러도 이벤트가 된다(단계는 모름)
+    collected = []
+    callback = StructuredProgress(collected.append)
+    callback(140, "예전 방식")
+    emit_progress(callback, ProgressEvent(5, "새 방식", "prepare", panel="K", fraction=0.5))
+    emit_progress(None, ProgressEvent(5, "버려짐"))
+    assert collected == [ProgressEvent(100, "예전 방식"),
+                         ProgressEvent(5, "새 방식", "prepare", panel="K", fraction=0.5)]
+
+
+def test_status_remaining_is_only_cards_when_the_unit_says_so():
+    from printer.base import UNIT_CARDS, UNIT_PERCENT, UNIT_UNKNOWN, remaining_text
+
+    unknown = PrinterStatus(True, "ok", ribbon_remaining=310, film_remaining=40)
+    assert (unknown.ribbon_unit, unknown.film_unit) == (UNIT_UNKNOWN, UNIT_UNKNOWN)
+    assert unknown.ribbon_cards_left is None and unknown.film_cards_left is None
+
+    cards = PrinterStatus(True, "ok", ribbon_remaining=310, ribbon_unit=UNIT_CARDS,
+                          film_remaining=-3, film_unit=UNIT_CARDS)
+    assert cards.ribbon_cards_left == 310 and cards.film_cards_left == 0
+    assert PrinterStatus(True, "ok", ribbon_remaining=62, ribbon_unit=UNIT_PERCENT).ribbon_cards_left is None
+    assert PrinterStatus(True, "ok", ribbon_unit=UNIT_CARDS).ribbon_cards_left is None
+
+    assert remaining_text(310, UNIT_CARDS) == "약 310장"
+    assert remaining_text(62, UNIT_PERCENT) == "62 %"
+    assert remaining_text(310) == "310 (단위 확인 안 됨)" and "장" not in remaining_text(310)
+    assert remaining_text(None, UNIT_CARDS) == "확인 불가"
+
+
+def test_card_provider_helpers():
+    from printer.base import (
+        CardProvider, PrintCancelled, as_card_provider, provider_is_dual_side, provider_record_id,
+    )
+
+    jobs = (CardJob(front=SideImages("a"), record_id=7),
+            CardJob(front=SideImages("a"), back=SideImages("b"), record_id=8))
+    as_list = as_card_provider(jobs)
+    assert as_list == list(jobs) and isinstance(as_list, list) and isinstance(as_list, CardProvider)
+    assert provider_is_dual_side(as_list) and provider_record_id(as_list, 0) == 7
+    assert as_card_provider(job for job in jobs) == list(jobs)
+
+    class Provider:
+        touched = []
+
+        def __len__(self):
+            return 2
+
+        def __getitem__(self, index):
+            self.touched.append(index)
+            return jobs[index]
+
+    provider = Provider()
+    assert as_card_provider(provider) is provider
+    assert provider_is_dual_side(provider) is False and provider_record_id(provider, 1) is None
+    provider.is_dual_side = True
+    provider.record_id = lambda index: 1 // 0
+    assert provider_is_dual_side(provider) is True and provider_record_id(provider, 1) is None
+    assert provider.touched == [], "길이·양면 여부·레코드 조회로는 카드를 만들지 않는다"
+
+    cancelled = PrintCancelled()
+    assert isinstance(cancelled, PrinterError) and cancelled.recoverable and "취소" in str(cancelled)

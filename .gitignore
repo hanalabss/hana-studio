@@ -31,6 +31,8 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+# 빌드 설정은 직접 관리하는 파일이라 버전 관리에 넣는다
+!HanaStudio.spec
 
 # Installer logs
 pip-log.txt

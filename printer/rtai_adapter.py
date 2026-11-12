@@ -18,6 +18,8 @@ from typing import Any, Dict, Mapping, Optional, Set, Tuple, Union
 from .base import (
     CAP_CARD_MOVE, CAP_DUAL_SIDE, CAP_K_SPLIT, CAP_MAGNETIC, CAP_MIFARE, CAP_POSITION_OFFSET,
     CAP_RIBBON_LEVEL, CAP_STATUS, CAP_UV, CAP_WHITE, FAMILY_RTAI, ORIENTATION_PORTRAIT,
+    STAGE_BACK_IMAGE, STAGE_DONE, STAGE_EJECT, STAGE_FEED, STAGE_FRONT_IMAGE, STAGE_MAGNETIC,
+    STAGE_PRINT, STAGE_SETUP, STAGE_UNKNOWN, STAGE_WAIT, UNIT_UNKNOWN,
     CardJob, CardPrinter, MagneticTracks, PrinterDevice, PrinterError, PrinterStatus,
     ProgressCallback, SideImages,
 )
@@ -221,7 +223,9 @@ class RtaiAdapter(CardPrinter):
         status.card_inside = probe(printer.has_card_inside)
         remaining = probe(printer.get_ribbon_and_film_remaining)
         if remaining is not None:
+            # SDK 값 그대로. 장수인지 %인지 실기로 확인하지 못했으므로 단위는 "모름"으로 둔다.
             status.ribbon_remaining, status.film_remaining = remaining
+            status.ribbon_unit = status.film_unit = UNIT_UNKNOWN
         settings = probe(printer.read_ribbon_settings)
         if settings is not None:
             status.ribbon_type = settings["ribbon_type"]
@@ -327,10 +331,12 @@ class RtaiAdapter(CardPrinter):
         job.validate()
         self._check_files(job)
         for copy in range(1, job.copies + 1):
-            def report(percent: int, message: str, _copy=copy) -> None:
+            def report(percent: int, message: str, stage: str = STAGE_UNKNOWN,
+                       side: Optional[str] = None, _copy=copy) -> None:
                 overall = int(((_copy - 1) * 100 + percent) / job.copies)
                 prefix = f"[{_copy}/{job.copies}] " if job.copies > 1 else ""
-                self._report(overall, prefix + message, progress)
+                self._report(overall, prefix + message, progress, stage=stage, side=side,
+                             copy=_copy, copies=job.copies)
             self._print_one(job, report)
             if copy < job.copies and self.settle_seconds:
                 time.sleep(self.settle_seconds)
@@ -348,49 +354,59 @@ class RtaiAdapter(CardPrinter):
                     raise PrinterError(f"{label} {kind} 파일을 찾을 수 없습니다: {path}")
 
     def _print_one(self, job: CardJob, report) -> None:
+        """카드 한 장. 알릴 수 있는 단계는 우리가 SDK를 부르는 경계뿐이다.
+
+        R600PrintDraw 한 번이 앞면 인쇄·뒤집기·뒷면 인쇄·재전사를 모두 하고 끝나야 돌아온다.
+        그 사이의 패널(Y/M/C/K/W)·면 진행을 알려 주는 SDK 함수는 없으므로 STAGE_PRINT 하나로만
+        알리고 panel·fraction은 채우지 않는다.
+        """
         printer = self._printer
         options = job.options
         dual = job.is_dual_side
         first = job.front or job.back
         tracks = MagneticTracks.coerce(options.get("magnetic"))
+        # 이미 칼선 크기로 만든 카드면 드라이버의 비율 기반 도련 제거를 이 카드 동안만 끈다.
+        printer.bleed_crop_enabled = not options.get("bleed_handled")
         try:
             printer.set_position_offset(options.get("offset_x_mm", 0.0),
                                         options.get("offset_y_mm", 0.0))
             if options.get("precheck"):
                 self._precheck()
-            report(10 if dual else 15, "카드 삽입 중...")
+            report(10 if dual else 15, "카드 삽입 중...", STAGE_FEED)
             printer.inject_card()
             if not tracks.is_empty():
-                report(12 if dual else 18, "마그네틱 기록 중...")
+                report(12 if dual else 18, "마그네틱 기록 중...", STAGE_MAGNETIC)
                 self._encode_magnetic(tracks, options)
-            report(15 if dual else 25, "리본 설정 중...")
+            report(15 if dual else 25, "리본 설정 중...", STAGE_SETUP)
             if options.get("k_split") is not None:
                 printer.set_k_split_print(bool(options["k_split"]) and dual)
             printer.set_ribbon_option(ribbon_type=1, key=0, value="2")
 
-            report(30 if dual else 45, "앞면 준비 중..." if dual else "이미지 준비 중...")
+            report(30 if dual else 45, "앞면 준비 중..." if dual else "이미지 준비 중...",
+                   STAGE_FRONT_IMAGE, "front")
             front_info = self._prepare_side(first, is_back=False, options=options)
             back_info = None
             if dual:
-                report(45, "뒷면 준비 중...")
+                report(45, "뒷면 준비 중...", STAGE_BACK_IMAGE, "back")
                 back_info = self._prepare_side(job.back, is_back=True, options=options)
 
-            report(70, "인쇄 실행 중...")
+            report(70, "인쇄 실행 중...", STAGE_PRINT)
             result = printer.lib.R600PrintDraw(
                 front_info.encode("cp949"),
                 back_info.encode("cp949") if back_info else ctypes.c_char_p(None))
             printer._check_result(result, "양면 인쇄 실행" if dual else "단면 인쇄 실행")
 
-            report(85, "인쇄 완료 대기...")
+            report(85, "인쇄 완료 대기...", STAGE_WAIT)
             time.sleep(self.settle_seconds)
-            report(95, "카드 배출 중...")
+            report(95, "카드 배출 중...", STAGE_EJECT)
             printer.eject_card()
             time.sleep(self.settle_seconds)
-            report(100, "완료")
+            report(100, "완료", STAGE_DONE)
         except (R600PrinterError, PrinterError) as exc:
             self._eject_quietly()
             raise self._translate(exc) from exc
         finally:
+            printer.bleed_crop_enabled = True
             printer.cleanup_layer_files()
 
     def _precheck(self) -> None:

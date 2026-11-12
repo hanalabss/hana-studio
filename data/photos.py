@@ -149,8 +149,15 @@ def binding_record(store: DataStore, record: Record) -> dict[str, Any]:
     return PhotoResolver(store).binding_record(record)
 
 
-def get_adjustment(store: DataStore, record_id: int, column: str) -> PhotoAdjustment:
-    return store.get_photo_adjustment(record_id, column)
+def get_adjustment(
+    store: DataStore, record_id: int, column: str, default: PhotoAdjustment | None = PhotoAdjustment()
+) -> PhotoAdjustment | None:
+    """저장된 사진 조정값. 없으면 default(None을 주면 "저장된 값 없음"을 구별할 수 있다)."""
+    return store.get_photo_adjustment(record_id, column, default)
+
+
+def has_adjustment(store: DataStore, record_id: int, column: str) -> bool:
+    return store.has_photo_adjustment(record_id, column)
 
 
 def set_adjustment(store: DataStore, record_id: int, column: str, adjustment: PhotoAdjustment) -> None:

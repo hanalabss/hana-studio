@@ -33,7 +33,12 @@ from .base import (
     SideImages,
     MagneticTracks,
     PrinterError,
-    NotSupported
+    NotSupported,
+    PrintCancelled,
+    ProgressEvent,
+    StructuredProgress,
+    CardProvider,
+    remaining_text,
 )
 from .history import JobHistory
 from . import registry
@@ -73,6 +78,11 @@ __all__ = [
     'MagneticTracks',
     'PrinterError',
     'NotSupported',
+    'PrintCancelled',
+    'ProgressEvent',
+    'StructuredProgress',
+    'CardProvider',
+    'remaining_text',
     'JobHistory',
     'registry'
 ]

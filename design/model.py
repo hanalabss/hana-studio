@@ -19,6 +19,7 @@ ORIENTATIONS = ("landscape", "portrait")
 SIDE_KEYS = ("front", "back")
 ALIGN_MODES = ("left", "center", "right", "top", "middle", "bottom")
 DISTRIBUTE_AXES = ("horizontal", "vertical")
+REFLOW_MODES = ("reposition", "scale", "fit")
 
 DEFAULT_FONT_FAMILY = "Malgun Gothic"
 CR80_WIDTH_MM = 85.6
@@ -319,6 +320,146 @@ def distribute_items(items: Sequence[Item], axis: str) -> list[Item]:
     return moved
 
 
+# ---------------------------------------------------------------- 방향 · 크기 바꾸기
+
+@dataclass(frozen=True)
+class ItemGeometry:
+    """항목 하나의 위치·크기·회전(mm, 도). reflow_*/rotate_* 가 돌려주는 값."""
+
+    x: float
+    y: float
+    w: float
+    h: float
+    rotation: float = 0.0
+
+    @classmethod
+    def of(cls, item: Item) -> "ItemGeometry":
+        return cls(item.x, item.y, item.w, item.h, item.rotation)
+
+    def bounds(self) -> Bounds:
+        return rotated_bounds(self.x, self.y, self.w, self.h, self.rotation)
+
+    def apply_to(self, item: Item) -> None:
+        item.x, item.y, item.w, item.h, item.rotation = self.x, self.y, self.w, self.h, self.rotation
+
+
+_REFLOW_EDGE_EPS = 0.05     # 이만큼(mm) 안쪽까지는 "가장자리에 붙었다"고 본다
+
+
+def _quarter_turns(rotation: float) -> int | None:
+    """회전이 90°의 배수면 몇 번 돌았는지(0..3), 아니면 None."""
+    turns = rotation / 90.0
+    return int(round(turns)) % 4 if abs(turns - round(turns)) < 1e-6 else None
+
+
+def _reposition_axis(low: float, high: float, old: float, new: float) -> tuple[float, float | None]:
+    """한 축에서 경계 (low, high)를 옮긴다. (새 가운데, 늘어난 뒤의 길이 또는 None)을 돌려준다."""
+    size = high - low
+    touches_low = low <= _REFLOW_EDGE_EPS
+    touches_high = high >= old - _REFLOW_EDGE_EPS
+    if touches_low and touches_high and size > 0:
+        # 양쪽 가장자리에 걸친 항목(배경 띠 등)은 새 크기에서도 양쪽에 걸치게 늘린다.
+        new_high = new - (old - high)
+        if new_high > low:
+            return ((low + new_high) / 2.0, new_high - low)
+    if touches_low:
+        return (low + size / 2.0, None)                  # 왼쪽(위) 가장자리에 붙은(넘친) 그대로
+    if touches_high:
+        return (new - (old - high) - size / 2.0, None)   # 오른쪽(아래) 가장자리에 붙은(넘친) 그대로
+    slack = new - size
+    if slack <= 0:
+        return (new / 2.0, None)                         # 새 면에 다 들어가지 않으면 가운데
+    # 면 안쪽 항목: 남는 폭에서 차지하던 자리 비율을 지킨다(가운데는 가운데로, 안에 있던 것은 안에).
+    return (low * slack / (old - size) + size / 2.0, None)
+
+
+def reflow_items(
+    items: Iterable[Item], old_size_mm: tuple[float, float], new_size_mm: tuple[float, float],
+    mode: str = "reposition",
+) -> dict[str, ItemGeometry]:
+    """면 크기가 old → new로 바뀔 때 항목들의 새 위치·크기. {item.id: ItemGeometry}.
+
+    항목은 건드리지 않는다(순수 함수). 방향(가로/세로)만 바꾸는 것도 크기가 (W, H) → (H, W)로
+    바뀌는 경우일 뿐이다. 크기는 도련을 포함한 면 전체(Document.side_size_mm) 기준이다.
+
+    mode:
+      "reposition"  항목 크기는 그대로 두고 자리만 옮긴다(기본, "가로/세로 바꾸기"용).
+                    면 안쪽 항목은 남는 폭에서 차지하던 자리 비율을 지킨다: 가운데 있던 것은
+                    가운데로, 왼쪽에서 1/4 자리에 있던 것은 새 면에서도 1/4 자리로 가고 면 안에 남는다.
+                    가장자리에 붙은(또는 넘친) 항목은 그 가장자리에 그대로 붙고, 양쪽 가장자리에
+                    걸친 항목(배경·띠)은 새 크기에 맞춰 그 축으로 늘어난다. 새 면보다 큰 항목은
+                    가운데에 놓는다. 90° 배수가 아닌 회전 항목은 경계 상자 기준으로 자리만 옮긴다.
+      "scale"       가로·세로를 각각의 비율로 늘이고 줄인다(같은 비율의 다른 카드 크기로 바꿀 때).
+                    90° 배수가 아닌 회전 항목은 찌그러뜨릴 수 없어 두 비율 중 작은 쪽으로 키운다.
+      "fit"         전체 배치를 같은 배율(두 비율 중 작은 쪽)로 줄이거나 키워 가운데에 놓는다.
+    글꼴 크기·선 굵기 같은 값은 바꾸지 않는다(위치·크기·회전만 돌려준다).
+    """
+    if mode not in REFLOW_MODES:
+        raise ValueError(f"알 수 없는 재배치 방식입니다: {mode}")
+    old_w, old_h = float(old_size_mm[0]), float(old_size_mm[1])
+    new_w, new_h = float(new_size_mm[0]), float(new_size_mm[1])
+    if min(old_w, old_h, new_w, new_h) <= 0:
+        raise ValueError("면 크기는 0보다 커야 합니다.")
+    fx, fy = new_w / old_w, new_h / old_h
+    uniform = min(fx, fy)
+    result: dict[str, ItemGeometry] = {}
+    for item in items:
+        cx, cy = item.center()
+        turns = _quarter_turns(item.rotation)
+        sideways = turns in (1, 3)
+        w, h = item.w, item.h
+        if mode == "fit":
+            cx = new_w / 2.0 + (cx - old_w / 2.0) * uniform
+            cy = new_h / 2.0 + (cy - old_h / 2.0) * uniform
+            w, h = w * uniform, h * uniform
+        elif mode == "scale":
+            cx, cy = cx * fx, cy * fy
+            if turns is None:
+                w, h = w * uniform, h * uniform
+            elif sideways:
+                w, h = w * fy, h * fx
+            else:
+                w, h = w * fx, h * fy
+        else:
+            left, top, right, bottom = item.bounds()
+            cx, span_x = _reposition_axis(left, right, old_w, new_w)
+            cy, span_y = _reposition_axis(top, bottom, old_h, new_h)
+            if turns is None:
+                if span_x is not None or span_y is not None:
+                    # 비스듬한 항목은 늘리지 않고 가운데 비율 자리로만 옮긴다.
+                    cx, cy = item.center()[0] * fx, item.center()[1] * fy
+            elif sideways:
+                w = w if span_y is None else span_y
+                h = h if span_x is None else span_x
+            else:
+                w = w if span_x is None else span_x
+                h = h if span_y is None else span_y
+        result[item.id] = ItemGeometry(cx - w / 2.0, cy - h / 2.0, w, h, item.rotation)
+    return result
+
+
+def rotate_items(
+    items: Iterable[Item], size_mm: tuple[float, float], quarter_turns: int = 1
+) -> dict[str, ItemGeometry]:
+    """면 전체를 시계 방향으로 90° × quarter_turns 돌렸을 때 항목들의 새 위치·회전.
+
+    디자인을 통째로 눕히거나 세울 때 쓴다(내용도 함께 돈다). 항목 크기(w, h)는 그대로이고
+    가운데 자리와 rotation만 바뀐다. 홀수 번 돌리면 면 크기는 (H, W)가 된다.
+    """
+    width, height = float(size_mm[0]), float(size_mm[1])
+    turns = int(quarter_turns) % 4
+    result: dict[str, ItemGeometry] = {}
+    for item in items:
+        cx, cy = item.center()
+        w, h = width, height
+        for _ in range(turns):
+            cx, cy = h - cy, cx
+            w, h = h, w
+        rotation = (item.rotation + 90.0 * turns) % 360.0
+        result[item.id] = ItemGeometry(cx - item.w / 2.0, cy - item.h / 2.0, item.w, item.h, rotation)
+    return result
+
+
 # ---------------------------------------------------------------- 면 / 문서
 
 @dataclass(kw_only=True)
@@ -513,6 +654,25 @@ class Document(Serializable):
         if self.side(side_key).orientation == "portrait":
             return (short_edge, long_edge)
         return (long_edge, short_edge)
+
+    def reflow_side(
+        self, side_key: str, *, orientation: str | None = None,
+        card_size_mm: tuple[float, float] | None = None, mode: str = "reposition",
+    ) -> dict[str, ItemGeometry]:
+        """이 면의 방향이나 카드 크기를 바꾸면 항목들이 놓일 자리. 문서는 바꾸지 않는다.
+
+        orientation: 바꿀 방향("landscape" | "portrait"). None이면 지금 방향.
+        card_size_mm: 바꿀 카드 크기(card_width_mm, card_height_mm - 도련 포함). None이면 지금 크기.
+        돌려준 값을 적용하는 것(그리고 side.orientation / card_*_mm를 바꾸는 것)은 부른 쪽이 한다.
+        """
+        old_size = self.side_size_mm(side_key)
+        orientation = orientation or self.side(side_key).orientation
+        if orientation not in ORIENTATIONS:
+            raise ValueError(f"알 수 없는 카드 방향입니다: {orientation}")
+        width, height = card_size_mm if card_size_mm is not None else (self.card_width_mm, self.card_height_mm)
+        long_edge, short_edge = max(width, height), min(width, height)
+        new_size = (short_edge, long_edge) if orientation == "portrait" else (long_edge, short_edge)
+        return reflow_items(self.side(side_key).items, old_size, new_size, mode)
 
     def side_bounds(self, side_key: str, *, inside_bleed: bool = False) -> Bounds:
         width, height = self.side_size_mm(side_key)

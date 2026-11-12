@@ -410,3 +410,113 @@ def test_helpers():
     assert code_from_error(Exception("카드 삽입 실패: 오류 코드 8421378")) == 8421378
     assert code_from_error(Exception("라이브러리 초기화 실패: 12")) == 12
     assert code_from_error(Exception("이미지 파일이 없습니다")) is None
+
+
+# ── 도련 제거 건너뛰기 ───────────────────────────────────────────────────────
+class _SizeCapture(FakeR600Library):
+    """SDK로 넘어간 이미지 파일의 크기를 호출 시점에 적어 둔다."""
+
+    def __init__(self):
+        super().__init__()
+        self.sizes = []
+
+    def _capture(self, name, path):
+        from PIL import Image
+        with Image.open(path.decode("cp949")) as image:
+            self.sizes.append((name, image.size))
+        return 0
+
+    def _h_R600DrawImage(self, x, y, w, h, path, mode):
+        return self._capture("image", path)
+
+    def _h_R600DrawWaterMark(self, x, y, w, h, path):
+        return self._capture("mask", path)
+
+    def _h_R600DrawLayerFluor(self, x, y, w, h, path):
+        return self._capture("uv", path)
+
+
+@pytest.fixture
+def sized(rtai_device):
+    lib = _SizeCapture()
+    adapter = RtaiAdapter(lib=lib, settle_seconds=0)
+    adapter.connect(rtai_device)
+    return lib, adapter
+
+
+def _bleed_ratio_job(make_image, **options):
+    """58x90 도련 규격과 비율이 같은 세 레이어(컬러·화이트·UV)."""
+    side = SideImages(make_image(size=(580, 900)), white_mask_path=make_image(size=(580, 900)),
+                      uv_path=make_image(size=(580, 900)), orientation="portrait")
+    return CardJob(front=side, options=options)
+
+
+def test_adapter_crops_bleed_by_ratio_when_the_job_is_not_marked(sized, make_image):
+    lib, adapter = sized
+    adapter.print_card(_bleed_ratio_job(make_image))
+    assert lib.sizes == [("mask", (540, 860)), ("image", (540, 860)), ("uv", (540, 860))]
+
+
+def test_adapter_skips_the_bleed_crop_for_bleed_handled_jobs_and_restores_the_default(sized, make_image):
+    lib, adapter = sized
+    adapter.print_card(_bleed_ratio_job(make_image, bleed_handled=True))
+    assert lib.sizes == [("mask", (580, 900)), ("image", (580, 900)), ("uv", (580, 900))]
+    assert adapter.sdk.bleed_crop_enabled is True, "카드가 끝나면 기존 동작으로 돌아온다"
+
+    lib.sizes.clear()
+    adapter.print_card(_bleed_ratio_job(make_image))
+    assert {size for _, size in lib.sizes} == {(540, 860)}
+
+
+def test_bleed_crop_default_is_restored_after_a_failed_card(sized, make_image):
+    lib, adapter = sized
+    lib.fail("R600PrintDraw", R600_ERR_PRINT)
+    with pytest.raises(PrinterError):
+        adapter.print_card(_bleed_ratio_job(make_image, bleed_handled=True))
+    assert adapter.sdk.bleed_crop_enabled is True
+
+
+def test_legacy_direct_calls_still_crop_bleed_by_default(make_image):
+    lib = _SizeCapture()
+    printer = R600Printer.from_library(lib)
+    assert printer.bleed_crop_enabled is True
+    printer.draw_image(0, 0, 55.0, 86.6, make_image(size=(580, 900)))
+    printer.draw_watermark(0, 0, 55.0, 86.6, make_image(size=(580, 900)))
+    printer.draw_layer_fluor(0, 0, 55.0, 86.6, make_image(size=(580, 900)))
+    assert lib.sizes == [("image", (540, 860)), ("mask", (540, 860)), ("uv", (540, 860))]
+
+
+# ── 구조화된 진행 · 잔량 단위 ────────────────────────────────────────────────
+def test_structured_progress_reports_the_stage_boundaries_the_adapter_controls(adapter, make_image):
+    from printer.base import ProgressEvent, StructuredProgress
+
+    events = []
+    job = CardJob(front=SideImages(make_image(), orientation="portrait"),
+                  back=SideImages(make_image(), orientation="landscape"),
+                  options={"magnetic": {"track2": "1234"}, "magnetic_verify": False})
+    adapter.print_card(job, progress=StructuredProgress(events.append))
+    assert [(e.percent, e.stage, e.side) for e in events] == [
+        (10, "feed", None), (12, "magnetic", None), (15, "setup", None),
+        (30, "front_image", "front"), (45, "back_image", "back"),
+        (70, "print", None), (85, "wait", None), (95, "eject", None), (100, "done", None)]
+    assert all(isinstance(e, ProgressEvent) and e.text for e in events)
+    # R600PrintDraw 한 번이 양면을 모두 찍으므로 패널·단계 안 진행은 알 수 없다.
+    assert all(e.panel is None and e.fraction is None for e in events)
+    assert all((e.copy, e.copies) == (1, 1) for e in events)
+
+
+def test_structured_progress_numbers_the_copies(adapter, make_image):
+    from printer.base import StructuredProgress
+
+    events = []
+    adapter.print_card(CardJob(front=SideImages(make_image()), copies=2),
+                       progress=StructuredProgress(events.append))
+    assert sorted({(e.copy, e.copies) for e in events}) == [(1, 2), (2, 2)]
+    assert events[-1].text == "[2/2] 완료" and events[-1].percent == 100 and events[-1].stage == "done"
+
+
+def test_remaining_units_are_marked_unknown_for_rtai(adapter, r600_lib):
+    status = adapter.status()
+    assert (status.ribbon_remaining, status.film_remaining) == (250, 480)
+    assert (status.ribbon_unit, status.film_unit) == ("unknown", "unknown")
+    assert status.ribbon_cards_left is None and status.film_cards_left is None

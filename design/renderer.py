@@ -265,16 +265,21 @@ _V_ALIGN = {
 }
 
 
-def _draw_text(
-    painter: QPainter, text: str, font: QFont, color: QColor,
-    x_mm: float, y_mm: float, w_mm: float, h_mm: float, mm_to_px: float,
-    h_align: str = "left", v_align: str = "top", wrap: bool = False,
-) -> None:
+def _text_flags(h_align: str, v_align: str, wrap: bool) -> int:
     flags = int(_H_ALIGN.get(h_align, Qt.AlignmentFlag.AlignLeft)) | int(
         _V_ALIGN.get(v_align, Qt.AlignmentFlag.AlignTop)
     ) | int(Qt.TextFlag.TextDontClip)
     if wrap:
         flags |= int(Qt.TextFlag.TextWordWrap | Qt.TextFlag.TextWrapAnywhere)
+    return flags
+
+
+def _draw_text(
+    painter: QPainter, text: str, font: QFont, color: QColor,
+    x_mm: float, y_mm: float, w_mm: float, h_mm: float, mm_to_px: float,
+    h_align: str = "left", v_align: str = "top", wrap: bool = False,
+) -> None:
+    flags = _text_flags(h_align, v_align, wrap)
     painter.save()
     painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -295,6 +300,58 @@ def _paint_text(painter, item, value, s, opts) -> None:
     _draw_text(
         painter, text, font, _color(item.color, opts.mask_mode), 0.0, 0.0, item.w, item.h, s,
         item.h_align, item.v_align, item.wrap,
+    )
+
+
+def _barcode_text_height_mm(item) -> float:
+    """바코드 아래 글자 줄의 높이(mm). 글자를 안 보이면 0."""
+    if not item.show_text:
+        return 0.0
+    return min(item.h * 0.5, item.text_size_pt * MM_PER_INCH / 72.0 * 1.35)
+
+
+def _text_layout(item, value: Any):
+    """(글자, 글꼴, 글자 상자 x·y·w·h(mm), 정렬 플래그). 글자를 그리지 않는 항목이면 None."""
+    if item.kind == "text":
+        text = "" if value is None else str(value)
+        if not text:
+            return None
+        font = _make_font(
+            item.font_family, fitted_font_size_pt(item, text), item.bold, item.italic, item.underline
+        )
+        return text, font, (0.0, 0.0, item.w, item.h), _text_flags(item.h_align, item.v_align, item.wrap)
+    if item.kind == "barcode" and item.show_text:
+        try:
+            text = barcodes.normalize(item.symbology, "" if value is None else str(value))
+        except barcodes.BarcodeError:
+            return None
+        height = _barcode_text_height_mm(item)
+        font = _make_font(item.text_font_family, item.text_size_pt)
+        return text, font, (0.0, item.h - height, item.w, height), _text_flags("center", "middle", False)
+    return None
+
+
+def text_extent(item: Item, value: Any, mm_to_px: float = 1.0) -> tuple[float, float, float, float]:
+    """그려진 글자가 항목 상자 밖으로 나가는 길이 (왼쪽, 위, 오른쪽, 아래). 안 나가면 0.
+
+    글자는 상자에서 잘리지 않고 넘쳐 그려진다(줄바꿈 없는 긴 글자, 상자보다 큰 글꼴 등).
+    편집 화면이 다시 그릴 영역·선택 테두리를 넓히거나 "글자가 넘칩니다" 안내를 띄울 때 쓴다.
+    value는 `value_for`가 준 값, 단위는 mm × mm_to_px(기본 mm). 항목의 회전은 반영하지 않은
+    항목 자체 좌표 기준이다. 글자 항목과 글자를 보이는 바코드만 값이 있고 나머지는 모두 0.
+    글자 배치 폭(advance) 기준이라 기울임꼴의 삐침 한두 픽셀은 포함하지 않는다.
+    """
+    ensure_gui()
+    layout = _text_layout(item, value)
+    if layout is None:
+        return (0.0, 0.0, 0.0, 0.0)
+    text, font, (x, y, w, h), flags = layout
+    u = _TEXT_UNITS_PER_MM
+    box = QRectF(x * u, y * u, w * u, h * u)
+    drawn = QFontMetricsF(font).boundingRect(box, flags, text)
+    k = mm_to_px / u
+    return (
+        max(0.0, -drawn.left()) * k, max(0.0, -drawn.top()) * k,
+        max(0.0, drawn.right() - item.w * u) * k, max(0.0, drawn.bottom() - item.h * u) * k,
     )
 
 
@@ -474,9 +531,7 @@ def _paint_barcode(painter, item, value, s, opts) -> None:
         else:
             _report(opts, item, str(exc))
         return
-    text_h_mm = 0.0
-    if item.show_text:
-        text_h_mm = min(item.h * 0.5, item.text_size_pt * MM_PER_INCH / 72.0 * 1.35)
+    text_h_mm = _barcode_text_height_mm(item)
     bars = QRectF(0, 0, w, max(0.0, (item.h - text_h_mm) * s))
 
     def make(width_px: int, height_px: int) -> QImage:
@@ -489,8 +544,11 @@ def _paint_barcode(painter, item, value, s, opts) -> None:
         return
     if item.show_text:
         if background is not None:
-            # 막대 그림은 장치 픽셀에 맞춰 반올림되므로 틈이 생기지 않게 1px 겹친다.
-            top = max(0.0, bars.height() - 1.0)
+            # 막대 그림은 장치 픽셀에 맞춰 반올림되므로 틈이 생기지 않게 장치 픽셀 1개만큼 겹친다.
+            # (인쇄 렌더링은 painter 배율이 1이라 정확히 1.0이고, 화면은 확대·축소 배율을 따라간다.)
+            scale = _device_scale(painter)
+            overlap = 1.0 if abs(scale - 1.0) < 1e-9 else 1.0 / scale
+            top = max(0.0, bars.height() - overlap)
             painter.fillRect(QRectF(0, top, w, h - top), background)
         font = _make_font(item.text_font_family, item.text_size_pt)
         _draw_text(
@@ -535,7 +593,12 @@ def paint_item_local(
     crop: Crop | None = None, design_mode: bool = True, mask_mode: bool = False,
     problems: list[str] | None = None,
 ) -> None:
-    """항목을 원점 기준 (0,0)-(w,h) 상자에 그린다. 위치·회전은 호출한 쪽(예: QGraphicsItem)이 건다."""
+    """항목을 원점 기준 (0,0)-(w·mm_to_px, h·mm_to_px) 상자에 그린다.
+
+    위치·회전은 호출한 쪽(예: QGraphicsItem)이 건다. painter 좌표 1단위가 1/mm_to_px mm면 되고
+    painter에 걸린 확대·축소 배율은 자유다(선 굵기·바코드 겹침은 장치 픽셀 기준으로 맞춘다).
+    글자는 상자에서 잘리지 않으므로 넘치는 길이는 `text_extent`로 구한다.
+    """
     handler = _PAINTERS.get(item.kind)
     if handler is None:
         return
@@ -633,6 +696,35 @@ def side_pixel_size(document: Document, side_key: str, dpi: float = 300.0) -> tu
     return (max(1, round(width_mm * s)), max(1, round(height_mm * s)))
 
 
+def cut_pixel_size(document: Document, side_key: str, dpi: float = 300.0) -> tuple[int, int]:
+    """칼선(도련 제외) 크기의 픽셀 수: round(칼선 mm × dpi ÷ 25.4)."""
+    width_mm, height_mm = document.side_size_mm(side_key)
+    s = mm_to_px_for(dpi)
+    bleed = max(0.0, document.bleed_mm)
+    return (max(1, round((width_mm - 2 * bleed) * s)), max(1, round((height_mm - 2 * bleed) * s)))
+
+
+def trim_bleed(rendered: "RenderedSide", document: Document, side_key: str) -> bool:
+    """도련 포함으로 렌더링한 면을 가운데 기준으로 잘라 정확히 칼선 크기로 만든다.
+
+    도련이 없거나 이미 칼선 크기 이하면 그대로 두고 False를 돌려준다.
+    """
+    if document.bleed_mm <= 0:
+        return False
+    target_w, target_h = cut_pixel_size(document, side_key, rendered.dpi)
+    width, height = rendered.color.size
+    if target_w >= width or target_h >= height:
+        return False
+    left, top = (width - target_w) // 2, (height - target_h) // 2
+    box = (left, top, left + target_w, top + target_h)
+    rendered.color = rendered.color.crop(box)
+    if rendered.white_mask is not None:
+        rendered.white_mask = rendered.white_mask.crop(box)
+    if rendered.uv is not None:
+        rendered.uv = rendered.uv.crop(box)
+    return True
+
+
 def _to_pil(image: QImage, mode: str) -> Image.Image:
     fmt = QImage.Format.Format_RGB888 if mode == "RGB" else QImage.Format.Format_Grayscale8
     converted = image.convertToFormat(fmt)
@@ -678,7 +770,7 @@ def render_side(
     """한 면을 인쇄용 이미지로 만든다.
 
     design_mode: None이면 record가 없을 때만 자리표시를 그린다.
-    crop_bleed: 문서에 도련이 있으면 칼선 안쪽만 남긴다.
+    crop_bleed: 문서에 도련이 있으면 칼선 안쪽만 남긴다. 결과는 정확히 `cut_pixel_size`다.
     strict: 빠진 사진·잘못된 바코드가 있으면 RenderError를 낸다(기본은 warnings에 기록).
     """
     ensure_gui()
@@ -741,13 +833,6 @@ def render_side(
         color=_to_pil(color_image, "RGB"), white_mask=white_mask, uv=uv,
         orientation=side.orientation, dpi=float(dpi), warnings=problems,
     )
-    if crop_bleed and document.bleed_mm > 0:
-        margin = round(document.bleed_mm * s)
-        if width - 2 * margin > 0 and height - 2 * margin > 0:
-            box = (margin, margin, width - margin, height - margin)
-            result.color = result.color.crop(box)
-            if result.white_mask is not None:
-                result.white_mask = result.white_mask.crop(box)
-            if result.uv is not None:
-                result.uv = result.uv.crop(box)
+    if crop_bleed:
+        trim_bleed(result, document, side_key)
     return result

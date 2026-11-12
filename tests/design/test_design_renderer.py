@@ -11,8 +11,8 @@ from design.model import (
     BarcodeItem, Crop, Document, EllipseItem, ImageItem, LineItem, QRItem, RectItem, TextItem,
 )
 from design.renderer import (
-    RenderError, fitted_font_size_pt, image_target_rect, paint_item, paint_item_local, render_side,
-    resolve_font_family, side_pixel_size, value_for,
+    RenderError, cut_pixel_size, fitted_font_size_pt, image_target_rect, paint_item, paint_item_local,
+    render_side, resolve_font_family, side_pixel_size, text_extent, trim_bleed, value_for,
 )
 
 S = 300 / 25.4
@@ -662,10 +662,44 @@ def test_crop_bleed_removes_margin():
     full = render_side(document, "front")
     assert full.color.size == (685, 1063)
     cropped = render_side(document, "front", crop_bleed=True)
-    assert cropped.color.size == (685 - 48, 1063 - 48) == cropped.white_mask.size
+    assert cropped.color.size == (638, 1016) == cropped.white_mask.size == cut_pixel_size(document, "front")
     array = np.array(cropped.color)
     assert (array[2:-2, 2:-2] == BLUE).all()
     assert Document().bleed_mm == 0 and render_side(Document(), "front", crop_bleed=True).color.size == (1011, 638)
+
+
+@pytest.mark.parametrize("orientation", ["landscape", "portrait"])
+@pytest.mark.parametrize("dpi", [96, 150, 300, 600])
+@pytest.mark.parametrize("size_mm, bleed", [((90.0, 58.0), 2.0), ((91.6, 59.98), 3.0), ((88.0, 56.5), 1.25)])
+def test_crop_bleed_is_exactly_the_cut_size_and_centred(orientation, dpi, size_mm, bleed):
+    document = Document(card_width_mm=size_mm[0], card_height_mm=size_mm[1], bleed_mm=bleed)
+    side = document.side("front")
+    side.orientation = orientation
+    side.add_item(RectItem(x=0, y=0, w=200, h=200, fill="#ffffff", stroke_color=None, layer="uv"))
+    width_mm, height_mm = document.side_size_mm("front")
+    expected = (round((width_mm - 2 * bleed) * dpi / 25.4), round((height_mm - 2 * bleed) * dpi / 25.4))
+
+    full = render_side(document, "front", dpi=dpi)
+    cropped = render_side(document, "front", dpi=dpi, crop_bleed=True)
+    assert cropped.color.size == cropped.uv.size == expected == cut_pixel_size(document, "front", dpi)
+
+    assert trim_bleed(full, document, "front") is True
+    assert full.color.tobytes() == cropped.color.tobytes()
+    assert trim_bleed(full, document, "front") is False, "이미 칼선 크기면 다시 자르지 않는다"
+
+
+def test_crop_bleed_keeps_the_centre_of_the_full_render():
+    document = Document(card_width_mm=90, card_height_mm=58, bleed_mm=2)
+    side = document.side("front")
+    side.add_item(RectItem(x=0, y=0, w=90, h=58, fill="#ff0000", stroke_color=None))
+    side.add_item(RectItem(x=2, y=2, w=86, h=54, fill="#0000ff", stroke_color=None))
+    full = render_side(document, "front")
+    cropped = render_side(document, "front", crop_bleed=True)
+    assert full.color.size == (1063, 685) and cropped.color.size == (1016, 638)
+    left, top = (1063 - 1016) // 2, (685 - 638) // 2
+    assert cropped.color.tobytes() == full.color.crop((left, top, left + 1016, top + 638)).tobytes()
+    array = np.array(cropped.color)
+    assert (array[2:-2, 2:-2] == BLUE).all()
 
 
 def test_rendered_side_save(tmp_path):
@@ -678,3 +712,92 @@ def test_rendered_side_save(tmp_path):
         assert color.size == white.size == (1011, 638)
         assert (color.mode, white.mode) == ("RGB", "L")
         assert color.info["dpi"] == pytest.approx((300, 300), abs=0.1)
+
+
+# ── text_extent: 글자가 상자 밖으로 나가는 길이 ─────────────────────────────────
+def test_text_extent_is_zero_when_the_text_fits_or_there_is_no_text():
+    fits = TextItem(w=60, h=12, text="하나", font_size_pt=10)
+    assert text_extent(fits, "하나") == (0.0, 0.0, 0.0, 0.0)
+    assert text_extent(fits, "") == text_extent(fits, None) == (0.0, 0.0, 0.0, 0.0)
+    assert text_extent(RectItem(w=1, h=1), "긴 글자 긴 글자 긴 글자") == (0.0, 0.0, 0.0, 0.0)
+    assert text_extent(QRItem(w=5, h=5), "data") == (0.0, 0.0, 0.0, 0.0)
+
+
+@pytest.mark.parametrize("h_align, sides", [("left", (False, True)), ("right", (True, False)),
+                                            ("center", (True, True))])
+def test_text_extent_follows_the_alignment(h_align, sides):
+    text = "상자보다 훨씬 긴 한 줄짜리 글자입니다"
+    item = TextItem(w=20, h=8, text=text, font_size_pt=12, h_align=h_align, v_align="middle")
+    left, top, right, bottom = text_extent(item, text)
+    assert (left > 1.0, right > 1.0) == sides and top == bottom == 0.0
+    if h_align == "center":
+        assert left == pytest.approx(right, abs=0.05)
+    scaled = text_extent(item, text, 10.0)
+    assert scaled == pytest.approx((left * 10, top * 10, right * 10, bottom * 10))
+
+
+def test_text_extent_reports_vertical_overflow_and_respects_wrap_and_shrink():
+    tall = TextItem(w=40, h=3, text="가", font_size_pt=24, v_align="top")
+    left, top, right, bottom = text_extent(tall, "가")
+    assert bottom > 3.0 and top == left == right == 0.0
+    middle = TextItem(w=40, h=3, text="가", font_size_pt=24, v_align="middle")
+    _, over_top, _, over_bottom = text_extent(middle, "가")
+    assert over_top > 1.0 and over_top == pytest.approx(over_bottom, abs=0.05)
+
+    long_text = "줄바꿈을 켜면 가로로는 넘치지 않고 아래로 넘친다 " * 3
+    wrapped = TextItem(w=25, h=6, text=long_text, font_size_pt=10, wrap=True)
+    left, top, right, bottom = text_extent(wrapped, long_text)
+    assert right == 0.0 and bottom > 5.0
+
+    shrunk = TextItem(w=25, h=6, text="자동 축소 글자", font_size_pt=30, auto_shrink=True, min_font_size_pt=4)
+    assert text_extent(shrunk, "자동 축소 글자") == (0.0, 0.0, 0.0, 0.0)
+
+
+def test_text_extent_covers_the_ink_that_is_actually_drawn():
+    text = "ABCDEFGHIJKLMNOP"
+    item = TextItem(x=10, y=10, w=15, h=6, text=text, font_size_pt=11)
+    document = Document()
+    document.side("front").add_item(item)
+    _, _, ink_right, ink_bottom = ink_box_mm(color_array(document), 300)
+    left, top, right, bottom = text_extent(item, text)
+    assert ink_right > item.x + item.w + 5, "글자는 상자에서 잘리지 않는다"
+    assert item.x + item.w + right >= ink_right - 0.3, "넘친 글자는 알려 준 범위 안에 있다"
+    assert item.x + item.w + right <= ink_right + 1.5
+    assert bottom == 0.0 and ink_bottom <= item.y + item.h + 0.3
+
+
+def test_text_extent_for_barcode_caption():
+    wide = BarcodeItem(w=50, h=14, data="HANA-0001", show_text=True)
+    assert text_extent(wide, "HANA-0001") == (0.0, 0.0, 0.0, 0.0)
+    narrow = BarcodeItem(w=6, h=14, data="HANA-0001-LONG-CAPTION", show_text=True, text_size_pt=9)
+    left, top, right, bottom = text_extent(narrow, "HANA-0001-LONG-CAPTION")
+    assert left > 1.0 and left == pytest.approx(right, abs=0.05) and top == 0.0
+    assert text_extent(BarcodeItem(w=6, h=14, data="X", show_text=False), "HANA-0001-LONG") == (0.0,) * 4
+    assert text_extent(BarcodeItem(w=6, h=14, symbology="ean13", show_text=True), "글자") == (0.0,) * 4
+
+
+# ── 바코드 글자 바탕의 겹침은 장치 픽셀 기준 ────────────────────────────────────
+@pytest.mark.parametrize("zoom", [0.25, 1.0, 3.0])
+def test_barcode_caption_background_leaves_no_gap_at_any_painter_scale(zoom):
+    item = BarcodeItem(w=50, h=14, data="HANA-0001", show_text=True, background="#ffee88")
+    scale = 300 / 25.4
+    width, height = round(60 * scale * zoom), round(20 * scale * zoom)
+    canvas = QImage(width, height, QImage.Format.Format_RGB32)
+    canvas.fill(QColor("#00ff00"))
+    painter = QPainter(canvas)
+    painter.scale(zoom, zoom)
+    painter.translate(5 * scale, 3 * scale)
+    paint_item_local(painter, item, "HANA-0001", scale, design_mode=False)
+    painter.end()
+    array = np.array(_rgb(canvas))
+    left, right = round(7 * scale * zoom), round(53 * scale * zoom)
+    top, bottom = round(4 * scale * zoom), round(16 * scale * zoom)
+    region = array[top:bottom, left:right]
+    green = (region[:, :, 0] < 40) & (region[:, :, 1] > 215) & (region[:, :, 2] < 40)
+    assert not green.any(), "막대와 글자 바탕 사이로 뒤 배경이 비치지 않는다"
+
+
+def _rgb(image: QImage) -> Image.Image:
+    converted = image.convertToFormat(QImage.Format.Format_RGB888)
+    return Image.frombuffer("RGB", (converted.width(), converted.height()), bytes(converted.constBits()),
+                            "raw", "RGB", converted.bytesPerLine(), 1).copy()

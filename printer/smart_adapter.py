@@ -16,7 +16,9 @@ from typing import Any, Dict, List, Mapping, Optional, Set, Union
 from . import smart_printer as sp
 from .base import (
     CAP_CARD_MOVE, CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_POSITION_OFFSET, CAP_RIBBON_LEVEL,
-    CAP_STATUS, CAP_UV, FAMILY_SMART, ORIENTATION_PORTRAIT, CardJob, CardPrinter,
+    CAP_STATUS, CAP_UV, FAMILY_SMART, ORIENTATION_PORTRAIT, STAGE_DONE, STAGE_EJECT, STAGE_FEED,
+    STAGE_MAGNETIC, STAGE_PREPARE, STAGE_PRINT, STAGE_PRINT_BACK, STAGE_PRINT_FRONT, STAGE_SETUP,
+    STAGE_UNKNOWN, UNIT_CARDS, UNIT_UNKNOWN, CardJob, CardPrinter,
     MagneticTracks, NotSupported, PrinterDevice, PrinterError, PrinterStatus, ProgressCallback,
     SideImages,
 )
@@ -25,6 +27,17 @@ log = logging.getLogger(__name__)
 
 PRINT_DPI = 300
 MM_PER_INCH = 25.4
+
+
+def _count_unit(info: "sp.SmartRibbonInfo") -> str:
+    """GetRibbonInfo의 remain 단위. SDK는 (최대 횟수, 남은 횟수)를 주므로 보통 카드 장수다.
+
+    최대값이 없거나 정확히 100이거나(% 값과 구별할 수 없다) 잔량이 0~최대값을 벗어나면
+    짐작하지 않고 "모름"으로 둔다.
+    """
+    if info.max > 0 and info.max != 100 and 0 <= info.remain <= info.max:
+        return UNIT_CARDS
+    return UNIT_UNKNOWN
 
 
 class SmartAdapter(CardPrinter):
@@ -139,7 +152,10 @@ class SmartAdapter(CardPrinter):
         try:
             ribbon = self._binding.get_ribbon_info()
             self._ribbon_type = ribbon.type
+            # remain/max는 리본으로 찍을 수 있는 횟수(SDK 샘플 기준, 실기 확인 전).
             status.ribbon_remaining = ribbon.remain
+            status.ribbon_unit = _count_unit(ribbon)
+            status.ribbon_capacity = ribbon.max or None
             status.ribbon_type = ribbon.type
             status.details["ribbon"] = {"type": ribbon.type, "name": ribbon.type_name,
                                         "max": ribbon.max, "remain": ribbon.remain,
@@ -148,7 +164,9 @@ class SmartAdapter(CardPrinter):
             log.debug("SMART 리본 정보 조회 실패: %s", exc)
         if self._group == sp.GROUP_SMART81 and self._binding.has_function("SmartComm_GetRibbonInfo2"):
             try:
-                status.film_remaining = self._binding.get_ribbon_info2(sp.RI2_RETRANSFER).remain
+                film = self._binding.get_ribbon_info2(sp.RI2_RETRANSFER)
+                status.film_remaining = film.remain
+                status.film_unit = _count_unit(film)
             except PrinterError as exc:
                 log.debug("SMART 필름 정보 조회 실패: %s", exc)
         return status
@@ -260,10 +278,12 @@ class SmartAdapter(CardPrinter):
         job.validate()
         self._check_job(job)
         for copy in range(1, job.copies + 1):
-            def report(percent: int, message: str, _copy=copy) -> None:
+            def report(percent: int, message: str, stage: str = STAGE_UNKNOWN,
+                       side: Optional[str] = None, _copy=copy) -> None:
                 overall = int(((_copy - 1) * 100 + percent) / job.copies)
                 prefix = f"[{_copy}/{job.copies}] " if job.copies > 1 else ""
-                self._report(overall, prefix + message, progress)
+                self._report(overall, prefix + message, progress, stage=stage, side=side,
+                             copy=_copy, copies=job.copies)
             self._print_one(job, report)
 
     def _check_job(self, job: CardJob) -> None:
@@ -286,6 +306,13 @@ class SmartAdapter(CardPrinter):
                 log.warning("SMART 프린터에는 화이트 레이어가 없어 %s 화이트 마스크를 쓰지 않습니다.", label)
 
     def _print_one(self, job: CardJob, report) -> None:
+        """카드 한 장. 알릴 수 있는 단계는 우리가 SDK를 부르는 경계뿐이다.
+
+        SmartComm_DoPrint는 인쇄가 끝나야 돌아오고 패널(Y/M/C/K/O) 진행을 알려 주지 않는다.
+        SMART-51/81은 DoPrint 한 번이 양면을 모두 찍으므로 STAGE_PRINT 하나, SMART-50/30 양면은
+        DoPrint를 면마다 부르므로 STAGE_PRINT_FRONT → STAGE_PRINT_BACK으로 나눠 알린다.
+        panel·fraction은 채우지 않는다.
+        """
         binding = self._binding
         options = job.options
         dual = job.is_dual_side
@@ -293,7 +320,7 @@ class SmartAdapter(CardPrinter):
         tracks = MagneticTracks.coerce(options.get("magnetic"))
         temp_files: List[str] = []
         try:
-            report(5, "이미지 준비 중...")
+            report(5, "이미지 준비 중...", STAGE_PREPARE)
             pages = [(sp.PAGE_FRONT, first, False)]
             if dual:
                 pages.append((sp.PAGE_BACK, job.back, True))
@@ -312,12 +339,12 @@ class SmartAdapter(CardPrinter):
 
             binding.sbs_start()
             try:
-                report(15, "카드 삽입 중...")
+                report(15, "카드 삽입 중...", STAGE_FEED)
                 binding.card_in()
                 if not tracks.is_empty():
-                    report(25, "마그네틱 기록 중...")
+                    report(25, "마그네틱 기록 중...", STAGE_MAGNETIC)
                     self._encode_magnetic(tracks, options)
-                report(40, "인쇄 데이터 준비 중...")
+                report(40, "인쇄 데이터 준비 중...", STAGE_SETUP)
                 for page, color, uv in prepared:
                     binding.draw_image(page, panel, 0, 0, width, height, color)
                     if uv:
@@ -327,14 +354,17 @@ class SmartAdapter(CardPrinter):
                     side_value = int(options.get("smart_print_side_both",
                                                  sp.PRINTSIDE_BOTH_BY_GROUP[self._group]))
                 binding.dcl_print(side_value)
-                report(60, "인쇄 실행 중...")
+                per_side = dual and self._group == sp.GROUP_SMART50
+                report(60, "인쇄 실행 중...", STAGE_PRINT_FRONT if per_side else STAGE_PRINT,
+                       "front" if per_side else None)
                 binding.do_print()
-                if dual and self._group == sp.GROUP_SMART50:
+                if per_side:
                     # SMART-50/30은 DoPrint 한 번에 한 면만 인쇄한다.
+                    report(78, "뒷면 인쇄 중...", STAGE_PRINT_BACK, "back")
                     binding.do_print()
-                report(95, "카드 배출 중...")
+                report(95, "카드 배출 중...", STAGE_EJECT)
                 binding.card_out()
-                report(100, "완료")
+                report(100, "완료", STAGE_DONE)
             except PrinterError:
                 self._eject_quietly()
                 raise
@@ -349,7 +379,10 @@ class SmartAdapter(CardPrinter):
 
     def _prepare_image(self, path: str, side: SideImages, is_back: bool,
                        options: Mapping[str, Any], temp_files: List[str]) -> str:
-        """도련 제거 → 문서 크기로 맞춤 → 위치 조정 → 세로형이면 회전해 BMP로 저장한다."""
+        """도련 제거 → 문서 크기로 맞춤 → 위치 조정 → 세로형이면 회전해 BMP로 저장한다.
+
+        options["bleed_handled"]가 참이면 이미 칼선 크기로 만든 이미지이므로 도련 제거를 건너뛴다.
+        """
         from PIL import Image, ImageOps
         from utils.bleed_crop import crop_bleed
         from utils.safe_temp_path import create_safe_temp_file, get_cached_safe_temp_dir
@@ -359,7 +392,10 @@ class SmartAdapter(CardPrinter):
         with open(path, "rb") as handle:
             image = Image.open(io.BytesIO(handle.read()))
         image.load()
-        image = crop_bleed(ImageOps.exif_transpose(image)).convert("RGB")
+        image = ImageOps.exif_transpose(image)
+        if not options.get("bleed_handled"):
+            image = crop_bleed(image)
+        image = image.convert("RGB")
         target = (doc_height, doc_width) if portrait else (doc_width, doc_height)
         if image.size != target:
             image = image.resize(target, Image.LANCZOS)

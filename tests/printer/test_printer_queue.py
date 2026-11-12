@@ -5,7 +5,10 @@ import time as real_time
 import pytest
 from PySide6.QtCore import QEventLoop, QThread
 
-from printer.base import CardJob, CardPrinter, PrinterDevice, PrinterError, PrinterStatus, SideImages
+from printer.base import (
+    STAGE_UNKNOWN, CardJob, CardPrinter, CardProvider, PrintCancelled, PrinterDevice, PrinterError,
+    PrinterStatus, ProgressEvent, SideImages,
+)
 from printer.fakes import R600_ERR_FEEDER_EMPTY, FakeR600Library, FakeSmartLibrary
 from printer.history import JobHistory
 from printer.print_queue import PrintQueueManager
@@ -48,6 +51,7 @@ def queue(qapp):
     manager = PrintQueueManager()
     yield manager
     manager.cancel_all()
+    manager.wait_idle()
 
 
 @pytest.fixture
@@ -398,3 +402,226 @@ def test_queue_without_history_records_nothing_and_default_manager_is_lazy(qapp)
     from printer.print_queue import print_queue
     assert PrintQueueManager()._ensure_history() is None
     assert print_queue._history is None                # 임포트만으로는 이력 파일을 만들지 않는다
+
+
+# ── 공개 API 보강: job_error, history_id, 카드 공급자, cancel_all, 구조화된 진행 ──────────
+def test_connection_failure_is_announced_with_job_error_before_completion(qapp, queue):
+    def factory(device):
+        raise PrinterError("프린터를 열지 못했습니다.", code=0x80000005)
+
+    queue.set_printer_factory(factory)
+    recorder = Recorder(queue)
+    events = []
+    queue.job_error.connect(lambda job_id, message: events.append(("error", job_id, message)))
+    queue.job_completed.connect(lambda job_id, ok: events.append(("completed", job_id, ok)))
+    job_id = queue.add_card_job(STUB_DEVICE, cards(2))
+    wait_until(qapp, lambda: recorder.finished)
+    assert events[0][:2] == ("error", job_id)
+    assert "프린터 연결 실패: 프린터를 열지 못했습니다." in events[0][2]
+    assert events[1] == ("completed", job_id, False)
+    assert recorder.cards == []
+
+
+def test_legacy_init_failure_also_emits_job_error(qapp, queue, make_image):
+    def factory(dll_path, selected):
+        raise RuntimeError("DLL 없음")
+
+    queue.set_legacy_printer_factory(factory)
+    recorder = Recorder(queue)
+    errors = []
+    queue.job_error.connect(lambda job_id, message: errors.append((job_id, message)))
+    job_id = queue.add_job(dll_path="x.dll", front_image_path=make_image(), is_dual_side=False)
+    wait_until(qapp, lambda: recorder.finished)
+    assert errors and errors[0][0] == job_id and "DLL 없음" in errors[0][1]
+
+
+def test_history_id_is_public_and_known_when_the_job_starts(qapp, tmp_path):
+    history = JobHistory(str(tmp_path / "history.sqlite"))
+    queue = PrintQueueManager(history=history)
+    queue.set_printer_factory(lambda device: StubPrinter())
+    recorder = Recorder(queue)
+    at_start = []
+    queue.job_started.connect(lambda job_id, index, total: at_start.append(queue.history_id_for(job_id)))
+    job_id = queue.add_card_job(STUB_DEVICE, cards(1), name="이력 확인")
+    assert queue.get_job(job_id).history_id == queue.history_id_for(job_id) == at_start[0]
+    wait_until(qapp, lambda: recorder.finished)
+    stored = history.get_job(at_start[0])
+    assert stored is not None and stored.name == "이력 확인" and stored.status == "completed"
+    assert queue.history_id_for(job_id) == stored.id, "작업이 끝나 큐가 잊은 뒤에도 찾을 수 있다"
+    assert queue.get_job(job_id) is None and queue.get_job(999) is None
+    assert queue.history_id_for(999) is None
+
+
+def test_history_id_is_none_without_a_history_store(qapp, queue):
+    queue.set_printer_factory(lambda device: StubPrinter())
+    recorder = Recorder(queue)
+    job_id = queue.add_card_job(STUB_DEVICE, cards(1))
+    assert queue.get_job(job_id).history_id is None and queue.history_id_for(job_id) is None
+    wait_until(qapp, lambda: recorder.finished)
+
+
+class LazyCards:
+    """카드를 요청받을 때 만드는 공급자. 누가 언제 무엇을 요청했는지 적는다."""
+
+    def __init__(self, count, fail_on=(), cancel_on=None, dual=False):
+        self.count = count
+        self.fail_on = set(fail_on)
+        self.cancel_on = cancel_on
+        self.is_dual_side = dual
+        self.requested = []
+        self.threads = set()
+
+    def __len__(self):
+        return self.count
+
+    def __getitem__(self, index):
+        self.requested.append(index)
+        self.threads.add(threading.get_ident())
+        if index + 1 == self.cancel_on:
+            raise PrintCancelled()
+        if index + 1 in self.fail_on:
+            raise PrinterError("카드 이미지를 만들지 못했습니다.")
+        return CardJob(front=SideImages(f"card{index + 1}.png"), record_id=101 + index)
+
+    def record_id(self, index):
+        return 101 + index
+
+
+def test_card_provider_is_asked_one_card_at_a_time_on_the_print_thread(qapp, queue):
+    gate = threading.Event()
+    printer = StubPrinter(gate=gate)
+    queue.set_printer_factory(lambda device: printer)
+    recorder = Recorder(queue)
+    provider = LazyCards(3, dual=True)
+    assert isinstance(provider, CardProvider)
+    job_id = queue.add_card_job(STUB_DEVICE, provider)
+    assert provider.requested == [], "큐에 넣을 때는 카드를 만들지 않는다"
+    job = queue.get_job(job_id)
+    assert (job.quantity, job.is_dual_side, job.is_card_job) == (3, True, True)
+
+    wait_until(qapp, printer.entered.is_set)
+    assert provider.requested == [0], "지금 찍는 카드만 받아 갔다"
+    gate.set()
+    wait_until(qapp, lambda: recorder.finished)
+    assert provider.requested == [0, 1, 2] and printer.printed == [101, 102, 103]
+    assert provider.threads == {next(iter(provider.threads))} != {threading.get_ident()}
+    assert recorder.finished == [(3, 0, 1, 0, "")]
+
+
+def test_dual_side_can_be_stated_explicitly_and_plain_lists_are_not_touched_lazily(qapp, queue):
+    queue.set_printer_factory(lambda device: StubPrinter())
+    recorder = Recorder(queue)
+    first = queue.add_card_job(STUB_DEVICE, LazyCards(1), dual_side=True)
+    second = queue.add_card_job(STUB_DEVICE, (card for card in cards(2)))      # 제너레이터도 받는다
+    assert queue.get_job(first).is_dual_side is True
+    assert queue.get_job(second).quantity == 2 and queue.get_job(second).is_dual_side is False
+    wait_until(qapp, lambda: recorder.finished)
+    assert recorder.finished == [(3, 0, 2, 0, "")]
+    with pytest.raises(ValueError):
+        queue.add_card_job(STUB_DEVICE, LazyCards(0))
+
+
+def test_provider_failure_fails_only_that_card_and_keeps_its_record_id(qapp, tmp_path):
+    history = JobHistory(str(tmp_path / "history.sqlite"))
+    queue = PrintQueueManager(history=history)
+    printer = StubPrinter()
+    queue.set_printer_factory(lambda device: printer)
+    recorder = Recorder(queue)
+    queue.add_card_job(STUB_DEVICE, LazyCards(3, fail_on={2}), stop_on_error=False)
+    wait_until(qapp, lambda: recorder.finished)
+    assert printer.printed == [101, 103]
+    assert [(index, ok) for _, index, ok, _ in recorder.cards] == [(1, True), (2, False), (3, True)]
+    stored = history.list_cards(history.list_jobs()[0].id)
+    assert [(c.card_index, c.status, c.record_id) for c in stored] == [
+        (1, "success", "101"), (2, "failed", "102"), (3, "success", "103")]
+
+
+def test_cancelled_card_is_recorded_as_cancelled_not_failed(qapp, tmp_path):
+    history = JobHistory(str(tmp_path / "history.sqlite"))
+    queue = PrintQueueManager(history=history)
+    printer = StubPrinter()
+    queue.set_printer_factory(lambda device: printer)
+    recorder = Recorder(queue)
+    finished = []
+    queue.card_finished.connect(lambda *args: finished.append(args))
+    job_id = queue.add_card_job(STUB_DEVICE, LazyCards(4, cancel_on=2))
+    wait_until(qapp, lambda: recorder.finished)
+
+    assert printer.printed == [101], "취소된 카드와 그 뒤 카드는 프린터로 가지 않는다"
+    assert [(index, status) for _, index, status, _ in finished] == [(1, "success"), (2, "cancelled")]
+    assert recorder.cards[1][:3] == (job_id, 2, False)
+    assert recorder.finished == [(1, 0, 1, 0, "")], "취소는 실패 장수에도 오류 문구에도 들어가지 않는다"
+    job = history.list_jobs()[0]
+    assert (job.status, job.success_cards, job.failed_cards, job.error_text) == ("cancelled", 1, 0, None)
+    assert [(c.card_index, c.status, c.record_id) for c in history.list_cards(job.id)] == [
+        (1, "success", "101"), (2, "cancelled", "102")]
+
+
+def test_cancel_all_does_not_block_and_announces_every_job(qapp, queue):
+    gate = threading.Event()
+    printer = StubPrinter(gate=gate)
+    queue.set_printer_factory(lambda device: printer)
+    recorder = Recorder(queue)
+    first = queue.add_card_job(STUB_DEVICE, cards(3))
+    second = queue.add_card_job(STUB_DEVICE, cards(1))
+    third = queue.add_card_job(STUB_DEVICE, cards(2))
+    wait_until(qapp, printer.entered.is_set)
+
+    started = _monotonic()
+    queue.cancel_all()                                   # 첫 카드가 아직 프린터 안에 있다
+    assert _monotonic() - started < 1.0, "인쇄 스레드를 기다리지 않는다"
+    assert recorder.cancelled == [second, third, first]
+    assert queue.get_pending_jobs() == [] and recorder.completed == []
+    assert queue.get_queue_status()["is_processing"] is True
+    assert queue.wait_idle(50) is False, "찍던 카드는 아직 끝나지 않았다"
+
+    gate.set()
+    assert queue.wait_idle(5000) is True
+    wait_until(qapp, lambda: recorder.finished)
+    assert printer.printed == [101] and recorder.completed == [(first, True)]
+    assert recorder.started == [first]
+    assert queue.wait_idle() is True
+
+
+def test_cancel_all_with_nothing_queued_is_harmless(queue):
+    recorder = Recorder(queue)
+    queue.cancel_all()
+    assert recorder.cancelled == [] and queue.wait_idle() is True
+
+
+def test_card_progress_carries_structured_stages_from_a_real_adapter(qapp, queue, make_image):
+    lib = FakeR600Library()
+    recorder = Recorder(queue)
+    events, steps = [], []
+    queue.card_progress.connect(lambda job_id, index, event: events.append((job_id, index, event)))
+    queue.job_progress.connect(lambda percent, message: steps.append(message))
+    device = PrinterDevice("rtai", "RTAI R600 FAKE", "usb", "RTAI R600 FAKE")
+    from printer.rtai_adapter import RtaiAdapter
+
+    def factory(target):
+        adapter = RtaiAdapter(lib=lib, settle_seconds=0)
+        adapter.connect(target)
+        return adapter
+
+    queue.set_printer_factory(factory)
+    job_id = queue.add_card_job(device, [CardJob(front=SideImages(make_image(), orientation="portrait")),
+                                         CardJob(front=SideImages(make_image(), orientation="portrait"))])
+    wait_until(qapp, lambda: recorder.finished)
+    assert all(isinstance(event, ProgressEvent) and job == job_id for job, _, event in events)
+    assert [event.stage for _, index, event in events if index == 1] == [
+        "feed", "setup", "front_image", "print", "wait", "eject", "done"]
+    assert [event.stage for _, index, event in events if index == 2][-1] == "done"
+    assert all(event.panel is None and event.fraction is None for _, _, event in events)
+    assert events[0][2].text == "카드 삽입 중..." and events[0][2].percent == 15
+    assert any("카드 삽입 중..." in message for message in steps), "예전 진행 시그널도 그대로 나간다"
+
+
+def test_card_progress_from_a_driver_without_stage_keys_is_stage_unknown(qapp, queue):
+    queue.set_printer_factory(lambda device: StubPrinter())
+    recorder = Recorder(queue)
+    events = []
+    queue.card_progress.connect(lambda job_id, index, event: events.append((index, event)))
+    queue.add_card_job(STUB_DEVICE, cards(1))
+    wait_until(qapp, lambda: recorder.finished)
+    assert events == [(1, ProgressEvent(100, "완료"))]
+    assert events[0][1].stage == STAGE_UNKNOWN and events[0][1].panel is None

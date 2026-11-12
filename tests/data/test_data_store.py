@@ -336,3 +336,90 @@ def test_usable_from_another_thread(people):
     worker.start()
     worker.join()
     assert seen == [5]
+
+
+# ── 사진 조정값: 저장 여부 구별 ───────────────────────────────────────────────
+def test_stored_default_adjustment_is_distinguishable_from_nothing_stored(tmp_path):
+    with DataStore(tmp_path / "adjust.hsdata") as store:
+        store.add_column("사진", "photo")
+        first = store.insert({"사진": "a.png"})
+        second = store.insert({"사진": "b.png"})
+
+        assert store.get_photo_adjustment(first, "사진") == PhotoAdjustment()
+        assert store.get_photo_adjustment(first, "사진", default=None) is None
+        assert store.get_photo_adjustment(first, "사진", PhotoAdjustment(2.0)) == PhotoAdjustment(2.0)
+        assert store.has_photo_adjustment(first, "사진") is False
+
+        store.set_photo_adjustment(first, "사진", PhotoAdjustment())      # 기본값을 일부러 저장
+        assert store.has_photo_adjustment(first, "사진") is True
+        assert store.get_photo_adjustment(first, "사진", default=None) == PhotoAdjustment()
+        assert store.has_photo_adjustment(second, "사진") is False
+
+        assert store.clear_photo_adjustments("사진", [first]) == 1
+        assert store.has_photo_adjustment(first, "사진") is False
+        with pytest.raises(DataError):
+            store.has_photo_adjustment(first, "없는 열")
+
+
+def test_offsets_are_stored_as_given_and_only_zoom_is_validated(tmp_path):
+    # offset은 틀 크기에 대한 비율(+ = 오른쪽·아래)이고 저장소는 범위를 강제하지 않는다.
+    with DataStore(tmp_path / "range.hsdata") as store:
+        store.add_column("사진", "photo")
+        record = store.insert({"사진": "a.png"})
+        store.set_photo_adjustment(record, "사진", PhotoAdjustment(0.25, 1.5, -2.0))
+        assert store.get_photo_adjustment(record, "사진") == PhotoAdjustment(0.25, 1.5, -2.0)
+        for bad in (0, -1.0, float("nan")):
+            with pytest.raises(DataError):
+                store.set_photo_adjustment(record, "사진", PhotoAdjustment(zoom=bad))
+
+
+# ── 스레드 규칙(DataStore 설명서에 적은 보장) ─────────────────────────────────
+def test_calls_from_several_threads_are_serialized(tmp_path):
+    import threading
+
+    with DataStore(tmp_path / "threads.hsdata") as store:
+        store.add_column("이름")
+        errors = []
+
+        def writer(tag):
+            try:
+                for index in range(40):
+                    store.insert({"이름": f"{tag}-{index}"})
+                    store.count()
+            except Exception as exc:          # pragma: no cover - 실패하면 아래에서 드러난다
+                errors.append(exc)
+
+        threads = [threading.Thread(target=writer, args=(tag,)) for tag in "abcd"]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(30)
+        assert errors == [] and store.count() == 160
+        assert len({record["이름"] for record in store.rows()}) == 160
+
+
+def test_other_threads_wait_for_an_open_transaction_and_see_only_the_committed_state(tmp_path):
+    import threading
+
+    with DataStore(tmp_path / "tx.hsdata") as store:
+        store.add_column("이름")
+        inside, seen = threading.Event(), []
+
+        def reader():
+            inside.wait(10)
+            seen.append(store.count())          # 트랜잭션이 끝날 때까지 기다린다
+
+        thread = threading.Thread(target=reader)
+        thread.start()
+        with store.transaction():
+            store.insert({"이름": "하나"})
+            inside.set()
+            thread.join(0.2)
+            assert thread.is_alive() and seen == [], "다른 스레드는 중간 상태를 읽지 못한다"
+            store.insert({"이름": "둘"})
+        thread.join(10)
+        assert seen == [2]
+
+        snapshot = store.rows()
+        snapshot[0]["이름"] = "바꿔도 저장되지 않는다"
+        assert store.rows()[0]["이름"] == "하나"

@@ -25,6 +25,14 @@ def describe(value) -> str:
     return str(value)
 
 
+def remaining_label(value, unit: str) -> str:
+    """잔량 숫자와 그 단위. 단위를 모르는 값은 SDK 값 그대로임을 밝힌다(실기에서 확인할 것)."""
+    if value is None:
+        return "확인 불가"
+    label = {"cards": "카드 장수", "percent": "%"}.get(unit, "단위 확인 안 됨 - SDK 값 그대로")
+    return f"{value} ({label})"
+
+
 def probe_device(registry, device, verbose: bool) -> bool:
     from printer.base import PrinterError
 
@@ -54,9 +62,9 @@ def probe_device(registry, device, verbose: bool) -> bool:
         say(f"    카드 공급함: {'비어 있음' if status.feeder_empty else '카드 있음' if status.feeder_empty is False else '확인 불가'}")
         if status.card_inside is not None:
             say(f"    프린터 내부 카드: {'있음' if status.card_inside else '없음'}")
-        say(f"    리본 잔량: {status.ribbon_remaining if status.ribbon_remaining is not None else '확인 불가'}")
+        say(f"    리본 잔량: {remaining_label(status.ribbon_remaining, status.ribbon_unit)}")
         if status.film_remaining is not None:
-            say(f"    필름 잔량: {status.film_remaining}")
+            say(f"    필름 잔량: {remaining_label(status.film_remaining, status.film_unit)}")
         if status.ribbon_type is not None:
             ribbon = status.details.get("ribbon", {}).get("name")
             say(f"    리본 종류: {status.ribbon_type}" + (f" ({ribbon})" if ribbon else ""))

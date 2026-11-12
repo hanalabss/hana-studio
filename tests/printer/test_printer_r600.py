@@ -287,3 +287,59 @@ def test_extra_signatures_name_functions_the_real_dll_exports():
         data = handle.read()
     for name in EXTRA_SIGNATURES:
         assert name.encode("ascii") + b"\0" in data, name
+
+
+# ── 워터마크 임시 파일 이름이 겹치지 않는다 ─────────────────────────────────────
+def test_front_and_back_masks_in_the_same_second_get_their_own_files(monkeypatch, make_image):
+    import os
+    import time
+
+    from PIL import Image
+
+    from printer.fakes import FakeR600Library
+
+    class Capture(FakeR600Library):
+        def __init__(self):
+            super().__init__()
+            self.seen = []
+
+        def _h_R600DrawWaterMark(self, x, y, w, h, path):
+            name = path.decode("cp949")
+            with Image.open(name) as image:
+                self.seen.append((name, image.convert("RGB").getpixel((5, 5))))
+            return 0
+
+    monkeypatch.setattr(time, "time", lambda: 1_700_000_000.4)       # 앞·뒷면이 같은 초에 그려진다
+    lib = Capture()
+    printer = R600Printer.from_library(lib)
+    front = make_image(size=(540, 860), color=(255, 255, 255), suffix=".png")
+    back = make_image(size=(540, 860), color=(0, 0, 0), suffix=".png")
+    printer.draw_watermark(0, 0, 55.0, 86.6, front)
+    printer.draw_watermark_rotated(0, 0, 55.0, 86.6, back, 180)
+
+    (front_path, front_pixel), (back_path, back_pixel) = lib.seen
+    assert front_path != back_path, "같은 초라도 서로 다른 파일을 쓴다"
+    assert os.path.basename(front_path).startswith("watermark_clean_1700000000_")
+    assert front_pixel[0] > 200 and back_pixel[0] < 50
+    with Image.open(front_path) as still_front:
+        assert still_front.convert("RGB").getpixel((5, 5))[0] > 200, "뒷면이 앞면 마스크를 덮어쓰지 않았다"
+
+    printer.cleanup_layer_files()
+    assert os.path.exists(front_path), "카드 사이 정리로는 지우지 않는다(SDK가 아직 쓸 수 있다)"
+    printer.close_library()
+    assert not os.path.exists(front_path) and not os.path.exists(back_path)
+
+
+def test_cleanup_and_close_removes_the_watermark_files_it_made(make_image):
+    import os
+
+    from printer.fakes import FakeR600Library
+
+    lib = FakeR600Library()
+    printer = R600Printer.from_library(lib)
+    printer.draw_watermark(0, 0, 55.0, 86.6, make_image(size=(540, 860)))
+    sent = lib.calls_named("R600DrawWaterMark")[0].args[4].decode("cp949")
+    assert os.path.exists(sent)
+    printer.cleanup_and_close()
+    assert not os.path.exists(sent)
+    assert lib.call_names()[-2:] == ["R600CardEject", "R600LibClear"]

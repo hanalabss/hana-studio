@@ -349,3 +349,155 @@ def test_model_and_binding_do_not_import_qt():
         "sys.exit(1 if bad else 0)"
     )
     assert subprocess.run([sys.executable, "-c", code]).returncode == 0
+
+
+# ── 방향 · 크기 바꾸기(재배치) ───────────────────────────────────────────────
+from design.model import ItemGeometry, reflow_items, rotate_items  # noqa: E402
+
+LANDSCAPE, PORTRAIT = (85.6, 53.98), (53.98, 85.6)
+
+
+def values(geometry):
+    return (geometry.x, geometry.y, geometry.w, geometry.h, geometry.rotation)
+
+
+def near(*expected):
+    return pytest.approx(expected, abs=1e-9)
+
+
+def test_reposition_keeps_sizes_relative_places_and_stretches_full_width_items():
+    background = RectItem(x=0, y=0, w=85.6, h=53.98)                 # 면 전체
+    header = RectItem(x=0, y=0, w=85.6, h=12)                        # 위쪽 띠(좌우에 걸침)
+    logo = ImageItem(x=3, y=3, w=20, h=8)                            # 왼쪽 위(여백 3mm)
+    code = QRItem(x=62.6, y=30.98, w=20, h=20)                       # 오른쪽 아래(여백 3mm)
+    name = TextItem(x=32.8, y=21.99, w=20, h=10)                     # 한가운데
+    edge = RectItem(x=75.6, y=20, w=10, h=5)                         # 오른쪽 가장자리에 붙음
+    items = [background, header, logo, code, name, edge]
+    before = [values(item) for item in items]
+
+    moved = reflow_items(items, LANDSCAPE, PORTRAIT)
+    assert [values(item) for item in items] == before, "항목은 건드리지 않는다"
+    assert set(moved) == {item.id for item in items}
+
+    assert values(moved[background.id]) == near(0, 0, 53.98, 85.6, 0)
+    assert values(moved[header.id]) == near(0, 0, 53.98, 12, 0)
+    # 남는 폭에서의 자리 비율을 지킨다: 가로 여백은 줄고(65.6 → 33.98) 세로 여백은 는다(45.98 → 77.6).
+    assert values(moved[logo.id]) == near(3 * 33.98 / 65.6, 3 * 77.6 / 45.98, 20, 8, 0)
+    left, top, right, bottom = moved[code.id].bounds()
+    assert (53.98 - right, 85.6 - bottom) == near(3 * 33.98 / 65.6, 3 * 65.6 / 33.98)
+    assert (moved[code.id].w, moved[code.id].h) == (20, 20)
+    centre = moved[name.id]
+    assert (centre.x + 10, centre.y + 5) == near(53.98 / 2, 85.6 / 2), "가운데 있던 것은 가운데로"
+    assert moved[edge.id].bounds()[2] == pytest.approx(53.98), "가장자리에 붙은 것은 그대로 붙는다"
+    for geometry in moved.values():
+        left, top, right, bottom = geometry.bounds()
+        assert left >= -1e-9 and top >= -1e-9 and right <= 53.98 + 1e-9 and bottom <= 85.6 + 1e-9
+
+
+def test_reposition_centres_items_that_no_longer_fit_and_keeps_overhang():
+    too_wide = RectItem(x=5, y=40, w=70, h=6)                        # 세로 카드보다 넓다
+    overhang = RectItem(x=-4, y=10, w=20, h=10)                      # 왼쪽으로 4mm 넘쳐 있다
+    past_right = RectItem(x=70, y=10, w=20, h=10)                    # 오른쪽으로 4.4mm 넘쳐 있다
+    moved = reflow_items([too_wide, overhang, past_right], LANDSCAPE, PORTRAIT)
+    assert moved[too_wide.id].w == 70 and moved[too_wide.id].x + 35 == pytest.approx(53.98 / 2)
+    assert moved[overhang.id].x == pytest.approx(-4)
+    assert moved[past_right.id].bounds()[2] == pytest.approx(53.98 + 4.4)
+
+
+def test_reposition_handles_sideways_and_oblique_items():
+    sideways = RectItem(x=37.8, y=-15.8, w=10, h=85.6, rotation=90)      # 눕혀서 좌우에 걸친 띠
+    assert sideways.bounds() == pytest.approx((0, 22, 85.6, 32))
+    oblique = RectItem(x=30, y=20, w=20, h=10, rotation=30)
+    moved = reflow_items([sideways, oblique], LANDSCAPE, PORTRAIT)
+    top = 22 * (85.6 - 10) / (53.98 - 10)
+    assert moved[sideways.id].bounds() == pytest.approx((0, top, 53.98, top + 10))
+    assert (moved[sideways.id].w, moved[sideways.id].h, moved[sideways.id].rotation) == near(10, 53.98, 90)
+    tilted = moved[oblique.id]
+    assert (tilted.w, tilted.h, tilted.rotation) == (20, 10, 30)
+    left, top, right, bottom = tilted.bounds()
+    assert 0 <= left and right <= 53.98 and 0 <= top and bottom <= 85.6
+
+
+def test_scale_mode_scales_each_axis_and_swaps_factors_for_sideways_items():
+    plain = RectItem(x=10, y=5, w=20, h=10)
+    sideways = RectItem(x=40, y=10, w=20, h=10, rotation=270)
+    oblique = EllipseItem(x=50, y=30, w=12, h=6, rotation=45)
+    old, new = (80.0, 50.0), (160.0, 75.0)
+    scaled = reflow_items([plain, sideways, oblique], old, new, "scale")
+    assert values(scaled[plain.id]) == near(20, 7.5, 40, 15, 0)
+    for item in (plain, sideways):
+        left, top, right, bottom = item.bounds()
+        assert scaled[item.id].bounds() == pytest.approx((left * 2, top * 1.5, right * 2, bottom * 1.5))
+    tilted = scaled[oblique.id]
+    assert (tilted.w, tilted.h) == near(18, 9), "비스듬한 항목은 작은 비율로만 키운다"
+    assert (tilted.x + 9, tilted.y + 4.5) == near(56 * 2, 33 * 1.5)
+
+
+def test_fit_mode_scales_uniformly_and_centres_the_layout():
+    item = RectItem(x=0, y=0, w=80, h=50, rotation=0)
+    inner = TextItem(x=10, y=10, w=20, h=5, rotation=17)
+    fitted = reflow_items([item, inner], (80.0, 50.0), (50.0, 80.0), "fit")
+    assert values(fitted[item.id]) == near(0, 24.375, 50, 31.25, 0)
+    assert (fitted[inner.id].w, fitted[inner.id].h, fitted[inner.id].rotation) == near(12.5, 3.125, 17)
+    assert fitted[inner.id].x - fitted[item.id].x == pytest.approx(10 * 0.625)
+
+
+def test_reflow_to_the_same_size_changes_nothing_and_bad_arguments_are_rejected():
+    items = [RectItem(x=3, y=4, w=20, h=10, rotation=33), LineItem(x=0, y=10, w=85.6, h=0),
+             RectItem(x=-5, y=40, w=120, h=30), TextItem(x=30, y=20, w=10, h=5, rotation=90)]
+    for mode in ("reposition", "scale", "fit"):
+        same = reflow_items(items, LANDSCAPE, LANDSCAPE, mode)
+        for item in items:
+            assert values(same[item.id]) == near(*values(item)), (mode, item)
+    with pytest.raises(ValueError):
+        reflow_items(items, LANDSCAPE, PORTRAIT, "magic")
+    with pytest.raises(ValueError):
+        reflow_items(items, (0, 10), PORTRAIT)
+
+
+def test_rotate_items_turns_the_whole_side_clockwise():
+    items = [RectItem(x=2, y=3, w=20, h=10), TextItem(x=50, y=30, w=30, h=8, rotation=30),
+             LineItem(x=5, y=40, w=40, h=6, flip=True)]
+    width, height = LANDSCAPE
+    turned = rotate_items(items, LANDSCAPE)
+    for item in items:
+        left, top, right, bottom = item.bounds()
+        geometry = turned[item.id]
+        assert geometry.bounds() == pytest.approx((height - bottom, left, height - top, right))
+        assert (geometry.w, geometry.h) == (item.w, item.h)
+        assert geometry.rotation == pytest.approx((item.rotation + 90) % 360)
+    # 왼쪽 위 사각형(가운데 12, 8)은 오른쪽 위로 간다: 가운데 (53.98 - 8, 12)
+    assert values(turned[items[0].id]) == near(53.98 - 8 - 10, 12 - 5, 20, 10, 90)
+
+    half = rotate_items(items, LANDSCAPE, 2)
+    assert values(half[items[0].id]) == near(width - 22, height - 13, 20, 10, 180)
+    for turns in (0, 4, -4):
+        same = rotate_items(items, LANDSCAPE, turns)
+        for item in items:
+            assert values(same[item.id]) == near(*values(item))
+    assert rotate_items(items, LANDSCAPE, -1)[items[0].id] == rotate_items(items, LANDSCAPE, 3)[items[0].id]
+    assert [values(item)[:2] for item in items] == [(2, 3), (50, 30), (5, 40)], "항목은 건드리지 않는다"
+
+
+def test_document_reflow_side_previews_orientation_and_card_size_changes():
+    document = Document(card_width_mm=90, card_height_mm=58, bleed_mm=2)
+    side = document.side("front")
+    band = side.add_item(RectItem(x=0, y=0, w=90, h=14))
+    text = side.add_item(TextItem(x=4, y=20, w=30, h=8))
+
+    portrait = document.reflow_side("front", orientation="portrait")
+    assert values(portrait[band.id]) == near(0, 0, 58, 14, 0)
+    assert values(portrait[text.id]) == near(4 * 28 / 60, 20 * 82 / 50, 30, 8, 0)
+    assert (side.orientation, band.w, text.x) == ("landscape", 90, 4), "문서는 바뀌지 않는다"
+
+    resized = document.reflow_side("front", card_size_mm=(180, 116), mode="scale")
+    assert values(resized[text.id]) == near(8, 40, 60, 16, 0)
+    unchanged = document.reflow_side("front")
+    assert values(unchanged[band.id]) == near(*values(band)) and values(unchanged[text.id]) == near(*values(text))
+
+    portrait[text.id].apply_to(text)
+    assert values(text) == values(portrait[text.id]) and ItemGeometry.of(text) == portrait[text.id]
+    with pytest.raises(ValueError):
+        document.reflow_side("front", orientation="diagonal")
+    with pytest.raises(KeyError):
+        document.reflow_side("inside")

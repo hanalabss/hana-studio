@@ -163,3 +163,17 @@ def test_adjustment_helpers(tmp_path, folder):
         set_adjustment(reopened, 1, "사진", PhotoAdjustment(2.0, 0.5, 0.5))
     with DataStore(tmp_path / "명단.hsdata") as again:
         assert get_adjustment(again, 1, "사진") == PhotoAdjustment(2.0, 0.5, 0.5)
+
+
+def test_helpers_tell_a_stored_adjustment_from_none(tmp_path):
+    from data.photos import has_adjustment
+
+    with DataStore(tmp_path / "helpers.hsdata") as store:
+        store.add_column("사진", "photo")
+        record = store.insert({"사진": "a.png"})
+        assert get_adjustment(store, record, "사진") == PhotoAdjustment()
+        assert get_adjustment(store, record, "사진", None) is None
+        assert has_adjustment(store, record, "사진") is False
+        set_adjustment(store, record, "사진", PhotoAdjustment())
+        assert has_adjustment(store, record, "사진") is True
+        assert get_adjustment(store, record, "사진", None) == PhotoAdjustment()

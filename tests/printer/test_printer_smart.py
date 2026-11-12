@@ -525,6 +525,21 @@ def test_bleed_is_cropped_and_offset_shifts_the_image(capture, tmp_path):
     assert shifted.getpixel((40, 300)) == (0, 0, 255)
 
 
+def test_bleed_handled_option_skips_the_ratio_based_crop(capture, tmp_path):
+    lib, adapter = capture
+    source = str(tmp_path / "cut.png")
+    image = Image.new("RGB", (900, 580), (255, 0, 0))        # 비율은 도련 규격과 같지만 이미 칼선 크기
+    image.paste((0, 0, 255), (20, 20, 880, 560))
+    image.save(source)
+    adapter.print_card(CardJob(front=SideImages(source, orientation="landscape"),
+                               options={"bleed_handled": True}))
+    assert lib.images[0].size == (1012, 636)
+    assert lib.images[0].getpixel((2, 2)) == (255, 0, 0), "가장자리를 잘라 내지 않는다"
+    adapter.print_card(CardJob(front=SideImages(source, orientation="landscape"),
+                               options={"bleed_handled": False}))
+    assert lib.images[1].getpixel((2, 2)) == (0, 0, 255), "표시가 없으면 예전처럼 자른다"
+
+
 def test_back_rotation_option_turns_the_back_image(capture, tmp_path):
     lib, adapter = capture
     source = str(tmp_path / "back.png")
@@ -550,3 +565,67 @@ def test_close_is_safe_to_repeat(adapter, smart_lib):
     adapter.close()
     assert smart_lib.calls == [("SmartDCL_CloseDevice", (H,))]
     assert not adapter.is_connected
+
+
+# ── 구조화된 진행 · 잔량 단위 ────────────────────────────────────────────────
+def _events_for(pid, job_factory):
+    from printer.base import StructuredProgress
+
+    info, device = device_for(pid)
+    lib = FakeSmartLibrary(devices=[info])
+    adapter = SmartAdapter(lib=lib)
+    adapter.connect(device)
+    events = []
+    adapter.print_card(job_factory(), progress=StructuredProgress(events.append))
+    return lib, events
+
+
+def test_structured_progress_on_smart51_has_one_print_stage(make_image):
+    _, events = _events_for(SMART_PID_51, lambda: CardJob(
+        front=SideImages(make_image()), back=SideImages(make_image()),
+        options={"magnetic": {"track2": "1234"}}))
+    assert [(e.percent, e.stage, e.side) for e in events] == [
+        (5, "prepare", None), (15, "feed", None), (25, "magnetic", None), (40, "setup", None),
+        (60, "print", None), (95, "eject", None), (100, "done", None)]
+    assert all(e.panel is None and e.fraction is None for e in events)
+
+
+def test_structured_progress_on_smart50_splits_the_two_do_print_calls(make_image):
+    lib, events = _events_for(SMART_PID_50, lambda: CardJob(
+        front=SideImages(make_image()), back=SideImages(make_image())))
+    assert [(e.percent, e.stage, e.side) for e in events] == [
+        (5, "prepare", None), (15, "feed", None), (40, "setup", None),
+        (60, "print_front", "front"), (78, "print_back", "back"), (95, "eject", None), (100, "done", None)]
+    assert lib.call_names().count("SmartComm_DoPrint") == 2
+    assert [e.percent for e in events] == sorted(e.percent for e in events)
+
+    _, single = _events_for(SMART_PID_50, lambda: CardJob(front=SideImages(make_image())))
+    assert [e.stage for e in single] == ["prepare", "feed", "setup", "print", "eject", "done"]
+
+
+def test_plain_progress_callback_on_smart50_dual_side_still_gets_percent_and_text(make_image):
+    info, device = device_for(SMART_PID_50)
+    adapter = SmartAdapter(lib=FakeSmartLibrary(devices=[info]))
+    adapter.connect(device)
+    seen = []
+    adapter.print_card(CardJob(front=SideImages(make_image()), back=SideImages(make_image())),
+                       progress=lambda percent, message: seen.append((percent, message)))
+    assert seen[3:5] == [(60, "인쇄 실행 중..."), (78, "뒷면 인쇄 중...")] and seen[-1] == (100, "완료")
+
+
+@pytest.mark.parametrize("maximum, remain, unit, cards_left", [
+    (250, 180, "cards", 180),        # 최대·남은 횟수가 말이 되면 장수
+    (100, 62, "unknown", None),      # 최대가 100이면 %와 구별할 수 없다
+    (0, 180, "unknown", None),       # 최대값을 모른다
+    (250, 300, "unknown", None),     # 남은 값이 최대보다 크다
+])
+def test_ribbon_unit_is_cards_only_when_the_sdk_values_make_sense(smart_lib, smart_device, maximum, remain,
+                                                                   unit, cards_left):
+    smart_lib.ribbon_max, smart_lib.ribbon_remain = maximum, remain
+    adapter = SmartAdapter(lib=smart_lib)
+    adapter.connect(smart_device)
+    status = adapter.status()
+    assert status.ribbon_remaining == remain and status.ribbon_unit == unit
+    assert status.ribbon_cards_left == cards_left
+    assert status.ribbon_capacity == (maximum or None)
+    assert status.film_remaining is None and status.film_unit == "unknown"

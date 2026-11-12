@@ -7,6 +7,7 @@ import ctypes
 import os
 import io
 import time
+import uuid
 from typing import List, Optional, Tuple
 from config import config
 from utils.bleed_crop import crop_bleed
@@ -17,6 +18,11 @@ from .r600_extras import R600ExtrasMixin
 
 class R600Printer(R600ExtrasMixin):
     """R600 프린터 제어 클래스 - 개별 면 방향 지원 + 마스킹 회전 수정"""
+
+    # 이미지·마스크·UV 레이어를 그릴 때 비율 기반 도련 제거(utils.bleed_crop)를 할지.
+    # 기본값(True)이 기존 동작이다. RtaiAdapter가 이미 칼선 크기로 만든 카드
+    # (options["bleed_handled"])를 인쇄하는 동안만 False로 바꾼다.
+    bleed_crop_enabled = True
     
     def __init__(self, dll_path: str = './libDSRetransfer600App.dll', selected_printer: Optional[PrinterInfo] = None):
         """R600 프린터 초기화"""
@@ -418,7 +424,8 @@ class R600Printer(R600ExtrasMixin):
                     with open(image_path, 'rb') as f:
                         original_watermark = PILImage.open(io.BytesIO(f.read()))
                 print(f"  워터마크 원본 크기: {original_watermark.size}")
-                original_watermark = crop_bleed(original_watermark)
+                if self.bleed_crop_enabled:
+                    original_watermark = crop_bleed(original_watermark)
                 
                 # RGB 모드로 변환 (EXIF 정보 자동 제거됨)
                 if original_watermark.mode in ('RGBA', 'LA', 'P'):
@@ -431,9 +438,11 @@ class R600Printer(R600ExtrasMixin):
                     clean_watermark.paste(original_watermark)
                 
                 # 임시 파일로 저장 (EXIF 없음)
+                # 이름에 초 단위 시각만 쓰면 같은 카드의 앞·뒷면 마스크가 같은 초에 겹쳐 덮어쓴다.
                 temp_dir = tempfile.gettempdir()
-                temp_name = f"watermark_clean_{int(time.time())}.jpg"
+                temp_name = f"watermark_clean_{int(time.time())}_{uuid.uuid4().hex[:10]}.jpg"
                 temp_path = os.path.join(temp_dir, temp_name)
+                self._remember_session_file(temp_path)
                 
                 # 고품질로 저장
                 clean_watermark.save(temp_path, 'JPEG', quality=95, optimize=True)
@@ -452,7 +461,7 @@ class R600Printer(R600ExtrasMixin):
                     # 한글 경로 처리
                     import shutil
                     temp_dir = tempfile.gettempdir()
-                    temp_name = f"temp_watermark_{int(time.time())}.jpg"
+                    temp_name = f"temp_watermark_{int(time.time())}_{uuid.uuid4().hex[:10]}.jpg"
                     temp_path = os.path.join(temp_dir, temp_name)
                     shutil.copy2(image_path, temp_path)
                     path_encoded = temp_path.encode('cp949')
@@ -562,7 +571,8 @@ class R600Printer(R600ExtrasMixin):
             
             # 🎯 핵심: EXIF 회전을 실제 픽셀에 적용
             rotated_image = ImageOps.exif_transpose(original_image)
-            rotated_image = crop_bleed(rotated_image)  # 도련(58x90) -> 칼선(54x86)
+            if self.bleed_crop_enabled:
+                rotated_image = crop_bleed(rotated_image)  # 도련(58x90) -> 칼선(54x86)
             print(f"  EXIF 회전 적용 후 크기: {rotated_image.size}")
             
             # 회전이 적용되었는지 확인
@@ -626,7 +636,7 @@ class R600Printer(R600ExtrasMixin):
                 # 한글 경로 처리
                 import shutil
                 temp_dir = tempfile.gettempdir()
-                temp_name = f"temp_image_{int(time.time())}.jpg"
+                temp_name = f"temp_image_{int(time.time())}_{uuid.uuid4().hex[:10]}.jpg"
                 temp_path = os.path.join(temp_dir, temp_name)
                 shutil.copy2(image_path, temp_path)
                 path_encoded = temp_path.encode('cp949')
@@ -882,6 +892,11 @@ class R600Printer(R600ExtrasMixin):
                 print("[DEBUG] 카드 배출 건너뜀 (정상)")
             
             # 2. 임시 파일 정리 (회전된 마스킹 파일 포함)
+            try:
+                self.cleanup_layer_files()    # 이 객체가 만든 UV 레이어 임시 파일
+                self.cleanup_session_files()  # 이 객체가 만든 워터마크 임시 파일
+            except Exception as e:
+                print(f"[DEBUG] 레이어 임시 파일 정리 오류: {e}")
             try:
                 import tempfile
                 import glob

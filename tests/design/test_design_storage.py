@@ -279,7 +279,7 @@ def test_single_image_with_bleed_ratio_becomes_bleed_document(tmp_path, make_png
     assert os.path.isfile(os.path.join(document.base_dir, item.asset))
 
     rendered = render_side(document, "front", record={}, crop_bleed=True)
-    assert rendered.color.size == (round(58 * 300 / 25.4) - 48, round(90 * 300 / 25.4) - 48)
+    assert rendered.color.size == (round(54 * 300 / 25.4), round(86 * 300 / 25.4)) == (638, 1016)
     assert np.unique(np.array(rendered.color).reshape(-1, 3), axis=0).tolist() == [[0, 128, 255]]
     assert rendered.warnings == []
 

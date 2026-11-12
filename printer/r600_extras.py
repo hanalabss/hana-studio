@@ -219,7 +219,8 @@ class R600ExtrasMixin:
 
     def draw_layer_fluor(self, x: float, y: float, width: float, height: float,
                          image_path: str, rotation: int = 0) -> None:
-        """R600DrawLayerFluor: UV(형광) 레이어 이미지를 캔버스에 올린다. 도련은 잘라 낸다."""
+        """R600DrawLayerFluor: UV(형광) 레이어 이미지를 캔버스에 올린다. 도련은 잘라 낸다
+        (bleed_crop_enabled가 False면 자르지 않는다)."""
         prepared = self._prepare_layer_file(image_path, rotation, "uv_layer")
         ret = self._ext("R600DrawLayerFluor")(x, y, width, height, prepared.encode("cp949"))
         self._ext_check(ret, "UV 레이어 그리기")
@@ -270,6 +271,7 @@ class R600ExtrasMixin:
         if not getattr(self, "is_initialized", False):
             return
         self.cleanup_layer_files()
+        self.cleanup_session_files()
         try:
             self.lib.R600LibClear()
         finally:
@@ -345,14 +347,32 @@ class R600ExtrasMixin:
         with open(image_path, "rb") as handle:
             image = Image.open(io.BytesIO(handle.read()))
         image.load()
-        image = crop_bleed(image).convert("RGB")
+        if getattr(self, "bleed_crop_enabled", True):
+            image = crop_bleed(image)
+        image = image.convert("RGB")
         if rotation % 360:
             image = image.rotate(-(rotation % 360), expand=True)
         temp_path = create_safe_temp_file(prefix=prefix, suffix=".jpg",
                                           dir=get_cached_safe_temp_dir())
         image.save(temp_path, "JPEG", quality=95)
-        self.__dict__.setdefault("_ext_temp_files", []).append(temp_path)
+        self._remember_temp_file(temp_path)
         return temp_path
+
+    def _remember_temp_file(self, path: str) -> None:
+        """카드 한 장이 끝난 뒤 cleanup_layer_files가 지울 임시 파일로 적어 둔다."""
+        self.__dict__.setdefault("_ext_temp_files", []).append(path)
+
+    def _remember_session_file(self, path: str) -> None:
+        """SDK를 닫을 때(close_library / cleanup_and_close) 지울 임시 파일로 적어 둔다."""
+        self.__dict__.setdefault("_session_temp_files", []).append(path)
+
+    def cleanup_session_files(self) -> None:
+        """draw_watermark가 만든 임시 파일을 지운다. SDK를 닫을 때 부른다."""
+        for path in self.__dict__.pop("_session_temp_files", []):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
 
     def cleanup_layer_files(self) -> None:
         """draw_layer_fluor가 만든 임시 파일을 지운다. 인쇄가 끝난 뒤에 부른다."""

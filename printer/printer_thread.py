@@ -10,7 +10,10 @@ from PySide6.QtCore import QThread, Signal
 from config import config
 from .r600_printer import R600Printer
 from .exceptions import R600PrinterError
-from .base import CardJob, PrinterDevice, PrinterError
+from .base import (
+    CardJob, PrintCancelled, PrinterDevice, PrinterError, ProgressEvent, StructuredProgress,
+    as_card_provider, provider_record_id,
+)
 from .printer_discovery import PrinterInfo
 
 
@@ -23,6 +26,7 @@ class PrinterThread(QThread):
     card_completed = Signal(int)  # 완료된 카드 번호
     step_progress = Signal(int, str)  # 전체 진행률(%), 상태 메시지
     card_result = Signal(int, bool, str)  # 카드 순번(1부터), 성공 여부, 오류 문구
+    card_stage = Signal(int, object)  # 카드 순번(1부터), printer.base.ProgressEvent (단계 키·패널 포함)
 
 
     def __init__(self, dll_path: str, 
@@ -45,6 +49,7 @@ class PrinterThread(QThread):
                     r600_factory: Optional[Callable[[str, Optional[PrinterInfo]], Any]] = None):
             """selected_printer: 사용할 RTAI 프린터(PrinterInfo, PrinterDevice 또는 이름).
             device + card_jobs: CardPrinter 계열 장치로 카드마다 다른 CardJob을 인쇄한다.
+              card_jobs는 CardJob 목록이거나 printer.base.CardProvider(카드를 찍기 직전에 만들어 준다).
             printer_factory / r600_factory: 프린터 객체 생성 함수(테스트·가짜 백엔드용)."""
             super().__init__()
             self.dll_path = dll_path
@@ -62,11 +67,12 @@ class PrinterThread(QThread):
             self.should_stop = False
             self.selected_printer = selected_printer
             self.device = device
-            self.card_jobs = list(card_jobs) if card_jobs is not None else None
+            self.card_jobs = as_card_provider(card_jobs) if card_jobs is not None else None
             self.stop_on_error = stop_on_error
             self.printer_factory = printer_factory
             self.r600_factory = r600_factory
-            self.results: List[dict] = []     # 카드별 결과 (index, ok, message, code, record_id, 시각)
+            # 카드별 결과 (index, ok, status, message, code, record_id, 시각). status: success|failed|cancelled
+            self.results: List[dict] = []
             self._finished_emitted = False
             if self.card_jobs is not None:
                 self.quantity = len(self.card_jobs)
@@ -89,9 +95,11 @@ class PrinterThread(QThread):
         return PrinterInfo(str(chosen), "USB")
 
     def _record_result(self, index: int, ok: bool, message: str = "", code=None,
-                       record_id=None, started_at: Optional[str] = None):
+                       record_id=None, started_at: Optional[str] = None,
+                       status: Optional[str] = None):
         self.results.append({
-            "index": index, "ok": ok, "message": message, "code": code,
+            "index": index, "ok": ok, "status": status or ("success" if ok else "failed"),
+            "message": message, "code": code,
             "record_id": record_id, "started_at": started_at,
             "finished_at": datetime.now().isoformat(timespec="seconds"),
         })
@@ -228,33 +236,45 @@ class PrinterThread(QThread):
                 return
 
             self.progress.emit(f"📄 총 {total}장 인쇄 시작")
-            for card_num, job in enumerate(self.card_jobs, start=1):
+            cards = self.card_jobs
+            for card_num in range(1, total + 1):
                 if self.should_stop:
                     self.progress.emit("❌ 사용자에 의해 인쇄가 중단되었습니다.")
                     break
 
-                def progress_callback(card_progress: int, message: str, _num=card_num):
-                    overall = int(((_num - 1) + card_progress / 100) / total * 100)
-                    self.step_progress.emit(overall, f"[{_num}/{total}] {message}")
+                def on_event(event: ProgressEvent, _num=card_num):
+                    overall = int(((_num - 1) + event.percent / 100) / total * 100)
+                    self.step_progress.emit(overall, f"[{_num}/{total}] {event.text}")
+                    self.card_stage.emit(_num, event)
 
                 started_at = datetime.now().isoformat(timespec="seconds")
                 self.print_progress.emit(card_num - 1, total)
                 self.progress.emit(f"📄 {card_num}번째 카드 인쇄 중")
+                record_id = provider_record_id(cards, card_num - 1)
                 try:
-                    printer.print_card(job, progress=progress_callback)
+                    # 공급자는 여기서(찍기 직전에) 카드를 만든다. 목록이면 그냥 꺼낸다.
+                    job = cards[card_num - 1]
+                    record_id = job.record_id
+                    printer.print_card(job, progress=StructuredProgress(on_event))
+                except PrintCancelled as e:
+                    self.should_stop = True
+                    self.progress.emit(f"⏹️ {card_num}번째 카드는 취소되어 인쇄하지 않았습니다.")
+                    self._record_result(card_num, False, str(e), None, record_id, started_at,
+                                        status="cancelled")
+                    break
                 except PrinterError as e:
                     self.progress.emit(f"❌ {card_num}번째 카드 인쇄 실패: {e}")
-                    self._record_result(card_num, False, str(e), e.code, job.record_id, started_at)
+                    self._record_result(card_num, False, str(e), e.code, record_id, started_at)
                     if self.stop_on_error:
                         break
                     continue
                 except Exception as e:
                     self.progress.emit(f"❌ {card_num}번째 카드에서 예상치 못한 오류: {e}")
-                    self._record_result(card_num, False, str(e), None, job.record_id, started_at)
+                    self._record_result(card_num, False, str(e), None, record_id, started_at)
                     break
 
                 successful_prints += 1
-                self._record_result(card_num, True, "", None, job.record_id, started_at)
+                self._record_result(card_num, True, "", None, record_id, started_at)
                 self.print_progress.emit(card_num, total)
                 self.card_completed.emit(successful_prints)
 
@@ -285,6 +305,8 @@ class PrinterThread(QThread):
             overall_progress = int((completed_cards + card_progress / 100) / self.quantity * 100)
             status_message = f"[{card_num}/{self.quantity}] {message}"
             self.step_progress.emit(overall_progress, status_message)
+            # 기존 방식 R600 흐름은 단계 키를 주지 않는다(STAGE_UNKNOWN).
+            self.card_stage.emit(card_num, ProgressEvent(max(0, min(100, int(card_progress))), message))
 
         if self.is_dual_side:
             # 양면 인쇄 - 개별 면 방향 전달 + 콜백

@@ -34,7 +34,22 @@ class Column:
 
 @dataclass(frozen=True)
 class PhotoAdjustment:
-    """zoom은 배율(1.0 = 틀에 맞춤), offset은 틀 크기에 대한 비율(-1.0 ~ 1.0)."""
+    """레코드 한 건의 사진 한 장을 틀(디자인의 이미지 항목) 안에서 어떻게 놓을지.
+
+    zoom      배율(단위 없음). 1.0 = 항목의 맞춤 방식(fill·contain·stretch)대로 틀에 맞춘 크기,
+              1.5 = 그보다 1.5배 크게. 0보다 커야 한다(저장할 때 검사한다).
+    offset_x  사진을 가로로 옮기는 거리 ÷ 틀의 너비. +면 오른쪽, -면 왼쪽.
+              0.1 = 틀 너비의 10%만큼 오른쪽으로. 0 = 가운데.
+    offset_y  사진을 세로로 옮기는 거리 ÷ 틀의 높이. +면 아래, -면 위.
+
+    offset은 사진 크기나 픽셀이 아니라 **틀 크기에 대한 비율**이라 디자인의 틀 크기가 바뀌어도
+    같은 구도로 남는다. 보통 -1.0 ~ 1.0 안에서 쓰지만 저장소는 범위를 강제하지 않는다. 인쇄할 때
+    렌더러의 design.Crop(남는 폭 기준 -1..1)으로 바꾸면서 틀에 빈 곳이 생기지 않게 잘린다
+    (services.render_job.crop_from_adjustment).
+
+    PhotoAdjustment()는 "조정 없음"과 같은 모양이다. 저장된 값이 정말 없는지는
+    DataStore.has_photo_adjustment 또는 get_photo_adjustment(..., default=None)으로 구별한다.
+    """
 
     zoom: float = 1.0
     offset_x: float = 0.0
@@ -77,6 +92,27 @@ def _physical(column_id: int) -> str:
 
 
 class DataStore:
+    """명단 파일(.hsdata, SQLite) 하나.
+
+    스레드 규칙 (코드가 보장하는 것):
+      - 연결은 하나이고 모든 공개 메서드가 재진입 잠금(RLock) 안에서 그 연결을 쓴다. 그래서
+        어느 스레드에서 불러도 되고, 호출은 한 번에 하나씩 차례로 실행된다(동시에 읽지 않는다).
+      - transaction() 블록은 끝날 때까지 잠금을 쥔다. 그동안 다른 스레드의 읽기·쓰기는 기다렸다가
+        커밋(또는 되돌림)된 뒤의 상태만 본다. 블록 안에서는 오래 걸리는 일(대화상자, 파일 변환,
+        네트워크)을 하지 않는다. 같은 스레드에서는 중첩해 쓸 수 있고 가장 바깥 블록이 끝날 때 반영된다.
+      - insert_many에 넘긴 이터러블은 그 트랜잭션 안에서(잠금을 쥔 채) 소비된다.
+      - rows()/get()이 돌려주는 레코드는 그 시점의 사본(dict)이다. 고쳐도 저장되지 않고,
+        다른 스레드가 값을 바꿔도 따라 바뀌지 않는다.
+    보장하지 않는 것:
+      - 변경 알림은 없다. 다른 스레드가 바꾼 내용은 다시 읽어야 보인다(화면 갱신은 부른 쪽 몫).
+      - 메서드 여러 개를 이어 부르는 동안의 일관성. 묶어야 하면 transaction()으로 감싼다.
+      - close() 뒤의 호출은 DataError다. 다른 스레드가 쓰는 중에 닫지 않도록 부른 쪽이 순서를 지킨다.
+      - 같은 파일을 DataStore 여러 개(또는 다른 프로세스)로 동시에 여는 경우의 쓰기 충돌.
+        한 파일은 DataStore 하나로 열어 공유한다.
+    앱에서는 화면(UI) 스레드가 명단을 읽고 쓰고, 인쇄 표시(mark_printed)도 UI 스레드의
+    PrintService가 남긴다. 가져오기처럼 오래 걸리는 쓰기만 작업 스레드에서 한다.
+    """
+
     def __init__(self, path: str | Path):
         self.path = str(path)
         self._lock = threading.RLock()
@@ -512,14 +548,25 @@ class DataStore:
 
     # ---- 사진 조정값 ----
 
-    def get_photo_adjustment(self, record_id: int, column: str) -> PhotoAdjustment:
+    def get_photo_adjustment(
+        self, record_id: int, column: str, default: PhotoAdjustment | None = PhotoAdjustment()
+    ) -> PhotoAdjustment | None:
+        """저장된 사진 조정값. 저장된 것이 없으면 default(기본은 PhotoAdjustment() = 조정 없음).
+
+        default=None을 주면 "저장된 값 없음"(None)과 "기본값과 같은 값을 일부러 저장함"
+        (PhotoAdjustment())을 구별할 수 있다.
+        """
         column_id = self.column(column).id
         with self._lock:
             row = self._db.execute(
                 "SELECT zoom, offset_x, offset_y FROM photo_adjust WHERE record_id = ? AND column_id = ?",
                 (int(record_id), column_id),
             ).fetchone()
-        return PhotoAdjustment(*row) if row else PhotoAdjustment()
+        return PhotoAdjustment(*row) if row else default
+
+    def has_photo_adjustment(self, record_id: int, column: str) -> bool:
+        """이 레코드·열에 사진 조정값이 저장되어 있는지(값이 기본값과 같아도 저장되어 있으면 True)."""
+        return self.get_photo_adjustment(record_id, column, default=None) is not None
 
     @staticmethod
     def _check_adjustment(adjustment: PhotoAdjustment) -> tuple[float, float, float]:

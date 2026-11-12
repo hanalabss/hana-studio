@@ -16,11 +16,10 @@ def setup() -> None:
     if ROOT not in sys.path:
         sys.path.insert(0, ROOT)
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(encoding="utf-8", errors="replace")
-        except (AttributeError, ValueError):
-            pass
+    # 기존 인쇄 코드의 이모지 섞인 print()가 cp949 콘솔·리다이렉트에서 죽지 않게 한다.
+    from utils.console import ensure_utf8_console
+
+    ensure_utf8_console()
 
 
 def say(text: str = "") -> None:
