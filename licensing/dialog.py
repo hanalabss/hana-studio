@@ -30,6 +30,10 @@ def _get_app_dir() -> str:
 # 라이선스 파일 경로 (exe 옆 / 프로젝트 루트)
 LICENSE_FILE = os.path.join(_get_app_dir(), "license.json")
 
+# 설치 폴더에 쓸 수 없을 때(관리자 권한 없이 Program Files) 쓰는 사용자 폴더 경로
+USER_LICENSE_FILE = os.path.join(
+    os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "HanaStudio", "license.json")
+
 # 이전 버전 경로 (빌드 시 _internal 폴더 안에 저장되던 위치)
 LEGACY_LICENSE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "license.json")
 
@@ -43,7 +47,7 @@ def _is_same_path(a: str, b: str) -> bool:
 
 def load_license_key() -> Optional[str]:
     """저장된 라이선스 키 로드 (새 경로 → 이전 경로 순)"""
-    for path in (LICENSE_FILE, LEGACY_LICENSE_FILE):
+    for path in (LICENSE_FILE, USER_LICENSE_FILE, LEGACY_LICENSE_FILE):
         try:
             if os.path.exists(path):
                 with open(path, 'r', encoding='utf-8') as f:
@@ -62,7 +66,15 @@ def save_license_key(license_key: str) -> bool:
             json.dump({'license_key': license_key}, f, indent=2)
     except Exception as e:
         print(f"[LICENSE] 라이선스 파일 저장 실패 ({LICENSE_FILE}): {type(e).__name__}: {e}")
-        return False
+        # 설치 폴더에 쓸 수 없으면 사용자 폴더에 저장한다.
+        try:
+            os.makedirs(os.path.dirname(USER_LICENSE_FILE), exist_ok=True)
+            with open(USER_LICENSE_FILE, 'w', encoding='utf-8') as f:
+                json.dump({'license_key': license_key}, f, indent=2)
+            return True
+        except Exception as e2:
+            print(f"[LICENSE] 사용자 폴더 저장도 실패 ({USER_LICENSE_FILE}): {type(e2).__name__}: {e2}")
+            return False
 
     if not _is_same_path(LICENSE_FILE, LEGACY_LICENSE_FILE) and os.path.exists(LEGACY_LICENSE_FILE):
         try:

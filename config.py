@@ -53,8 +53,16 @@ class Config:
             # 개발 환경: 현재 작업 디렉토리
             temp_dir = Path.cwd() / "HanaStudio_Temp"
         
-        # 디렉토리 생성
-        temp_dir.mkdir(exist_ok=True, parents=True)
+        # 디렉토리 생성. 설치 폴더(Program Files 등)에 쓸 수 없으면 사용자 폴더를 쓴다.
+        try:
+            temp_dir.mkdir(exist_ok=True, parents=True)
+            probe = temp_dir / ".write_test"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink()
+        except Exception:
+            base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+            temp_dir = Path(base) / "HanaStudio" / "HanaStudio_Temp"
+            temp_dir.mkdir(exist_ok=True, parents=True)
         return str(temp_dir)
     
     def _ensure_directories(self):
@@ -70,7 +78,11 @@ class Config:
                 
                 full_path = base_dir / dir_path
                 full_path.mkdir(exist_ok=True, parents=True)
-                
+                # 폴더가 이미 있어도 쓸 수 없는 경우(관리자 권한 없이 Program Files)를 걸러 낸다.
+                probe = full_path / ".write_test"
+                probe.write_text("ok", encoding="utf-8")
+                probe.unlink()
+
             except Exception as e:
                 # 권한 문제 등으로 실패 시 안전한 위치에 생성
                 safe_dir = Path(self._get_safe_temp_dir()) / dir_path

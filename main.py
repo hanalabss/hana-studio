@@ -7,9 +7,22 @@ import os
 import sys
 
 # GUI 모드에서 stdout/stderr가 None인 경우 처리 (PyInstaller --windowed)
+def _debug_log_path() -> str:
+    """기록 파일 위치. 실행 폴더에 쓸 수 없으면(관리자 권한 없이 Program Files) 사용자 폴더를 쓴다."""
+    path = os.path.join(os.getcwd(), "hana_debug.log")
+    try:
+        with open(path, "a", encoding="utf-8"):
+            pass
+        return path
+    except Exception:
+        folder = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "HanaStudio", "logs")
+        os.makedirs(folder, exist_ok=True)
+        return os.path.join(folder, "hana_debug.log")
+
+
 if sys.stdout is None or sys.stderr is None:
     try:
-        log_path = os.path.join(os.getcwd(), "hana_debug.log")
+        log_path = _debug_log_path()
         log_file = open(log_path, "w", encoding="utf-8", buffering=1)
         if sys.stdout is None:
             sys.stdout = log_file
@@ -31,8 +44,8 @@ def safe_print(*args, **kwargs):
     global _log_file
     if _log_file is None:
         try:
-            log_path = os.path.join(os.getcwd(), "hana_debug.log")
-            _log_file = open(log_path, "w", encoding="utf-8")
+            log_path = _debug_log_path()
+            _log_file = open(log_path, "a", encoding="utf-8")
         except Exception:
             _log_file = False
 
