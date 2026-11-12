@@ -97,6 +97,32 @@ class VerifyThread(QThread):
         self.finished.emit(result)
 
 
+class IssueKeyThread(QThread):
+    """개발용 관리자 키를 서버에 등록한다(관리자 패널의 키 생성과 같은 방식)."""
+    issued = Signal(str)
+    failed = Signal(str)
+
+    def run(self):
+        try:
+            from datetime import date
+            from supabase import create_client
+            from .config import SUPABASE_URL, SUPABASE_KEY
+            from .admin import generate_admin_key
+
+            client = create_client(SUPABASE_URL, SUPABASE_KEY)
+            license_key = generate_admin_key()
+            client.table('licenses').insert({
+                'license_key': license_key,
+                'is_admin': True,
+                'expires_at': None,
+                'memo': f'개발용 발급 ({date.today().isoformat()})',
+                'status': 'active'
+            }).execute()
+            self.issued.emit(license_key)
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
 class LicenseDialog(QDialog):
     """라이선스 인증 다이얼로그"""
 
@@ -235,6 +261,26 @@ class LicenseDialog(QDialog):
         footer_layout.setContentsMargins(24, 16, 24, 16)
         footer_layout.setSpacing(12)
 
+        # 개발용 키 발급 버튼: 소스에서 실행할 때만 보인다(배포판 exe에는 없음)
+        self.issue_btn = None
+        if not getattr(sys, 'frozen', False):
+            self.issue_btn = QPushButton("개발용 키 발급")
+            self.issue_btn.setFixedSize(116, 32)
+            self.issue_btn.setFont(QFont("Segoe UI", 9))
+            self.issue_btn.setToolTip("관리자 키를 새로 만들어 입력란에 넣습니다. 소스에서 실행할 때만 보입니다.")
+            self.issue_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #FFFFFF;
+                    border: 1px dashed #9CA3AF;
+                    border-radius: 6px;
+                    color: #374151;
+                }
+                QPushButton:hover { background-color: #F3F4F6; }
+                QPushButton:disabled { color: #9CA3AF; }
+            """)
+            self.issue_btn.clicked.connect(self._on_issue_clicked)
+            footer_layout.addWidget(self.issue_btn)
+
         footer_layout.addStretch()
 
         # 취소 버튼
@@ -283,6 +329,26 @@ class LicenseDialog(QDialog):
         footer_layout.addWidget(self.cancel_btn)
         footer_layout.addWidget(self.verify_btn)
         parent_layout.addWidget(footer)
+
+    def _on_issue_clicked(self):
+        """개발용 관리자 키를 만들어 입력란에 넣는다."""
+        self.issue_btn.setEnabled(False)
+        self.issue_btn.setText("발급 중...")
+        self._issue_thread = IssueKeyThread()
+        self._issue_thread.issued.connect(self._on_key_issued)
+        self._issue_thread.failed.connect(self._on_issue_failed)
+        self._issue_thread.start()
+
+    def _on_key_issued(self, license_key: str):
+        self.issue_btn.setText("개발용 키 발급")
+        self.issue_btn.setEnabled(True)
+        self.key_input.setText(license_key)
+        self._show_status(True, "키를 발급했습니다. '인증'을 누르면 이 PC에 등록됩니다.")
+
+    def _on_issue_failed(self, error: str):
+        self.issue_btn.setText("개발용 키 발급")
+        self.issue_btn.setEnabled(True)
+        self._show_status(False, f"키 발급 실패: {error}")
 
     def _show_status(self, success: bool, message: str):
         """상태 메시지 표시"""
