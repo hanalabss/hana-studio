@@ -10,6 +10,8 @@ R600 SDK 중 기존 R600Printer가 쓰지 않던 함수의 바인딩.
 
 from __future__ import annotations
 
+import logging
+
 import ctypes
 import io
 import os
@@ -76,6 +78,12 @@ def decode_sdk_text(raw: bytes) -> str:
     return raw.decode("latin-1").strip()
 
 
+log = logging.getLogger(__name__)
+
+# SDK 안에서 죽은 적이 있는 확장 함수 이름. 프로그램을 끌 때까지 다시 부르지 않는다.
+FAULTED_FUNCTIONS: set = set()
+
+
 class R600ExtrasMixin:
     """R600Printer에 섞어 쓰는 확장 메서드 모음. self.lib(ctypes 라이브러리)만 요구한다."""
 
@@ -93,7 +101,20 @@ class R600ExtrasMixin:
             func.argtypes = argtypes
             func.restype = restype
             configured.add(name)
-        return func
+        if name in FAULTED_FUNCTIONS:
+            raise R600PrinterError(f"{name}은(는) 이 프린터에서 쓸 수 없어 건너뜁니다.")
+
+        def guarded(*args):
+            # 실기에서 확인: 일부 확장 함수는 기종에 따라 SDK 안에서 잘못된 메모리를 읽고 죽는다
+            # (예: LUCA-40KM의 R600IsFeederNoEmpty). 그런 함수는 이 실행 동안 다시 부르지 않는다.
+            try:
+                return func(*args)
+            except OSError as exc:
+                FAULTED_FUNCTIONS.add(name)
+                log.error("SDK 함수 %s 가 내부 오류로 실패했습니다. 이후로는 부르지 않습니다: %s", name, exc)
+                raise R600PrinterError(f"{name} 호출 중 SDK 내부 오류가 났습니다.") from exc
+
+        return guarded
 
     @staticmethod
     def _ext_check(result: int, operation: str) -> None:

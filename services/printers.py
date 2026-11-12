@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 
 APP_DIR_NAME = "HanaStudio"
 SETTINGS_FILE = "printer.json"
-DEFAULT_POLL_INTERVAL_MS = 5000
+DEFAULT_POLL_INTERVAL_MS = 20000   # 상태 확인 주기. 프린터에 부담을 주지 않고 기록 파일이 빨리 커지지 않게 20초로 둔다.
 
 _FAMILY_CAPABILITIES = {
     FAMILY_RTAI: frozenset({
