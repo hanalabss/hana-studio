@@ -25,6 +25,18 @@ from .printer_discovery import (
     discover_available_printers,
     get_printer_display_name
 )
+from .base import (
+    CardPrinter,
+    PrinterDevice,
+    PrinterStatus,
+    CardJob,
+    SideImages,
+    MagneticTracks,
+    PrinterError,
+    NotSupported
+)
+from .history import JobHistory
+from . import registry
 
 __all__ = [
     # [EMOJI] [EMOJI]
@@ -51,7 +63,18 @@ __all__ = [
     'PrinterInfo',
     'PrinterDiscovery',
     'discover_available_printers',
-    'get_printer_display_name'
+    'get_printer_display_name',
+
+    'CardPrinter',
+    'PrinterDevice',
+    'PrinterStatus',
+    'CardJob',
+    'SideImages',
+    'MagneticTracks',
+    'PrinterError',
+    'NotSupported',
+    'JobHistory',
+    'registry'
 ]
 
 # [EMOJI] [EMOJI]

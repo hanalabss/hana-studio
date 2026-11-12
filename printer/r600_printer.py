@@ -12,9 +12,10 @@ from config import config
 from utils.bleed_crop import crop_bleed
 from .exceptions import R600PrinterError, PrinterInitializationError, DLLNotFoundError
 from .printer_discovery import PrinterInfo
+from .r600_extras import R600ExtrasMixin
 
 
-class R600Printer:
+class R600Printer(R600ExtrasMixin):
     """R600 프린터 제어 클래스 - 개별 면 방향 지원 + 마스킹 회전 수정"""
     
     def __init__(self, dll_path: str = './libDSRetransfer600App.dll', selected_printer: Optional[PrinterInfo] = None):
@@ -72,6 +73,28 @@ class R600Printer:
         except Exception as e:
             print(f"[R600Printer] ✗ 초기화 실패: {type(e).__name__}: {e}")
             raise PrinterInitializationError(f"프린터 초기화 실패: {e}")
+
+    @classmethod
+    def from_library(cls, lib, selected_printer: Optional[PrinterInfo] = None) -> "R600Printer":
+        """이미 로드된(또는 테스트용 가짜) 라이브러리 객체로 프린터를 만든다."""
+        self = cls.__new__(cls)
+        self.lib = lib
+        self.selected_printer_info = selected_printer
+        self.selected_printer_name = None
+        self.front_img_info = None
+        self.back_img_info = None
+        self.is_initialized = False
+        self.offset_x = 0.0
+        self.offset_y = 0.0
+        try:
+            self._setup_function_signatures()
+            self._initialize_library()
+            self.is_initialized = True
+        except Exception as e:
+            raise PrinterInitializationError(f"프린터 초기화 실패: {e}")
+        if self.selected_printer_info:
+            self.auto_select_printer()
+        return self
 
     def _setup_function_signatures(self):
         """함수 시그니처 정의"""

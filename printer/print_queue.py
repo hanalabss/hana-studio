@@ -4,9 +4,10 @@ printer/print_queue.py
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, Callable, List
+from typing import Any, Optional, Callable, List
 from PySide6.QtCore import QObject, Signal
 from .printer_thread import PrinterThread
+from .base import CardJob, PrinterDevice
 
 
 @dataclass
@@ -27,8 +28,24 @@ class PrintJob:
     adjusted_y: float = 0.0
 
     # 작업 상태
-    status: str = "pending"  # pending, printing, completed, failed
+    status: str = "pending"  # pending, printing, completed, failed, cancelled
     completed_cards: int = 0
+
+    # 사용할 프린터 (없으면 예전처럼 첫 번째 프린터)
+    selected_printer: Any = None                 # PrinterInfo | PrinterDevice | 이름
+    # CardPrinter 계열 작업: 장치와 카드별 CardJob 목록 (가변 데이터 인쇄)
+    device: Optional[PrinterDevice] = None
+    card_jobs: Optional[List[CardJob]] = None
+    name: str = ""
+    stop_on_error: bool = True
+    success_cards: int = 0
+    failed_cards: int = 0
+    cancel_requested: bool = False
+    history_id: Optional[int] = None
+
+    @property
+    def is_card_job(self) -> bool:
+        return self.card_jobs is not None
 
     def get_total_cards(self) -> int:
         """이 작업의 총 카드 수"""
@@ -51,9 +68,16 @@ class PrintQueueManager(QObject):
     all_jobs_completed = Signal(int, int, int, int, str)  # success_cards, failed_cards, success_jobs, failed_jobs, last_error
     queue_updated = Signal(int)  # remaining_jobs
     log_message = Signal(str)  # 로그 메시지
+    job_cancelled = Signal(int)  # job_id (대기 중 취소 또는 진행 중 중단 요청)
+    card_result = Signal(int, int, bool, str)  # job_id, 카드 순번(1부터), 성공 여부, 오류 문구
 
-    def __init__(self):
+    def __init__(self, history=None, auto_history: bool = False):
+        """history: 인쇄 이력을 남길 JobHistory. auto_history가 참이면 첫 작업 때 기본 위치에 만든다."""
         super().__init__()
+        self._history = history
+        self._auto_history = auto_history
+        self._printer_factory = None      # CardPrinter 생성 함수 (없으면 registry.open)
+        self._r600_factory = None         # 기존 방식 R600Printer 생성 함수 (테스트용)
         self._queue: List[PrintJob] = []
         self._current_job: Optional[PrintJob] = None
         self._current_thread: Optional[PrinterThread] = None
@@ -94,9 +118,46 @@ class PrintQueueManager(QObject):
             front_orientation=kwargs.get('front_orientation', 'portrait'),
             back_orientation=kwargs.get('back_orientation', 'portrait'),
             adjusted_x=kwargs.get('adjusted_x', 0.0),
-            adjusted_y=kwargs.get('adjusted_y', 0.0)
+            adjusted_y=kwargs.get('adjusted_y', 0.0),
+            selected_printer=kwargs.get('selected_printer', kwargs.get('device')),
+            name=kwargs.get('name', '')
         )
 
+        return self._enqueue(job)
+
+    def add_card_job(self, device: PrinterDevice, cards: List[CardJob], name: str = "",
+                     stop_on_error: bool = True) -> int:
+        """
+        CardPrinter 계열 장치로 카드마다 다른 내용을 인쇄하는 작업을 큐에 추가
+
+        Args:
+            device: registry.discover()가 돌려준 장치
+            cards: 카드 한 장에 하나씩의 CardJob (record_id를 넣으면 결과와 이력에 함께 남는다)
+            stop_on_error: 한 장이 실패하면 남은 카드를 인쇄하지 않고 멈출지 여부
+
+        Returns:
+            job_id: 추가된 작업의 ID
+        """
+        cards = list(cards)
+        if not cards:
+            raise ValueError("인쇄할 카드가 없습니다.")
+        self._job_counter += 1
+        job = PrintJob(
+            job_id=self._job_counter,
+            dll_path='',
+            front_image_path='',
+            quantity=len(cards),
+            is_dual_side=any(card.is_dual_side for card in cards),
+            device=device,
+            card_jobs=cards,
+            name=name,
+            stop_on_error=stop_on_error
+        )
+        return self._enqueue(job)
+
+    def _enqueue(self, job: PrintJob) -> int:
+        """작업을 대기열에 넣고, 처리 중이 아니면 바로 시작"""
+        job_id = job.job_id
         self._queue.append(job)
         self.job_added.emit(job_id, len(self._queue))
         self.log_message.emit(f"[QUEUE] 인쇄 작업 #{job_id} 추가됨 (대기열: {len(self._queue)}개)")
@@ -159,6 +220,90 @@ class PrintQueueManager(QObject):
 
         return (overall, status)
 
+    def set_history(self, history, auto: bool = False):
+        """인쇄 이력 저장소 지정. None이면 기록하지 않는다."""
+        self._history = history
+        self._auto_history = auto
+
+    def set_printer_factory(self, factory):
+        """CardPrinter 생성 함수 지정: factory(device) -> 연결된 CardPrinter. None이면 registry.open."""
+        self._printer_factory = factory
+
+    def set_legacy_printer_factory(self, factory):
+        """기존 방식 작업의 R600Printer 생성 함수 지정: factory(dll_path, PrinterInfo|None)."""
+        self._r600_factory = factory
+
+    def get_pending_jobs(self) -> List[PrintJob]:
+        """대기 중인 작업 목록 (사본)"""
+        return list(self._queue)
+
+    def remove_job(self, job_id: int) -> bool:
+        """대기 중인 작업 하나를 대기열에서 뺀다. 진행 중이거나 없는 작업이면 False."""
+        for index, job in enumerate(self._queue):
+            if job.job_id == job_id:
+                del self._queue[index]
+                job.status = "cancelled"
+                self._job_history.append(job)
+                self.log_message.emit(f"[QUEUE] 인쇄 작업 #{job_id} 취소됨 (대기열: {len(self._queue)}개)")
+                self.job_cancelled.emit(job_id)
+                self.queue_updated.emit(len(self._queue))
+                return True
+        return False
+
+    def stop_current_job(self) -> bool:
+        """진행 중인 작업을 멈춘다. 인쇄 중인 카드는 끝까지 인쇄하고 다음 카드부터 하지 않는다."""
+        if not (self._current_job and self._current_thread and self._is_processing):
+            return False
+        self._current_job.cancel_requested = True
+        self._current_thread.stop_printing()
+        self.log_message.emit(f"[QUEUE] 인쇄 작업 #{self._current_job.job_id} 중단 요청됨")
+        self.job_cancelled.emit(self._current_job.job_id)
+        return True
+
+    def cancel_job(self, job_id: int) -> bool:
+        """작업 하나 취소: 대기 중이면 대기열에서 빼고, 진행 중이면 카드 사이에서 멈춘다."""
+        if self._current_job and self._current_job.job_id == job_id:
+            return self.stop_current_job()
+        return self.remove_job(job_id)
+
+    # ----- 인쇄 이력 (실패해도 인쇄에는 영향을 주지 않는다) -----
+    def _ensure_history(self):
+        if self._history is None and self._auto_history:
+            self._auto_history = False
+            try:
+                from .history import JobHistory
+                self._history = JobHistory()
+            except Exception as e:
+                self.log_message.emit(f"[QUEUE] 인쇄 이력을 열 수 없습니다: {e}")
+        return self._history
+
+    def _history_call(self, method: str, *args, **kwargs):
+        history = self._ensure_history()
+        if history is None:
+            return None
+        try:
+            return getattr(history, method)(*args, **kwargs)
+        except Exception as e:
+            self.log_message.emit(f"[QUEUE] 인쇄 이력 기록 실패: {e}")
+            return None
+
+    def _history_begin(self, job: PrintJob):
+        device = job.device
+        if device is None and job.selected_printer is not None:
+            chosen = job.selected_printer
+            if isinstance(chosen, PrinterDevice):
+                device = chosen
+            else:
+                name = getattr(chosen, 'name', str(chosen))
+                connection = str(getattr(chosen, 'connection_type', '')).lower()
+                device = PrinterDevice('rtai', name, connection, name)
+        job.history_id = self._history_call(
+            'start_job', job.name or f"인쇄 작업 #{job.job_id}", device, job.quantity,
+            {'print_mode': job.print_mode, 'is_dual_side': job.is_dual_side,
+             'variable_data': job.is_card_job})
+        if job.history_id is not None:
+            self._history_call('mark_job_started', job.history_id)
+
     def cancel_all(self):
         """모든 대기 작업 취소 및 현재 작업 중단"""
         # 대기 중인 작업 모두 제거
@@ -167,6 +312,8 @@ class PrintQueueManager(QObject):
 
         # 현재 진행 중인 작업 중단
         if self._current_thread and self._is_processing:
+            if self._current_job:
+                self._current_job.cancel_requested = True
             self._current_thread.stop_printing()
             try:
                 self._current_thread.wait(5000)  # 최대 5초 대기
@@ -207,10 +354,18 @@ class PrintQueueManager(QObject):
             front_orientation=self._current_job.front_orientation,
             back_orientation=self._current_job.back_orientation,
             adjusted_x=self._current_job.adjusted_x,
-            adjusted_y=self._current_job.adjusted_y
+            adjusted_y=self._current_job.adjusted_y,
+            selected_printer=self._current_job.selected_printer,
+            device=self._current_job.device,
+            card_jobs=self._current_job.card_jobs,
+            stop_on_error=self._current_job.stop_on_error,
+            printer_factory=self._printer_factory,
+            r600_factory=self._r600_factory
         )
+        self._history_begin(self._current_job)
 
         # 시그널 연결
+        self._current_thread.card_result.connect(self._on_card_result)
         self._current_thread.progress.connect(self._on_thread_progress)
         self._current_thread.finished.connect(self._on_thread_finished)
         self._current_thread.error.connect(self._on_thread_error)
@@ -256,6 +411,31 @@ class PrintQueueManager(QObject):
             # 콜론 없는 일반 메시지는 이미 구체적 오류가 없을 때만 저장
             elif not self._last_error_message:
                 self._last_error_message = message
+
+    def _on_card_result(self, card_index: int, ok: bool, message: str):
+        """카드 한 장의 결과 - 이력에 남기고 바깥으로 알린다"""
+        job = self._current_job
+        if job is None:
+            return
+        if ok:
+            job.success_cards += 1
+        else:
+            job.failed_cards += 1
+            if job.is_card_job and message:
+                self._last_error_message = message
+        if job.history_id is not None:
+            result = {}
+            if self._current_thread is not None and self._current_thread.results:
+                result = self._current_thread.results[-1]
+                if result.get('index') != card_index:
+                    result = next((r for r in self._current_thread.results
+                                   if r.get('index') == card_index), {})
+            self._history_call(
+                'record_card', job.history_id, card_index, 'success' if ok else 'failed',
+                error_text=message or None, error_code=result.get('code'),
+                record_id=result.get('record_id'), started_at=result.get('started_at'),
+                finished_at=result.get('finished_at'))
+        self.card_result.emit(job.job_id, card_index, ok, message)
 
     def _on_card_completed(self, card_num: int):
         """개별 카드 완료 - completed_cards만 업데이트 (total은 작업 완료 시 반영)"""
@@ -315,12 +495,26 @@ class PrintQueueManager(QObject):
             if success:
                 self._current_job.status = "completed"
                 self._completed_jobs += 1
+                if self._current_job.is_card_job:
+                    # 가변 데이터 작업은 실제로 실패한 카드만 센다 (중단으로 안 찍은 카드는 제외)
+                    self._total_cards_failed += self._current_job.failed_cards
             else:
                 self._current_job.status = "failed"
                 self._failed_jobs += 1
                 # 실패한 카드 수 계산 (전체 - 완료된 카드)
                 failed_cards = total_cards - completed_cards
+                if self._current_job.is_card_job and self._current_job.cancel_requested:
+                    failed_cards = self._current_job.failed_cards
                 self._total_cards_failed += failed_cards
+
+            if self._current_job.history_id is not None:
+                all_printed = self._current_job.success_cards >= total_cards
+                self._history_call(
+                    'finish_job', self._current_job.history_id,
+                    'cancelled' if (self._current_job.cancel_requested and not all_printed) else None,
+                    self._last_error_message or None)
+            if self._current_job.cancel_requested and self._current_job.success_cards < total_cards:
+                self._current_job.status = "cancelled"
 
             # 히스토리에 추가
             self._job_history.append(self._current_job)
@@ -391,6 +585,8 @@ class PrintQueueManager(QObject):
         # 완료된 작업 (히스토리에서)
         for job in self._job_history:
             display_status = "완료" if job.status == "completed" else "실패"
+            if job.status == "cancelled":
+                display_status = "취소"
             jobs.append({
                 'job_id': job.job_id,
                 'quantity': job.quantity,
@@ -422,5 +618,5 @@ class PrintQueueManager(QObject):
         return jobs
 
 
-# 전역 인스턴스
-print_queue = PrintQueueManager()
+# 전역 인스턴스 (인쇄 이력은 첫 작업 때 기본 위치에 만든다)
+print_queue = PrintQueueManager(auto_history=True)

@@ -4,11 +4,14 @@ printer/printer_thread.py 수정
 """
 
 import time
-from typing import Optional
+from datetime import datetime
+from typing import Any, Callable, List, Optional
 from PySide6.QtCore import QThread, Signal
 from config import config
 from .r600_printer import R600Printer
 from .exceptions import R600PrinterError
+from .base import CardJob, PrinterDevice, PrinterError
+from .printer_discovery import PrinterInfo
 
 
 class PrinterThread(QThread):
@@ -19,7 +22,8 @@ class PrinterThread(QThread):
     print_progress = Signal(int, int)  # 현재 장수, 전체 장수
     card_completed = Signal(int)  # 완료된 카드 번호
     step_progress = Signal(int, str)  # 전체 진행률(%), 상태 메시지
-    
+    card_result = Signal(int, bool, str)  # 카드 순번(1부터), 성공 여부, 오류 문구
+
 
     def __init__(self, dll_path: str, 
                     front_image_path: str, 
@@ -32,7 +36,16 @@ class PrinterThread(QThread):
                     front_orientation: str = "portrait",  # 개별 면 방향 추가
                     back_orientation: str = "portrait",   # 개별 면 방향 추가
                     adjusted_x: float = 0.0,              # 위치 조정값 추가
-                    adjusted_y: float = 0.0):             # 위치 조정값 추가
+                    adjusted_y: float = 0.0,              # 위치 조정값 추가
+                    selected_printer: Any = None,
+                    device: Optional[PrinterDevice] = None,
+                    card_jobs: Optional[List[CardJob]] = None,
+                    stop_on_error: bool = True,
+                    printer_factory: Optional[Callable[[PrinterDevice], Any]] = None,
+                    r600_factory: Optional[Callable[[str, Optional[PrinterInfo]], Any]] = None):
+            """selected_printer: 사용할 RTAI 프린터(PrinterInfo, PrinterDevice 또는 이름).
+            device + card_jobs: CardPrinter 계열 장치로 카드마다 다른 CardJob을 인쇄한다.
+            printer_factory / r600_factory: 프린터 객체 생성 함수(테스트·가짜 백엔드용)."""
             super().__init__()
             self.dll_path = dll_path
             self.front_image_path = front_image_path
@@ -47,30 +60,85 @@ class PrinterThread(QThread):
             self.adjusted_x = adjusted_x                # 위치 조정값
             self.adjusted_y = adjusted_y                # 위치 조정값
             self.should_stop = False
+            self.selected_printer = selected_printer
+            self.device = device
+            self.card_jobs = list(card_jobs) if card_jobs is not None else None
+            self.stop_on_error = stop_on_error
+            self.printer_factory = printer_factory
+            self.r600_factory = r600_factory
+            self.results: List[dict] = []     # 카드별 결과 (index, ok, message, code, record_id, 시각)
+            self._finished_emitted = False
+            if self.card_jobs is not None:
+                self.quantity = len(self.card_jobs)
 
     
     def stop_printing(self):
         """인쇄 중단 요청"""
         self.should_stop = True
     
+    def _selected_printer_info(self) -> Optional[PrinterInfo]:
+        """selected_printer / device 인자를 R600Printer가 받는 PrinterInfo로 바꾼다."""
+        chosen = self.selected_printer if self.selected_printer is not None else self.device
+        if chosen is None:
+            return None
+        if isinstance(chosen, PrinterInfo):
+            return chosen
+        if isinstance(chosen, PrinterDevice):
+            connection = "TCP" if chosen.connection in ("tcp", "net") else "USB"
+            return PrinterInfo(chosen.address or chosen.name, connection)
+        return PrinterInfo(str(chosen), "USB")
+
+    def _record_result(self, index: int, ok: bool, message: str = "", code=None,
+                       record_id=None, started_at: Optional[str] = None):
+        self.results.append({
+            "index": index, "ok": ok, "message": message, "code": code,
+            "record_id": record_id, "started_at": started_at,
+            "finished_at": datetime.now().isoformat(timespec="seconds"),
+        })
+        self.card_result.emit(index, ok, message)
+
+    def _emit_finished(self, success: bool):
+        self._finished_emitted = True
+        self.finished.emit(success)
+
     def run(self):
         """스레드 실행 - 개별 면 방향에 따른 크기 계산"""
+        if self.card_jobs is not None and self.device is not None:
+            try:
+                self._run_card_jobs()
+            finally:
+                if not self._finished_emitted:
+                    self._emit_finished(False)
+            return
+
         printer = None
         successful_prints = 0
-        
+
         try:
             self.progress.emit("프린터 초기화 중...")
-            printer = R600Printer(self.dll_path)
-            
-            self.progress.emit("프린터 목록 조회 중...")
-            printers = printer.enum_printers()
-            
-            if not printers:
-                self.error.emit("사용 가능한 프린터가 없습니다.")
-                return
-            
-            self.progress.emit(f"프린터 선택: {printers[0]}")
-            printer.select_printer(printers[0])
+            selected_info = self._selected_printer_info()
+            if self.r600_factory is not None:
+                printer = self.r600_factory(self.dll_path, selected_info)
+            elif selected_info is not None:
+                printer = R600Printer(self.dll_path, selected_printer=selected_info)
+            else:
+                printer = R600Printer(self.dll_path)
+
+            if selected_info is not None:
+                # 사용자가 고른 프린터를 그대로 쓴다
+                self.progress.emit(f"프린터 선택: {selected_info.name}")
+                if printer.selected_printer_name != selected_info.name:
+                    printer.select_printer(selected_info.name)
+            else:
+                self.progress.emit("프린터 목록 조회 중...")
+                printers = printer.enum_printers()
+
+                if not printers:
+                    self.error.emit("사용 가능한 프린터가 없습니다.")
+                    return
+
+                self.progress.emit(f"프린터 선택: {printers[0]}")
+                printer.select_printer(printers[0])
             printer.set_position_offset(self.adjusted_x, self.adjusted_y)
             
             # 타임아웃 설정
@@ -92,6 +160,7 @@ class PrinterThread(QThread):
                     self.progress.emit("❌ 사용자에 의해 인쇄가 중단되었습니다.")
                     break
                 
+                card_started_at = datetime.now().isoformat(timespec="seconds")
                 try:
                     # 인쇄 시작 전 진행상황 시그널 발송
                     self.print_progress.emit(card_num - 1, self.quantity)
@@ -100,6 +169,7 @@ class PrinterThread(QThread):
                     self._print_single_card(printer, card_num)
 
                     successful_prints += 1
+                    self._record_result(card_num, True, started_at=card_started_at)
 
                     # 인쇄 완료 후 진행상황 업데이트
                     self.print_progress.emit(card_num, self.quantity)
@@ -112,12 +182,14 @@ class PrinterThread(QThread):
                     
                 except R600PrinterError as e:
                     self.progress.emit(f"❌ {card_num}번째 카드 인쇄 실패: {e}")
+                    self._record_result(card_num, False, str(e), started_at=card_started_at)
                     # 개별 카드 실패 시에도 계속 진행할지 결정
                     continue_printing = self._handle_card_error(card_num, e)
                     if not continue_printing:
                         break
                 except Exception as e:
                     self.progress.emit(f"❌ {card_num}번째 카드에서 예상치 못한 오류: {e}")
+                    self._record_result(card_num, False, str(e), started_at=card_started_at)
                     break
             
             # 최종 결과 처리
@@ -134,7 +206,66 @@ class PrinterThread(QThread):
                     self.progress.emit("리소스 정리 완료")
                 except Exception as cleanup_error:
                     print(f"리소스 정리 중 오류: {cleanup_error}")
-                    
+            # 초기화 실패 등으로 finished가 나가지 않았으면 큐가 멈추지 않게 실패로 알린다
+            if not self._finished_emitted:
+                self._emit_finished(False)
+
+    def _run_card_jobs(self):
+        """CardPrinter 계열 장치로 카드마다 다른 CardJob을 차례로 인쇄한다."""
+        printer = None
+        successful_prints = 0
+        total = len(self.card_jobs)
+        try:
+            self.progress.emit(f"프린터 연결 중: {self.device.name}")
+            try:
+                if self.printer_factory is not None:
+                    printer = self.printer_factory(self.device)
+                else:
+                    from . import registry
+                    printer = registry.open(self.device)
+            except Exception as e:
+                self.error.emit(f"프린터 연결 실패: {e}")
+                return
+
+            self.progress.emit(f"📄 총 {total}장 인쇄 시작")
+            for card_num, job in enumerate(self.card_jobs, start=1):
+                if self.should_stop:
+                    self.progress.emit("❌ 사용자에 의해 인쇄가 중단되었습니다.")
+                    break
+
+                def progress_callback(card_progress: int, message: str, _num=card_num):
+                    overall = int(((_num - 1) + card_progress / 100) / total * 100)
+                    self.step_progress.emit(overall, f"[{_num}/{total}] {message}")
+
+                started_at = datetime.now().isoformat(timespec="seconds")
+                self.print_progress.emit(card_num - 1, total)
+                self.progress.emit(f"📄 {card_num}번째 카드 인쇄 중")
+                try:
+                    printer.print_card(job, progress=progress_callback)
+                except PrinterError as e:
+                    self.progress.emit(f"❌ {card_num}번째 카드 인쇄 실패: {e}")
+                    self._record_result(card_num, False, str(e), e.code, job.record_id, started_at)
+                    if self.stop_on_error:
+                        break
+                    continue
+                except Exception as e:
+                    self.progress.emit(f"❌ {card_num}번째 카드에서 예상치 못한 오류: {e}")
+                    self._record_result(card_num, False, str(e), None, job.record_id, started_at)
+                    break
+
+                successful_prints += 1
+                self._record_result(card_num, True, "", None, job.record_id, started_at)
+                self.print_progress.emit(card_num, total)
+                self.card_completed.emit(successful_prints)
+
+            self._handle_final_result(successful_prints)
+        finally:
+            if printer is not None:
+                try:
+                    printer.close()
+                except Exception as cleanup_error:
+                    print(f"리소스 정리 중 오류: {cleanup_error}")
+
     def _print_single_card(self, printer: R600Printer, card_num: int):
         """단일 카드 인쇄 - 개별 면 방향 정보 포함 + 진행률 콜백"""
         front_orientation_text = "세로형" if self.front_orientation == "portrait" else "가로형"
@@ -216,19 +347,19 @@ class PrinterThread(QThread):
 
         if self.should_stop:
             self.progress.emit(f"⏹️ 인쇄 중단됨 ({successful_prints}장 완료)")
-            self.finished.emit(successful_prints > 0)
+            self._emit_finished(successful_prints > 0)
         elif successful_prints == self.quantity:
             # 모든 카드 성공
             self.progress.emit(f"🎉 {self.quantity}장 인쇄 완료!")
-            self.finished.emit(True)
+            self._emit_finished(True)
         elif successful_prints > 0:
             # 일부 성공
             self.progress.emit(f"⚠️ {self.quantity}장 중 {successful_prints}장 인쇄됨")
-            self.finished.emit(True)
+            self._emit_finished(True)
         else:
             # 모두 실패
             self.progress.emit("❌ 인쇄 실패")
-            self.finished.emit(False)
+            self._emit_finished(False)
 
 
 class MultiCardPrintManager:
