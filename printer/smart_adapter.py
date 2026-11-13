@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Mapping, Optional, Set, Union
 
 from . import smart_printer as sp
 from .base import (
-    CAP_CARD_MOVE, CAP_COLOR_ADJUST, CAP_DENSITY_ADJUST, CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_POSITION_OFFSET, CAP_RIBBON_LEVEL,
+    CAP_BLACK_RESIN, CAP_CARD_MOVE, CAP_COLOR_ADJUST, CAP_DENSITY_ADJUST, CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_POSITION_OFFSET, CAP_RIBBON_LEVEL,
     CAP_STATUS, CAP_UV, FAMILY_SMART, ORIENTATION_PORTRAIT, STAGE_DONE, STAGE_EJECT, STAGE_FEED,
     STAGE_MAGNETIC, STAGE_PREPARE, STAGE_PRINT, STAGE_PRINT_BACK, STAGE_PRINT_FRONT, STAGE_SETUP,
     STAGE_UNKNOWN, UNIT_CARDS, UNIT_UNKNOWN, CardJob, CardPrinter,
@@ -97,7 +97,7 @@ class SmartAdapter(CardPrinter):
         caps = {CAP_STATUS, CAP_RIBBON_LEVEL, CAP_CARD_MOVE, CAP_POSITION_OFFSET, CAP_COLOR_ADJUST}
         if not self.is_connected:
             # 장착 옵션을 아직 모른다. 플리퍼·마그네틱 인코더가 있으면 가능한 기능까지 알린다.
-            return caps | {CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_DENSITY_ADJUST}
+            return caps | {CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_DENSITY_ADJUST, CAP_BLACK_RESIN}
         if self._can_adjust_density():
             caps.add(CAP_DENSITY_ADJUST)
         if self._has_flipper:
@@ -106,6 +106,8 @@ class SmartAdapter(CardPrinter):
             caps.add(CAP_MAGNETIC)
         if self._ribbon_type in sp.FLUORESCENT_RIBBONS:
             caps.add(CAP_UV)
+        if self._ribbon_type in sp.COLOR_WITH_BLACK_RIBBONS:
+            caps.add(CAP_BLACK_RESIN)
         return caps
 
     def _can_adjust_density(self) -> bool:
@@ -325,6 +327,13 @@ class SmartAdapter(CardPrinter):
                     raise NotSupported(CAP_UV, "장착된 리본으로는 UV(형광) 인쇄를 할 수 없습니다.")
                 if not os.path.exists(side.uv_path):
                     raise PrinterError(f"{label} UV 이미지 파일을 찾을 수 없습니다: {side.uv_path}")
+            if side.black_path:
+                # 색 그림에서 검정 글자를 이미 뺐으므로, 검정 패널이 없으면 글자 없는 카드가 나온다. 찍지 않는다.
+                if self._ribbon_type not in sp.COLOR_WITH_BLACK_RIBBONS:
+                    raise NotSupported(CAP_BLACK_RESIN,
+                                       "장착된 리본에는 검정 패널이 따로 없어 검정 글자를 나눠 찍을 수 없습니다.")
+                if not os.path.exists(side.black_path):
+                    raise PrinterError(f"{label} 검정 패널 이미지 파일을 찾을 수 없습니다: {side.black_path}")
             if side.white_mask_path:
                 log.warning("SMART 프린터에는 화이트 레이어가 없어 %s 화이트 마스크를 쓰지 않습니다.", label)
 
@@ -355,7 +364,10 @@ class SmartAdapter(CardPrinter):
                 uv = (self._prepare_image(side.uv_path, side, is_back, options, temp_files,
                                           adjust_color=False)
                       if side.uv_path else None)
-                prepared.append((page, color, uv))
+                black = (self._prepare_image(side.black_path, side, is_back, options, temp_files,
+                                             adjust_color=False, ink_mask=True)
+                         if side.black_path else None)
+                prepared.append((page, color, uv, black))
 
             if self.reopen_per_card and self._cards_since_open:
                 self._reopen()
@@ -374,8 +386,11 @@ class SmartAdapter(CardPrinter):
                     report(25, "마그네틱 기록 중...", STAGE_MAGNETIC)
                     self._encode_magnetic(tracks, options)
                 report(40, "인쇄 데이터 준비 중...", STAGE_SETUP)
-                for page, color, uv in prepared:
+                for page, color, uv, black in prepared:
                     binding.draw_image(page, panel, 0, 0, width, height, color)
+                    if black:
+                        # SDK 샘플과 같은 방식: 색 패널 그림과 검정 패널 내용을 같은 면에 함께 올린다.
+                        binding.draw_image(page, sp.PANELID_BLACK, 0, 0, width, height, black)
                     if uv:
                         binding.draw_image(page, sp.PANELID_UV, 0, 0, width, height, uv)
                 side_value = sp.SMART_PRINTSIDE_FRONT
@@ -413,10 +428,12 @@ class SmartAdapter(CardPrinter):
 
     def _prepare_image(self, path: str, side: SideImages, is_back: bool,
                        options: Mapping[str, Any], temp_files: List[str],
-                       adjust_color: bool = True) -> str:
+                       adjust_color: bool = True, ink_mask: bool = False) -> str:
         """도련 제거 → 색 조정 → 문서 크기로 맞춤 → 위치 조정 → 세로형이면 회전해 BMP로 저장한다.
 
         색 조정(밝기·명암·채도)은 색 그림에만 한다. 형광(UV) 그림은 그대로 둔다.
+        ink_mask: 흰색이 잉크인 마스크(검정 패널용)다. 흰 바탕에 검정으로 뒤집고, 크기를 맞춘 뒤
+        회색 가장자리가 남지 않게 검정·흰색 둘로만 만든다(레진은 중간 농도가 없다).
 
         options["bleed_handled"]가 참이면 이미 칼선 크기로 만든 이미지이므로 도련 제거를 건너뛴다.
         """
@@ -432,12 +449,16 @@ class SmartAdapter(CardPrinter):
         image = ImageOps.exif_transpose(image)
         if not options.get("bleed_handled"):
             image = crop_bleed(image)
+        if ink_mask:
+            image = ImageOps.invert(image.convert("L"))
         image = image.convert("RGB")
         if adjust_color:
             image = adjust_image(image, *color_adjust_from(options))
         target = (doc_height, doc_width) if portrait else (doc_width, doc_height)
         if image.size != target:
             image = image.resize(target, Image.LANCZOS)
+        if ink_mask:
+            image = image.convert("L").point(lambda level: 0 if level < 128 else 255).convert("RGB")
         dx = round(float(options.get("offset_x_mm", 0.0)) * PRINT_DPI / MM_PER_INCH)
         dy = round(float(options.get("offset_y_mm", 0.0)) * PRINT_DPI / MM_PER_INCH)
         if dx or dy:

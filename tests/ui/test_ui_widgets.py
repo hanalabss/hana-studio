@@ -396,6 +396,26 @@ def test_stepper_typed_value_and_arrow_keys(show, spy):
     assert field.value() == 96
 
 
+def test_stepper_typed_value_applies_without_enter(show, spy):
+    """숫자만 치고 Enter나 포커스 이동 없이 바로 인쇄를 눌러도 친 값이 쓰여야 한다."""
+    field = StepperField(1, 1, 999, 1, 0, "장")
+    changed = spy(field.valueChanged)
+    show(host(field, QLineEdit()))
+    edit = field.line_edit()
+    edit.setFocus()
+    edit.selectAll()
+    QTest.keyClicks(edit, "999")
+    assert field.value() == 999 and changed.last == (999.0,)
+    assert edit.text() == "999", "치는 도중에는 글자를 바꾸지 않는다"
+    assert not field._plus.isEnabled() and field._minus.isEnabled()
+
+    edit.selectAll()
+    QTest.keyClicks(edit, "5000")
+    assert field.value() == 999, "범위를 넘으면 끝 값으로 잡는다"
+    QTest.keyClick(edit, Qt.Key_Return)
+    assert field.text() == "999 장"
+
+
 def test_stepper_silent_set_and_disabled(show, spy):
     field = MmField(10)
     changed = spy(field.valueChanged)

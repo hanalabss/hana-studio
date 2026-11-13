@@ -9,11 +9,11 @@ from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QVBoxLayout, QWidget
 
 from design.model import Document
 from printer.base import (CAP_COLOR_ADJUST, CAP_DENSITY_ADJUST, CAP_DUAL_SIDE, CAP_GAMMA_ADJUST,
-                          CAP_MAGNETIC, CAP_UV, CAP_WHITE, COLOR_ADJUST_MAX, COLOR_ADJUST_MIN, DENSITY_KEYS)
+                          CAP_BLACK_RESIN, CAP_MAGNETIC, CAP_UV, CAP_WHITE, COLOR_ADJUST_MAX, COLOR_ADJUST_MIN, DENSITY_KEYS)
 
 DENSITY_TITLES = {"density": "전체", "density_yellow": "노랑", "density_magenta": "빨강",
                   "density_cyan": "파랑"}
-from services.render_job import PrintOptions, magnetic_mapping, uses_uv, uses_white
+from services.render_job import PrintOptions, magnetic_mapping, uses_black_text, uses_uv, uses_white
 from ui.pages.settings.prefs import COPIES_MAX, OFFSET_LIMIT_MM
 from ui.theme import SPACE
 from ui.widgets import (
@@ -70,6 +70,8 @@ def summary_text(choices: PrintChoices, document: Document, capabilities: set[st
         parts.append("화이트 포함" if choices.use_white and CAP_WHITE in capabilities else "화이트 빼고")
     if uses_uv(document):
         parts.append("UV 포함" if choices.use_uv and CAP_UV in capabilities else "UV 빼고")
+    if options.black_resin and CAP_BLACK_RESIN in capabilities and uses_black_text(document):
+        parts.append("검정 글자는 검정 리본으로")
     if magnetic_mapping(document, options) and CAP_MAGNETIC in capabilities:
         parts.append("마그네틱 기록")
     if options.offset_x_mm or options.offset_y_mm:
@@ -183,9 +185,17 @@ class OptionsSheet(Dialog):
 
         self.white: QCheckBox | None = None
         self.uv: QCheckBox | None = None
+        self.black_resin: QCheckBox | None = None
         self.magnetic: dict[str, ComboBox] = {}
         extras = QVBoxLayout()
         extras.setSpacing(SPACE["sm"])
+        if CAP_BLACK_RESIN in capabilities and uses_black_text(document):
+            self.black_resin = QCheckBox("검정 글자·바코드를 검정 리본으로 또렷하게 찍기")
+            self.black_resin.setChecked(bool(options.black_resin))
+            extras.addWidget(self.black_resin)
+            extras.addWidget(label(
+                "색이 완전한 검정인 글자·선·바코드·QR만 해당합니다. 색 리본 세 가지를 겹쳐 만든 검정보다 "
+                "가장자리가 선명합니다. 사진과 색 글자는 그대로 색 리본으로 찍습니다.", "muted", wrap=True))
         if CAP_WHITE in capabilities and uses_white(document):
             self.white = QCheckBox("화이트로 꾸민 부분도 찍기")
             self.white.setChecked(self._choices.use_white)
@@ -266,6 +276,8 @@ class OptionsSheet(Dialog):
             result.use_white = self.white.isChecked()
         if self.uv is not None:
             result.use_uv = self.uv.isChecked()
+        if self.black_resin is not None:
+            options.black_resin = self.black_resin.isChecked()
         if self.magnetic:
             mapping = {key: combo.currentText() for key, combo in self.magnetic.items()
                        if combo.currentIndex() > 0}

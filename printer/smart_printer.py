@@ -75,6 +75,8 @@ RIBBON_NAMES = {
 }
 MONO_RIBBONS = {3, 4, 5, 6}
 FLUORESCENT_RIBBONS = {8, 17, 20}
+# 색(YMC) 패널과 검정(K 레진) 패널이 함께 있는 리본. 검정 글자를 K 패널로 따로 찍을 수 있다.
+COLOR_WITH_BLACK_RIBBONS = {0, 1, 2, 7, 8, 11, 12, 14, 16, 17, 18, 20}
 
 # 오류 코드 → (한국어 문구, 사용자가 조치 후 재시도할 수 있는지)
 ERROR_TEXT: Dict[int, Tuple[str, bool]] = {

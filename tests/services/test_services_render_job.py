@@ -8,7 +8,7 @@ from data.store import PhotoAdjustment
 from design import presets, renderer
 from design.binding import ColumnSource, CounterSource
 from design.model import Crop, ImageItem, RectItem, TextItem
-from printer.base import CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_UV, CAP_WHITE
+from printer.base import CAP_BLACK_RESIN, CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_UV, CAP_WHITE
 from services import render_job as rj
 from services.render_job import (
     PrintOptions, RenderJob, adjustment_from_crop, crop_from_adjustment, cut_pixel_size,
@@ -428,3 +428,39 @@ def test_stored_default_adjustment_and_missing_adjustment_both_keep_the_design_c
         assert job.render_count == 2
     finally:
         job.close()
+
+
+# ── 검정(K 레진) 패널 ───────────────────────────────────────────────────────
+def _black_text_document():
+    document = presets.new_document()
+    document.side("front").add_item(TextItem(x=5, y=5, w=60, h=10, text="HONG GILDONG", font_size_pt=16))
+    return document
+
+
+def test_black_layer_is_made_only_when_chosen_and_supported():
+    document = _black_text_document()
+    assert rj.uses_black_text(document)
+    cases = [
+        (PrintOptions(black_resin=True), {CAP_BLACK_RESIN}, True),
+        (PrintOptions(black_resin=False), {CAP_BLACK_RESIN}, False),
+        (PrintOptions(black_resin=True), {"status"}, False),
+    ]
+    for options, capabilities, expected in cases:
+        job = RenderJob.for_copies(document, 1, options, capabilities=capabilities)
+        try:
+            card = job.render(0)
+            assert (card.front.black_path is not None) == expected
+            if expected:
+                assert os.path.exists(card.front.black_path)
+                with Image.open(card.front.color_path) as color:
+                    assert min(color.convert("L").getdata()) > 200, "색 그림에는 검정 글자가 없다"
+                path = card.front.black_path
+        finally:
+            job.close()
+        if expected:
+            assert not os.path.exists(path), "작업을 닫으면 임시 파일도 지운다"
+
+
+def test_black_resin_choice_is_saved_with_the_project():
+    assert PrintOptions.from_dict(PrintOptions(black_resin=True).to_dict()).black_resin is True
+    assert PrintOptions.from_dict({}).black_resin is False
