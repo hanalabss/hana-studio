@@ -97,3 +97,24 @@ def test_gamma_is_saved_and_shown_for_rtai(env, workspace, services):
     again.reset_color.click()
     page.apply_choices(again.choices())
     assert page.prefs.gamma_adjust() == 0
+
+
+def test_black_resin_choice_shows_only_with_black_text_and_a_capable_printer(env):
+    from design.model import Document, TextItem
+    from printer.base import CAP_BLACK_RESIN
+    from ui.pages.printing.options_sheet import OptionsSheet, PrintChoices, summary_text
+
+    document = Document()
+    document.side("front").add_item(TextItem(x=5, y=5, w=60, h=10, text="HONG"))
+    choices = PrintChoices()
+    assert OptionsSheet(choices, document, set(), [], people=False).black_resin is None
+    assert OptionsSheet(choices, Document(), {CAP_BLACK_RESIN}, [], people=False).black_resin is None
+
+    sheet = OptionsSheet(choices, document, {CAP_BLACK_RESIN}, [], people=False)
+    assert sheet.black_resin is not None and not sheet.black_resin.isChecked()
+    assert sheet.choices().options.black_resin is False
+    sheet.black_resin.setChecked(True)
+    chosen = sheet.choices()
+    assert chosen.options.black_resin is True
+    assert "검정 글자는 검정 리본으로" in summary_text(chosen, document, {CAP_BLACK_RESIN}, False)
+    assert "검정 리본" not in summary_text(chosen, document, set(), False)

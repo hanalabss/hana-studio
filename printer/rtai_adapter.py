@@ -16,7 +16,7 @@ import time
 from typing import Any, Dict, Mapping, Optional, Set, Tuple, Union
 
 from .base import (
-    CAP_CARD_MOVE, CAP_COLOR_ADJUST, CAP_DUAL_SIDE, CAP_GAMMA_ADJUST, CAP_K_SPLIT, CAP_MAGNETIC, CAP_MIFARE,
+    CAP_BLACK_RESIN, CAP_CARD_MOVE, CAP_COLOR_ADJUST, CAP_DUAL_SIDE, CAP_GAMMA_ADJUST, CAP_K_SPLIT, CAP_MAGNETIC, CAP_MIFARE,
     CAP_POSITION_OFFSET, apply_gamma, color_adjust_from, gamma_adjust_from,
     CAP_RIBBON_LEVEL, CAP_STATUS, CAP_UV, CAP_WHITE, FAMILY_RTAI, ORIENTATION_PORTRAIT,
     STAGE_BACK_IMAGE, STAGE_DONE, STAGE_EJECT, STAGE_FEED, STAGE_FRONT_IMAGE, STAGE_MAGNETIC,
@@ -123,12 +123,34 @@ def sdk_white_mask(path: str) -> str:
     return target
 
 
+# R600SetAddImageMode_Rtai에 넘기는 값. 카드프레소가 색 레이어와 검정 레이어를 그릴 때 쓰는 값 그대로다
+# (claudedocs/r600-sdk-reference.md 3.1). nMode 0·3의 뜻은 SDK 문서로 확인한 것이 아니다.
+ADD_MODE_COLOR = (0, True, False)     # (nMode, YMC, K): 색(YMC) 레이어
+ADD_MODE_BLACK = (3, False, True)     # 검정(K) 레이어
+ADD_MODE_THRESHOLD = 220
+DRAW_KEEP_BLACK_IN_COLOR = 1          # R600DrawImage의 nSetNoAbsoluteBlack: 색 레이어는 1, 검정 레이어는 0
+DRAW_BLACK_LAYER = 0
+
+
+def sdk_black_layer(path: str) -> str:
+    """앱의 검정 패널 마스크(흰색 = 검정 잉크)를 흰 바탕에 검정 그림으로 뒤집어 원본 옆에 둔다."""
+    from PIL import Image, ImageOps
+
+    with Image.open(path) as source:
+        inverted = ImageOps.invert(source.convert("L")).convert("RGB")
+    base, _ = os.path.splitext(path)
+    target = base + "_sdk.png"
+    inverted.save(target)
+    return target
+
+
 class RtaiAdapter(CardPrinter):
     family = FAMILY_RTAI
 
     CAPABILITIES = frozenset({
         CAP_DUAL_SIDE, CAP_WHITE, CAP_UV, CAP_MAGNETIC, CAP_STATUS, CAP_RIBBON_LEVEL,
         CAP_K_SPLIT, CAP_MIFARE, CAP_CARD_MOVE, CAP_POSITION_OFFSET, CAP_COLOR_ADJUST, CAP_GAMMA_ADJUST,
+        CAP_BLACK_RESIN,
     })
 
     def __init__(self, lib: Any = None, dll_path: Optional[str] = None,
@@ -139,6 +161,7 @@ class RtaiAdapter(CardPrinter):
         self._dll_path = dll_path
         self._printer = None
         self._gamma_files: list = []
+        self._add_mode_touched = False      # R600SetAddImageMode_Rtai를 건드린 적이 있는가
         self.settle_seconds = settle_seconds
         self.timeout_ms = timeout_ms
 
@@ -437,7 +460,7 @@ class RtaiAdapter(CardPrinter):
             if side is None:
                 continue
             for kind, path in (("이미지", side.color_path), ("화이트 마스크", side.white_mask_path),
-                               ("UV 이미지", side.uv_path)):
+                               ("UV 이미지", side.uv_path), ("검정 패널 이미지", side.black_path)):
                 if kind == "이미지" and not path:
                     raise PrinterError(f"{label} 이미지가 지정되지 않았습니다.")
                 if path and not os.path.exists(path):
@@ -560,7 +583,19 @@ class RtaiAdapter(CardPrinter):
                 printer.draw_watermark_rotated(x, y, width, height, mask_path, rotation)
             else:
                 printer.draw_watermark(x, y, width, height, mask_path)
-        printer.draw_image(x, y, width, height, self._gamma_adjusted(side.color_path, options))
+        color_path = self._gamma_adjusted(side.color_path, options)
+        if side.black_path or self._add_mode_touched:
+            # 검정 레이어를 한 번이라도 썼으면 SDK에 그 모드가 남으므로, 색 레이어 앞에서 항상 되돌린다.
+            self._add_mode_touched = True
+            printer.set_add_image_mode_rtai(*ADD_MODE_COLOR, None, ADD_MODE_THRESHOLD)
+        printer.draw_image(x, y, width, height, color_path, DRAW_KEEP_BLACK_IN_COLOR)
+        if side.black_path:
+            # 카드프레소의 호출 순서 그대로: 색 레이어 다음에 검정(K) 레이어를 따로 그린다.
+            # 흰색을 투명으로 두는 R600SetImagePara(1, 회전, 0)는 setup_canvas에서 이미 불렀다.
+            # 실기(RTAI)로 인쇄해 확인하지는 못했다.
+            printer.set_add_image_mode_rtai(*ADD_MODE_BLACK, None, ADD_MODE_THRESHOLD)
+            printer.draw_image(x, y, width, height, sdk_black_layer(side.black_path), DRAW_BLACK_LAYER)
+            printer.set_add_image_mode_rtai(*ADD_MODE_COLOR, None, ADD_MODE_THRESHOLD)
         if side.uv_path:
             printer.draw_uv_layer(x, y, width, height, side.uv_path,
                                   threshold=options.get("uv_threshold", UV_DEFAULT_THRESHOLD),
