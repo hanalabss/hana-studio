@@ -23,7 +23,7 @@ from design import renderer
 from design.binding import BindingContext, ColumnSource, CounterSource, columns_used, to_text
 from design.model import Crop, Document
 from printer.base import (
-    CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_UV, CAP_WHITE, CardJob, PrintCancelled, PrinterError, SideImages,
+    CAP_BLACK_RESIN, CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_UV, CAP_WHITE, CardJob, PrintCancelled, PrinterError, SideImages,
 )
 
 log = logging.getLogger(__name__)
@@ -64,6 +64,7 @@ class PrintOptions:
     density_yellow: int = 0
     density_magenta: int = 0
     density_cyan: int = 0
+    black_resin: bool = False    # 검정 글자·선·바코드·QR을 검정(K 레진) 패널로 찍는다. 지원하는 프린터에서만 쓰인다.
     magnetic: dict[str, str] | None = None
     name_column: str | None = None
     counter_offset: int = 0
@@ -76,7 +77,7 @@ class PrintOptions:
     _SAVED = (
         "copies", "dpi", "stop_on_error", "offset_x_mm", "offset_y_mm",
         "brightness", "contrast", "saturation", "gamma",
-        "density", "density_yellow", "density_magenta", "density_cyan", "magnetic",
+        "density", "density_yellow", "density_magenta", "density_cyan", "black_resin", "magnetic",
         "name_column", "counter_offset", "job_name", "lookahead", "strict", "card_options",
     )
 
@@ -264,6 +265,11 @@ def uses_white(document: Document) -> bool:
 
 def uses_uv(document: Document) -> bool:
     return any(item.layer == "uv" for item in _printable_items(document))
+
+
+def uses_black_text(document: Document) -> bool:
+    """검정(K 레진) 패널로 따로 찍을 수 있는 순수한 검정 글자·선·바코드·QR이 있는가."""
+    return any(renderer.goes_to_black_layer(item) for item in _printable_items(document))
 
 
 def prints_back(document: Document) -> bool:
@@ -488,6 +494,7 @@ class RenderJob:
                     rendered = renderer.render_side(
                         document, side_key, record, options.dpi, context,
                         design_mode=False, crop_bleed=False, strict=options.strict,
+                        black_layer=bool(options.black_resin) and self.supports(CAP_BLACK_RESIN),
                     )
                 except renderer.RenderError as exc:
                     raise RenderJobError(f"{spec.display_name}: {exc}") from exc
@@ -499,7 +506,8 @@ class RenderJob:
                 paths = rendered.save(directory, f"card{spec.render_key:05d}_{side_key}")
                 images = SideImages(
                     color_path=paths["color_path"], white_mask_path=paths["white_mask_path"],
-                    uv_path=paths["uv_path"], orientation=paths["orientation"],
+                    uv_path=paths["uv_path"], black_path=paths["black_path"],
+                    orientation=paths["orientation"],
                 )
                 if side_key == "front":
                     card.front = images
@@ -539,7 +547,7 @@ class RenderJob:
         for side in (card.front, card.back):
             if side is None:
                 continue
-            for path in (side.color_path, side.white_mask_path, side.uv_path):
+            for path in (side.color_path, side.white_mask_path, side.uv_path, side.black_path):
                 if path:
                     try:
                         os.remove(path)

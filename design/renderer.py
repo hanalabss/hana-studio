@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import math
 import os
 from collections import OrderedDict
@@ -9,7 +10,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any, Callable, Mapping
 
-from PIL import Image
+from PIL import Image, ImageChops
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import (
     QColor, QFont, QFontDatabase, QFontMetricsF, QGuiApplication, QImage, QImageReader,
@@ -687,6 +688,7 @@ class RenderedSide:
     color: Image.Image
     white_mask: Image.Image | None = None
     uv: Image.Image | None = None
+    black: Image.Image | None = None    # 검정(K 레진) 패널로 찍을 부분. 흰색(255)이 잉크다.
     orientation: str = "landscape"
     dpi: float = 300.0
     warnings: list[str] = field(default_factory=list)
@@ -699,6 +701,7 @@ class RenderedSide:
             ("color_path", "color", self.color),
             ("white_mask_path", "white", self.white_mask),
             ("uv_path", "uv", self.uv),
+            ("black_path", "black", self.black),
         ):
             if image is None:
                 paths[key] = None
@@ -745,6 +748,8 @@ def trim_bleed(rendered: "RenderedSide", document: Document, side_key: str) -> b
         rendered.white_mask = rendered.white_mask.crop(box)
     if rendered.uv is not None:
         rendered.uv = rendered.uv.crop(box)
+    if rendered.black is not None:
+        rendered.black = rendered.black.crop(box)
     return True
 
 
@@ -779,6 +784,75 @@ class _MaskLayer:
         return _to_pil(self.image, "L")
 
 
+# 검정 패널(K 레진)로 보낼 수 있는 항목: 글자·선·바코드·QR 가운데 색이 순수한 검정인 것.
+BLACK_LAYER_KINDS = ("text", "line", "barcode", "qr")
+_BLACK_INK_MAX_LEVEL = 96      # 이보다 어두운 화소만 검정 잉크로 본다
+_BLACK_INK_MIN_ALPHA = 128     # 가장자리(반투명)는 절반 넘게 덮인 화소만
+
+
+def is_pure_black(value: str | None) -> bool:
+    color = QColor(value) if value else QColor()
+    return color.isValid() and color.alpha() == 255 and (color.red(), color.green(), color.blue()) == (0, 0, 0)
+
+
+def goes_to_black_layer(item: Item) -> bool:
+    """이 항목을 색 패널 대신 검정(K 레진) 패널로 찍을 수 있는가."""
+    return (item.layer == "color" and item.kind in BLACK_LAYER_KINDS
+            and is_pure_black(getattr(item, "color", None)))
+
+
+def _without_ink(item: Item) -> Item | None:
+    """검정 잉크를 뺀 색 패널용 항목. 바탕이 있는 바코드·QR은 바탕만 남기고, 나머지는 그릴 게 없다."""
+    background = getattr(item, "background", None)
+    if not background:
+        return None
+    return dataclasses.replace(item, color=background)
+
+
+class _BlackLayer:
+    """검정 패널에 찍을 부분을 모은다. 항목을 원래 색으로 겹쳐 그린 뒤 어두운 화소만 잉크로 뽑는다.
+
+    뒤에 그려진 다른 항목이 검정 글자를 가리면 그 부분은 지운다(화면에 보이는 순서를 지킨다).
+    """
+
+    def __init__(self, width: int, height: int) -> None:
+        self.size = (width, height)
+        self.image: QImage | None = None
+        self.painter: QPainter | None = None
+
+    @property
+    def started(self) -> bool:
+        return self.painter is not None
+
+    def begin(self) -> QPainter:
+        if self.painter is None:
+            self.image = QImage(*self.size, QImage.Format.Format_ARGB32_Premultiplied)
+            self.image.fill(QColor(0, 0, 0, 0))
+            self.painter = QPainter(self.image)
+        self.painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+        return self.painter
+
+    def begin_erase(self) -> QPainter:
+        self.painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOut)
+        return self.painter
+
+    def finish(self) -> Image.Image | None:
+        if self.painter is None:
+            return None
+        self.painter.end()
+        converted = self.image.convertToFormat(QImage.Format.Format_RGBA8888)
+        rgba = Image.frombuffer(
+            "RGBA", (converted.width(), converted.height()), bytes(converted.constBits()),
+            "raw", "RGBA", converted.bytesPerLine(), 1,
+        )
+        red, green, blue, alpha = rgba.split()
+        dark = ImageChops.lighter(ImageChops.lighter(red, green), blue).point(
+            lambda level: 255 if level < _BLACK_INK_MAX_LEVEL else 0)
+        solid = alpha.point(lambda level: 255 if level >= _BLACK_INK_MIN_ALPHA else 0)
+        mask = ImageChops.multiply(dark, solid)
+        return mask if mask.getbbox() else None
+
+
 def render_side(
     document: Document,
     side_key: str,
@@ -789,8 +863,11 @@ def render_side(
     design_mode: bool | None = None,
     crop_bleed: bool = False,
     strict: bool = False,
+    black_layer: bool = False,
 ) -> RenderedSide:
     """한 면을 인쇄용 이미지로 만든다.
+
+    black_layer: 순수한 검정 글자·선·바코드·QR을 색 그림에서 빼고 `black`(검정 패널용)으로 따로 만든다.
 
     design_mode: None이면 record가 없을 때만 자리표시를 그린다.
     crop_bleed: 문서에 도련이 있으면 칼선 안쪽만 남긴다. 결과는 정확히 `cut_pixel_size`다.
@@ -809,6 +886,7 @@ def render_side(
     color_image.fill(QColor(255, 255, 255))
     painter = QPainter(color_image)
     masks = {"white": _MaskLayer(width, height), "uv": _MaskLayer(width, height)}
+    black = _BlackLayer(width, height)
     try:
         if side.background:
             if side.background.startswith("#"):
@@ -826,10 +904,21 @@ def render_side(
                 continue
             value = value_for(document, item, record, context)
             crop = item.crop_for(context.record_key) if item.kind == "image" else None
+            if black_layer and goes_to_black_layer(item):
+                # 검정 잉크는 검정 패널에만 찍는다. 색 그림에는 바탕(있으면)만 남긴다.
+                paint_item(black.begin(), item, value, s, crop=crop, design_mode=design_mode,
+                           problems=problems)
+                rest = _without_ink(item)
+                if rest is not None:
+                    paint_item(painter, rest, value, s, crop=crop, design_mode=design_mode)
+                continue
             if item.layer == "color":
                 paint_item(
                     painter, item, value, s, crop=crop, design_mode=design_mode, problems=problems
                 )
+                if black.started:
+                    # 검정 글자 위에 올라온 항목은 그 부분의 검정 잉크를 가린다.
+                    paint_item(black.begin_erase(), item, value, s, crop=crop, design_mode=design_mode)
                 cut_file = asset_path(document, getattr(item, "cutout_asset", None))
                 if item.kind == "image" and cut_file and not os.path.isfile(cut_file):
                     problems.append(f"배경을 지운 그림을 찾을 수 없어 원래 그림으로 그렸습니다: {item.cutout_asset}")
@@ -851,12 +940,13 @@ def render_side(
         painter.end()
         white_mask = masks["white"].finish()
         uv = masks["uv"].finish()
+        black_mask = black.finish()
 
     if strict and problems:
         raise RenderError("\n".join(problems))
 
     result = RenderedSide(
-        color=_to_pil(color_image, "RGB"), white_mask=white_mask, uv=uv,
+        color=_to_pil(color_image, "RGB"), white_mask=white_mask, uv=uv, black=black_mask,
         orientation=side.orientation, dpi=float(dpi), warnings=problems,
     )
     if crop_bleed:
