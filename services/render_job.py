@@ -59,6 +59,7 @@ class PrintOptions:
     brightness: int = 0          # 색 조정(-100~100, 0이 원래대로). 지원하는 프린터에서만 쓰인다.
     contrast: int = 0
     saturation: int = 0
+    gamma: int = 0               # 중간 밝기(-100~100, 0이 원래대로, +가 밝게). RTAI에서만 쓰인다.
     density: int = 0             # 진하기(-100~100, 0이 원래대로, 클수록 진함). 전체·노랑·빨강·파랑.
     density_yellow: int = 0
     density_magenta: int = 0
@@ -74,7 +75,7 @@ class PrintOptions:
 
     _SAVED = (
         "copies", "dpi", "stop_on_error", "offset_x_mm", "offset_y_mm",
-        "brightness", "contrast", "saturation",
+        "brightness", "contrast", "saturation", "gamma",
         "density", "density_yellow", "density_magenta", "density_cyan", "magnetic",
         "name_column", "counter_offset", "job_name", "lookahead", "strict", "card_options",
     )
@@ -515,7 +516,7 @@ class RenderJob:
         if options.offset_x_mm or options.offset_y_mm:
             card.options["offset_x_mm"] = float(options.offset_x_mm)
             card.options["offset_y_mm"] = float(options.offset_y_mm)
-        for name in ("brightness", "contrast", "saturation",
+        for name in ("brightness", "contrast", "saturation", "gamma",
                      "density", "density_yellow", "density_magenta", "density_cyan"):
             if getattr(options, name):
                 card.options[name] = int(getattr(options, name))

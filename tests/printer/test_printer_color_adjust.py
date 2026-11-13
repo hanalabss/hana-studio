@@ -228,3 +228,54 @@ def test_smart_leaves_the_fluorescent_picture_alone(smart_lib, smart_device, cha
     plain = smart_prepared(smart_lib, smart_device, chart, {"bleed_handled": True})
     uv = smart_prepared(smart_lib, smart_device, chart, options, adjust_color=False)
     assert uv.tobytes() == plain.tobytes()
+
+
+# ---------------------------------------------------------------- RTAI: 중간 밝기(감마)
+def test_gamma_keeps_black_and_white_and_moves_the_middle():
+    from printer.base import apply_gamma, gamma_adjust_from, gamma_exponent
+
+    assert gamma_adjust_from({}) == 0 and gamma_adjust_from({"gamma": 500}) == 100
+    assert gamma_exponent(0) == 1.0 and gamma_exponent(100) == 0.5 and gamma_exponent(-100) == 2.0
+    ramp = Image.new("RGB", (3, 1))
+    ramp.putdata([(0, 0, 0), (128, 128, 128), (255, 255, 255)])
+    assert apply_gamma(ramp, 0) is ramp
+    brighter, darker = list(apply_gamma(ramp, 50).getdata()), list(apply_gamma(ramp, -50).getdata())
+    assert brighter[0] == darker[0] == (0, 0, 0) and brighter[2] == darker[2] == (255, 255, 255)
+    assert brighter[1][0] > 128 > darker[1][0]
+
+
+def test_only_rtai_offers_gamma(adapter, smart_lib):
+    from printer.base import CAP_GAMMA_ADJUST
+
+    assert CAP_GAMMA_ADJUST in adapter.capabilities()
+    assert CAP_GAMMA_ADJUST not in SmartAdapter(lib=smart_lib).capabilities()
+
+
+def test_rtai_sends_a_gamma_adjusted_copy_and_removes_it_afterwards(adapter, r600_lib, make_image, monkeypatch):
+    source = make_image(color=(120, 120, 120))
+    drawn = {}
+    original = adapter._printer.draw_image
+
+    def spy(x, y, width, height, path, *args, **kwargs):
+        with Image.open(path) as image:
+            drawn["path"], drawn["pixel"] = path, image.convert("RGB").getpixel((5, 5))
+        return original(x, y, width, height, path, *args, **kwargs)
+
+    monkeypatch.setattr(adapter._printer, "draw_image", spy)
+    adapter.print_card(CardJob(front=SideImages(source), options={"gamma": 50, "bleed_handled": True}))
+    assert drawn["path"] != source and drawn["pixel"][0] > 125, "중간 회색이 밝아진 그림을 넘긴다"
+    assert not os.path.exists(drawn["path"]), "임시 그림은 인쇄 뒤 지운다"
+
+    adapter.print_card(CardJob(front=SideImages(source), options={"bleed_handled": True}))
+    assert drawn["path"] == source, "0이면 원래 파일을 그대로 넘긴다"
+
+
+@needs_real_dll
+def test_real_dll_prints_the_gamma_adjusted_picture_brighter(real_printer, chart, tmp_path):
+    from printer.base import apply_gamma
+
+    adjusted = tmp_path / "gamma.png"
+    with Image.open(chart) as image:
+        apply_gamma(image.convert("RGB"), 60).save(adjusted)
+    base = render(real_printer, chart, (0, 0, 0))
+    assert brightness_of(render(real_printer, str(adjusted), (0, 0, 0))) > brightness_of(base) + 5

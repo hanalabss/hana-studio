@@ -8,8 +8,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QVBoxLayout, QWidget
 
 from design.model import Document
-from printer.base import (CAP_COLOR_ADJUST, CAP_DENSITY_ADJUST, CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_UV,
-                          CAP_WHITE, COLOR_ADJUST_MAX, COLOR_ADJUST_MIN, DENSITY_KEYS)
+from printer.base import (CAP_COLOR_ADJUST, CAP_DENSITY_ADJUST, CAP_DUAL_SIDE, CAP_GAMMA_ADJUST,
+                          CAP_MAGNETIC, CAP_UV, CAP_WHITE, COLOR_ADJUST_MAX, COLOR_ADJUST_MIN, DENSITY_KEYS)
 
 DENSITY_TITLES = {"density": "전체", "density_yellow": "노랑", "density_magenta": "빨강",
                   "density_cyan": "파랑"}
@@ -74,8 +74,11 @@ def summary_text(choices: PrintChoices, document: Document, capabilities: set[st
         parts.append("마그네틱 기록")
     if options.offset_x_mm or options.offset_y_mm:
         parts.append(f"위치 가로 {options.offset_x_mm:+.1f} 세로 {options.offset_y_mm:+.1f}mm")
-    if CAP_COLOR_ADJUST in capabilities and (options.brightness or options.contrast or options.saturation):
-        parts.append(f"색 조정 밝기 {options.brightness:+d} 명암 {options.contrast:+d} 채도 {options.saturation:+d}")
+    gamma = options.gamma if CAP_GAMMA_ADJUST in capabilities else 0
+    if CAP_COLOR_ADJUST in capabilities and (options.brightness or options.contrast or options.saturation
+                                             or gamma):
+        text = f"색 조정 밝기 {options.brightness:+d} 명암 {options.contrast:+d} 채도 {options.saturation:+d}"
+        parts.append(text + (f" 중간 밝기 {gamma:+d}" if gamma else ""))
     if CAP_DENSITY_ADJUST in capabilities and any(getattr(options, key) for key in DENSITY_KEYS):
         parts.append("진하기 " + " ".join(f"{DENSITY_TITLES[key]} {getattr(options, key):+d}"
                                         for key in DENSITY_KEYS if getattr(options, key)))
@@ -137,10 +140,16 @@ class OptionsSheet(Dialog):
             self.body.addWidget(label(
                 "카드에 찍힌 색이 화면보다 어둡거나 밋밋할 때만 바꾸세요. 0이 원래대로이고 "
                 f"{COLOR_ADJUST_MIN}부터 +{COLOR_ADJUST_MAX}까지 넣을 수 있습니다. 화면의 미리 보기에는 "
-                "나타나지 않고 인쇄에만 적용됩니다. 이 값은 다음 인쇄에도 그대로 씁니다.", "muted", wrap=True))
+                "나타나지 않고 인쇄에만 적용됩니다. 이 값은 다음 인쇄에도 그대로 씁니다."
+                + (" '중간 밝기'는 흰색과 검정은 그대로 두고 그 사이의 색만 밝게(+)·어둡게(-) 합니다."
+                   if CAP_GAMMA_ADJUST in capabilities else ""), "muted", wrap=True))
             colors = QHBoxLayout()
             colors.setSpacing(SPACE["lg"])
-            for key, title in (("brightness", "밝기"), ("contrast", "명암"), ("saturation", "채도")):
+            titles = [("brightness", "밝기"), ("contrast", "명암"), ("saturation", "채도")]
+            if CAP_GAMMA_ADJUST in capabilities:
+                # 흰색·검정은 그대로 두고 중간 밝기만 바꾼다(드라이버의 Gamma).
+                titles.append(("gamma", "중간 밝기"))
+            for key, title in titles:
                 field = StepperField(getattr(options, key), COLOR_ADJUST_MIN, COLOR_ADJUST_MAX, 5, 0)
                 field.setAccessibleName(title)
                 self.color_fields[key] = field

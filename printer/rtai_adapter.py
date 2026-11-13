@@ -16,7 +16,8 @@ import time
 from typing import Any, Dict, Mapping, Optional, Set, Tuple, Union
 
 from .base import (
-    CAP_CARD_MOVE, CAP_DUAL_SIDE, CAP_K_SPLIT, CAP_MAGNETIC, CAP_MIFARE, CAP_POSITION_OFFSET, CAP_COLOR_ADJUST, color_adjust_from,
+    CAP_CARD_MOVE, CAP_COLOR_ADJUST, CAP_DUAL_SIDE, CAP_GAMMA_ADJUST, CAP_K_SPLIT, CAP_MAGNETIC, CAP_MIFARE,
+    CAP_POSITION_OFFSET, apply_gamma, color_adjust_from, gamma_adjust_from,
     CAP_RIBBON_LEVEL, CAP_STATUS, CAP_UV, CAP_WHITE, FAMILY_RTAI, ORIENTATION_PORTRAIT,
     STAGE_BACK_IMAGE, STAGE_DONE, STAGE_EJECT, STAGE_FEED, STAGE_FRONT_IMAGE, STAGE_MAGNETIC,
     STAGE_PRINT, STAGE_SETUP, STAGE_UNKNOWN, STAGE_WAIT, UNIT_UNKNOWN,
@@ -127,7 +128,7 @@ class RtaiAdapter(CardPrinter):
 
     CAPABILITIES = frozenset({
         CAP_DUAL_SIDE, CAP_WHITE, CAP_UV, CAP_MAGNETIC, CAP_STATUS, CAP_RIBBON_LEVEL,
-        CAP_K_SPLIT, CAP_MIFARE, CAP_CARD_MOVE, CAP_POSITION_OFFSET, CAP_COLOR_ADJUST,
+        CAP_K_SPLIT, CAP_MIFARE, CAP_CARD_MOVE, CAP_POSITION_OFFSET, CAP_COLOR_ADJUST, CAP_GAMMA_ADJUST,
     })
 
     def __init__(self, lib: Any = None, dll_path: Optional[str] = None,
@@ -137,6 +138,7 @@ class RtaiAdapter(CardPrinter):
         self._lib = lib
         self._dll_path = dll_path
         self._printer = None
+        self._gamma_files: list = []
         self.settle_seconds = settle_seconds
         self.timeout_ms = timeout_ms
 
@@ -497,6 +499,7 @@ class RtaiAdapter(CardPrinter):
             printer.bleed_crop_enabled = True
             printer.cleanup_layer_files()
             self._reset_color_adjust()
+            self._cleanup_gamma_files()
 
     def _reset_color_adjust(self) -> None:
         """색 조정을 원래대로(0) 돌려 둔다. SDK에 값이 남아 같은 프로그램의 다른 인쇄(빠른 인쇄)에 번지지 않게 한다."""
@@ -504,6 +507,33 @@ class RtaiAdapter(CardPrinter):
             self._printer.set_image_visual_params(0, 0, 0)
         except Exception as exc:
             log.warning("색 조정 값을 되돌리지 못했습니다: %s", exc)
+
+    def _gamma_adjusted(self, path: str, options: Mapping[str, Any]) -> str:
+        """중간 밝기(감마)를 적용한 그림 파일. 값이 0이면 원래 파일을 그대로 쓴다.
+
+        SDK에 감마 함수가 없어서 SDK에 넘기기 전에 그림을 바꾼다. 회전 정보(EXIF)는 여기서 적용해 둔다.
+        """
+        value = gamma_adjust_from(options)
+        if not value:
+            return path
+        from PIL import Image, ImageOps
+        from utils.safe_temp_path import create_safe_temp_file, get_cached_safe_temp_dir
+
+        with Image.open(path) as source:
+            image = ImageOps.exif_transpose(source).convert("RGB")
+        image = apply_gamma(image, value)
+        temp_path = create_safe_temp_file(prefix="rtai_gamma", suffix=".png", dir=get_cached_safe_temp_dir())
+        image.save(temp_path, "PNG")
+        self._gamma_files.append(temp_path)
+        return temp_path
+
+    def _cleanup_gamma_files(self) -> None:
+        for path in self._gamma_files:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        self._gamma_files = []
 
     def _precheck(self) -> None:
         status = self.status()
@@ -530,7 +560,7 @@ class RtaiAdapter(CardPrinter):
                 printer.draw_watermark_rotated(x, y, width, height, mask_path, rotation)
             else:
                 printer.draw_watermark(x, y, width, height, mask_path)
-        printer.draw_image(x, y, width, height, side.color_path)
+        printer.draw_image(x, y, width, height, self._gamma_adjusted(side.color_path, options))
         if side.uv_path:
             printer.draw_uv_layer(x, y, width, height, side.uv_path,
                                   threshold=options.get("uv_threshold", UV_DEFAULT_THRESHOLD),

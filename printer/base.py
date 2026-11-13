@@ -51,6 +51,29 @@ def color_adjust_from(options) -> tuple:
     return _adjust_values(options, COLOR_ADJUST_KEYS)
 
 
+# 중간 밝기(감마): 흰색과 검정은 그대로 두고 중간 밝기만 밝게(+)·어둡게(-) 한다. RTAI 드라이버의 Gamma에 해당한다.
+# RTAI SDK에는 감마 함수가 없어 보내기 전에 그림을 바꾼다. 범위는 색 조정과 같은 -100~100이다.
+CAP_GAMMA_ADJUST = "gamma_adjust"
+
+
+def gamma_adjust_from(options) -> int:
+    return _adjust_values(options, ("gamma",))[0]
+
+
+def gamma_exponent(value: int) -> float:
+    """-100~100을 지수로 바꾼다. 0이면 1(그대로), +100이면 0.5(밝게), -100이면 2(어둡게)."""
+    return 2.0 ** (-max(COLOR_ADJUST_MIN, min(COLOR_ADJUST_MAX, int(value))) / 100.0)
+
+
+def apply_gamma(image, value: int):
+    """PIL 그림(RGB)에 중간 밝기 조정을 적용한다. 0과 255는 변하지 않는다."""
+    if not value:
+        return image
+    exponent = gamma_exponent(value)
+    table = [round(255 * (level / 255) ** exponent) for level in range(256)]
+    return image.point(table * len(image.getbands()))
+
+
 # 진하기 조정: 색 리본을 얼마나 진하게 찍을지(전체·노랑·빨강·파랑). SMART 드라이버의 'Color Correction'과 같은 값이다.
 # 범위는 색 조정과 같은 -100~100이고 클수록 진하다. SDK는 범위를 넘는 값도 그대로 받으므로 여기서 막는다.
 CAP_DENSITY_ADJUST = "density_adjust"

@@ -19,6 +19,7 @@ KEY_COPIES = "print/copies"
 KEY_STOP_ON_ERROR = "print/stop_on_error"
 KEY_OFFSET_X = "print/offset_x_mm"
 KEY_OFFSET_Y = "print/offset_y_mm"
+KEY_GAMMA = "print/gamma"
 KEY_DENSITY = {"density": "print/density", "density_yellow": "print/density_yellow",
                "density_magenta": "print/density_magenta", "density_cyan": "print/density_cyan"}
 KEY_COLOR = {"brightness": "print/brightness", "contrast": "print/contrast", "saturation": "print/saturation"}
@@ -177,6 +178,22 @@ class Prefs(QObject):
         self._settings.sync()
         self.changed.emit()
 
+    def gamma_adjust(self) -> int:
+        """중간 밝기(-100~100, 0이 원래대로)."""
+        from printer.base import gamma_adjust_from
+
+        return gamma_adjust_from({"gamma": self._settings.value(KEY_GAMMA, 0)})
+
+    def set_gamma_adjust(self, value: int) -> None:
+        from printer.base import gamma_adjust_from
+
+        after = gamma_adjust_from({"gamma": value})
+        if after == self.gamma_adjust():
+            return
+        self._settings.setValue(KEY_GAMMA, after)
+        self._settings.sync()
+        self.changed.emit()
+
     def density_adjust(self) -> tuple[int, int, int, int]:
         """진하기 (전체, 노랑, 빨강, 파랑). 각 -100~100, 0이 원래대로."""
         from printer.base import DENSITY_KEYS, density_adjust_from
@@ -203,6 +220,7 @@ class Prefs(QObject):
         return PrintOptions(copies=self.copies(), stop_on_error=self.stop_on_error(),
                             offset_x_mm=x, offset_y_mm=y,
                             brightness=brightness, contrast=contrast, saturation=saturation,
+                            gamma=self.gamma_adjust(),
                             **dict(zip(DENSITY_KEYS, self.density_adjust())))
 
     # ---- 새 카드 크기 ----

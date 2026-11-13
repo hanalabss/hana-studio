@@ -11,8 +11,8 @@ VISUAL = "R600SetImgVisualParam"
 def test_color_fields_show_for_rtai_and_carry_the_saved_values(env, workspace, services):
     page = make_page(env, workspace, services)
     sheet = page.make_options_sheet()
-    assert set(sheet.color_fields) == {"brightness", "contrast", "saturation"}
-    assert [field.value() for field in sheet.color_fields.values()] == [0, 0, 0]
+    assert list(sheet.color_fields) == ["brightness", "contrast", "saturation", "gamma"]
+    assert [field.value() for field in sheet.color_fields.values()] == [0, 0, 0, 0]
 
     sheet.color_fields["brightness"].set_value(10)
     sheet.color_fields["contrast"].set_value(-5)
@@ -38,7 +38,7 @@ def test_color_fields_show_for_smart_too(env, workspace, services):
     wait_until(env, lambda: not services.printers.is_busy and services.printers.status() is not None)
     page.refresh_now()
     sheet = page.make_options_sheet()
-    assert set(sheet.color_fields) == {"brightness", "contrast", "saturation"}
+    assert list(sheet.color_fields) == ["brightness", "contrast", "saturation"], "중간 밝기는 RTAI에만 있다"
     sheet.color_fields["saturation"].set_value(15)
     page.apply_choices(sheet.choices())
     page.refresh_now()
@@ -82,3 +82,18 @@ def test_chosen_values_reach_the_printer(env, workspace, services, rtai_lib):
     finish_job(env, page)
     sent = [call.args for call in rtai_lib.calls_named(VISUAL)]
     assert sent[0] == (12, 0, 34) and sent[-1] == (0, 0, 0)
+
+
+def test_gamma_is_saved_and_shown_for_rtai(env, workspace, services):
+    page = make_page(env, workspace, services)
+    sheet = page.make_options_sheet()
+    sheet.color_fields["gamma"].set_value(25)
+    page.apply_choices(sheet.choices())
+    page.refresh_now()
+    assert "중간 밝기 +25" in page.ready.options_summary.text()
+    assert page.prefs.gamma_adjust() == 25 and Prefs().print_options().gamma == 25
+    assert PrintOptions.from_dict(PrintOptions(gamma=-30).to_dict()).gamma == -30
+    again = page.make_options_sheet()
+    again.reset_color.click()
+    page.apply_choices(again.choices())
+    assert page.prefs.gamma_adjust() == 0
