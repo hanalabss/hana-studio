@@ -41,6 +41,8 @@ EXTRA_SIGNATURES: Dict[str, Tuple[list, Any]] = {
     "R600GetRbnAndFilmRemaining": ([_P(_u16), _P(_u16)], _u32),
     "R600RibbonSettingsRW": ([_i32] + [_P(_u8)] * 4, _u32),
     "R600SetLayerFluorThreshold": ([_i32], _u32),
+    "R600SetImgVisualParam": ([_i32, _i32, _i32], _u32),
+    "R600GetPreviewImg": ([_str, _str, _P(_i32)], _u32),
     "R600DrawLayerFluor": ([_dbl, _dbl, _dbl, _dbl, _str], _u32),
     "R600SetAddImageMode_Rtai": ([_i32, ctypes.c_bool, ctypes.c_bool, _str, _i32], _u32),
     "R600SetImgUtilIsNeedSet_K_ColorRibbonSplitPrint": ([ctypes.c_bool], _u32),
@@ -226,6 +228,28 @@ class R600ExtrasMixin:
         self._ext_check(ret, "리본 설정 조회")
         keys = ("ribbon_type", "film_type", "ribbon_near_end", "film_near_end")
         return {key: var.value for key, var in zip(keys, values)}
+
+    # -- 색 조정 -----------------------------------------------------------
+    def set_image_visual_params(self, brightness: int = 0, contrast: int = 0, saturation: int = 0) -> None:
+        """R600SetImgVisualParam: 이 뒤에 캔버스에 올리는 그림의 밝기·명암·채도(각 -100~100, 0이 원래대로).
+
+        실제로 확인한 동작:
+        - 범위를 벗어나면 SDK가 오류(8388609)를 돌려주고 값을 바꾸지 않는다.
+        - 한번 넣은 값은 캔버스를 새로 준비해도 남는다. 그래서 조정하지 않는 인쇄도 0을 넣어야 한다.
+        """
+        ret = self._ext("R600SetImgVisualParam")(int(brightness), int(contrast), int(saturation))
+        self._ext_check(ret, "색 조정 설정")
+
+    def preview_image_path(self, image_info: str, size: int = 1024) -> str:
+        """R600GetPreviewImg: R600CommitCanvas가 돌려준 정보로, SDK가 만든 인쇄 그림 파일의 경로를 받는다.
+
+        색 조정처럼 SDK 안에서 그림에 적용되는 설정이 실제로 들어갔는지 카드를 쓰지 않고 확인할 때 쓴다.
+        """
+        buffer = ctypes.create_string_buffer(size)
+        length = ctypes.c_int(size)
+        ret = self._ext("R600GetPreviewImg")(image_info.encode("cp949"), buffer, ctypes.byref(length))
+        self._ext_check(ret, "미리 보기 그림 조회")
+        return decode_sdk_text(buffer.value)
 
     # -- UV 레이어 · K 분할 -------------------------------------------------
     def set_fluor_threshold(self, threshold: int = UV_DEFAULT_THRESHOLD) -> None:

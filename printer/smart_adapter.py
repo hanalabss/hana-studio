@@ -15,12 +15,12 @@ from typing import Any, Dict, List, Mapping, Optional, Set, Union
 
 from . import smart_printer as sp
 from .base import (
-    CAP_CARD_MOVE, CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_POSITION_OFFSET, CAP_RIBBON_LEVEL,
+    CAP_CARD_MOVE, CAP_COLOR_ADJUST, CAP_DENSITY_ADJUST, CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_POSITION_OFFSET, CAP_RIBBON_LEVEL,
     CAP_STATUS, CAP_UV, FAMILY_SMART, ORIENTATION_PORTRAIT, STAGE_DONE, STAGE_EJECT, STAGE_FEED,
     STAGE_MAGNETIC, STAGE_PREPARE, STAGE_PRINT, STAGE_PRINT_BACK, STAGE_PRINT_FRONT, STAGE_SETUP,
     STAGE_UNKNOWN, UNIT_CARDS, UNIT_UNKNOWN, CardJob, CardPrinter,
     MagneticTracks, NotSupported, PrinterDevice, PrinterError, PrinterStatus, ProgressCallback,
-    SideImages,
+    SideImages, color_adjust_from, density_adjust_from,
 )
 
 log = logging.getLogger(__name__)
@@ -38,6 +38,23 @@ def _count_unit(info: "sp.SmartRibbonInfo") -> str:
     if info.max > 0 and info.max != 100 and 0 <= info.remain <= info.max:
         return UNIT_CARDS
     return UNIT_UNKNOWN
+
+
+def adjust_image(image, brightness: int = 0, contrast: int = 0, saturation: int = 0):
+    """밝기·명암·채도(각 -100~100, 0이 원래대로)를 그림에 적용한다.
+
+    SMART SDK와 드라이버에는 이 세 항목이 없어서, 프린터에 보내기 전에 그림을 바꾼다.
+    밝기·명암은 -100에서 절반, +100에서 1.5배이고, 채도는 -100에서 회색, +100에서 2배다.
+    """
+    from PIL import ImageEnhance
+
+    if brightness:
+        image = ImageEnhance.Brightness(image).enhance(1 + brightness / 200)
+    if contrast:
+        image = ImageEnhance.Contrast(image).enhance(1 + contrast / 200)
+    if saturation:
+        image = ImageEnhance.Color(image).enhance(1 + saturation / 100)
+    return image
 
 
 class SmartAdapter(CardPrinter):
@@ -77,10 +94,12 @@ class SmartAdapter(CardPrinter):
         return self._group
 
     def capabilities(self) -> Set[str]:
-        caps = {CAP_STATUS, CAP_RIBBON_LEVEL, CAP_CARD_MOVE, CAP_POSITION_OFFSET}
+        caps = {CAP_STATUS, CAP_RIBBON_LEVEL, CAP_CARD_MOVE, CAP_POSITION_OFFSET, CAP_COLOR_ADJUST}
         if not self.is_connected:
             # 장착 옵션을 아직 모른다. 플리퍼·마그네틱 인코더가 있으면 가능한 기능까지 알린다.
-            return caps | {CAP_DUAL_SIDE, CAP_MAGNETIC}
+            return caps | {CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_DENSITY_ADJUST}
+        if self._can_adjust_density():
+            caps.add(CAP_DENSITY_ADJUST)
         if self._has_flipper:
             caps.add(CAP_DUAL_SIDE)
         if self._has_magnetic is not False:
@@ -88,6 +107,10 @@ class SmartAdapter(CardPrinter):
         if self._ribbon_type in sp.FLUORESCENT_RIBBONS:
             caps.add(CAP_UV)
         return caps
+
+    def _can_adjust_density(self) -> bool:
+        """진하기 조정은 설정 구조를 실기로 확인한 SMART-51/31에서만 쓴다."""
+        return self._group == sp.GROUP_SMART51 and self._binding.has_function("SmartDCL_GetSurface2")
 
     def connect(self, device: PrinterDevice) -> None:
         if self.is_connected:
@@ -318,6 +341,8 @@ class SmartAdapter(CardPrinter):
         dual = job.is_dual_side
         first = job.front or job.back
         tracks = MagneticTracks.coerce(options.get("magnetic"))
+        density = density_adjust_from(options) if self._can_adjust_density() else (0, 0, 0, 0)
+        density_before: Optional[tuple] = None
         temp_files: List[str] = []
         try:
             report(5, "이미지 준비 중...", STAGE_PREPARE)
@@ -327,7 +352,8 @@ class SmartAdapter(CardPrinter):
             prepared = []
             for page, side, is_back in pages:
                 color = self._prepare_image(side.color_path, side, is_back, options, temp_files)
-                uv = (self._prepare_image(side.uv_path, side, is_back, options, temp_files)
+                uv = (self._prepare_image(side.uv_path, side, is_back, options, temp_files,
+                                          adjust_color=False)
                       if side.uv_path else None)
                 prepared.append((page, color, uv))
 
@@ -336,6 +362,9 @@ class SmartAdapter(CardPrinter):
             self._cards_since_open += 1
             width, height = sp.DOC_SIZE_BY_GROUP[self._group]
             panel = sp.PANELID_BLACK if self._ribbon_type in sp.MONO_RIBBONS else sp.PANELID_COLOR
+            if any(density):
+                # 카드를 넣기 전에 한다. 실패하면 카드를 쓰지 않고 끝난다. 0이면 아예 건드리지 않는다.
+                density_before = binding.set_color_density(*density)
 
             binding.sbs_start()
             try:
@@ -371,6 +400,11 @@ class SmartAdapter(CardPrinter):
             finally:
                 self._end_sbs()
         finally:
+            if density_before is not None:
+                try:
+                    binding.set_color_density(*density_before)
+                except PrinterError as exc:
+                    log.warning("SMART 진하기 값을 되돌리지 못했습니다: %s", exc)
             for path in temp_files:
                 try:
                     os.remove(path)
@@ -378,8 +412,11 @@ class SmartAdapter(CardPrinter):
                     pass
 
     def _prepare_image(self, path: str, side: SideImages, is_back: bool,
-                       options: Mapping[str, Any], temp_files: List[str]) -> str:
-        """도련 제거 → 문서 크기로 맞춤 → 위치 조정 → 세로형이면 회전해 BMP로 저장한다.
+                       options: Mapping[str, Any], temp_files: List[str],
+                       adjust_color: bool = True) -> str:
+        """도련 제거 → 색 조정 → 문서 크기로 맞춤 → 위치 조정 → 세로형이면 회전해 BMP로 저장한다.
+
+        색 조정(밝기·명암·채도)은 색 그림에만 한다. 형광(UV) 그림은 그대로 둔다.
 
         options["bleed_handled"]가 참이면 이미 칼선 크기로 만든 이미지이므로 도련 제거를 건너뛴다.
         """
@@ -396,6 +433,8 @@ class SmartAdapter(CardPrinter):
         if not options.get("bleed_handled"):
             image = crop_bleed(image)
         image = image.convert("RGB")
+        if adjust_color:
+            image = adjust_image(image, *color_adjust_from(options))
         target = (doc_height, doc_width) if portrait else (doc_width, doc_height)
         if image.size != target:
             image = image.resize(target, Image.LANCZOS)

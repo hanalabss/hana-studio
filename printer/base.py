@@ -28,6 +28,61 @@ CAP_K_SPLIT = "k_split"
 CAP_MIFARE = "mifare"
 CAP_CARD_MOVE = "card_move"
 CAP_POSITION_OFFSET = "position_offset"
+CAP_COLOR_ADJUST = "color_adjust"      # 밝기·명암·채도를 프린터 쪽에서 조정
+
+# 색 조정 값의 범위. RTAI SDK(R600SetImgVisualParam)가 받는 범위를 실제로 넣어 보고 확인한 값이다.
+COLOR_ADJUST_MIN, COLOR_ADJUST_MAX = -100, 100
+COLOR_ADJUST_KEYS = ("brightness", "contrast", "saturation")
+
+
+def _adjust_values(options, keys) -> tuple:
+    values = []
+    for key in keys:
+        try:
+            value = int(round(float(options.get(key, 0) or 0)))
+        except (TypeError, ValueError, AttributeError):
+            value = 0
+        values.append(max(COLOR_ADJUST_MIN, min(COLOR_ADJUST_MAX, value)))
+    return tuple(values)
+
+
+def color_adjust_from(options) -> tuple:
+    """인쇄 옵션에서 (밝기, 명암, 채도)를 꺼낸다. 없거나 잘못된 값은 0, 범위를 넘으면 끝값으로 맞춘다."""
+    return _adjust_values(options, COLOR_ADJUST_KEYS)
+
+
+# 중간 밝기(감마): 흰색과 검정은 그대로 두고 중간 밝기만 밝게(+)·어둡게(-) 한다. RTAI 드라이버의 Gamma에 해당한다.
+# RTAI SDK에는 감마 함수가 없어 보내기 전에 그림을 바꾼다. 범위는 색 조정과 같은 -100~100이다.
+CAP_GAMMA_ADJUST = "gamma_adjust"
+
+
+def gamma_adjust_from(options) -> int:
+    return _adjust_values(options, ("gamma",))[0]
+
+
+def gamma_exponent(value: int) -> float:
+    """-100~100을 지수로 바꾼다. 0이면 1(그대로), +100이면 0.5(밝게), -100이면 2(어둡게)."""
+    return 2.0 ** (-max(COLOR_ADJUST_MIN, min(COLOR_ADJUST_MAX, int(value))) / 100.0)
+
+
+def apply_gamma(image, value: int):
+    """PIL 그림(RGB)에 중간 밝기 조정을 적용한다. 0과 255는 변하지 않는다."""
+    if not value:
+        return image
+    exponent = gamma_exponent(value)
+    table = [round(255 * (level / 255) ** exponent) for level in range(256)]
+    return image.point(table * len(image.getbands()))
+
+
+# 진하기 조정: 색 리본을 얼마나 진하게 찍을지(전체·노랑·빨강·파랑). SMART 드라이버의 'Color Correction'과 같은 값이다.
+# 범위는 색 조정과 같은 -100~100이고 클수록 진하다. SDK는 범위를 넘는 값도 그대로 받으므로 여기서 막는다.
+CAP_DENSITY_ADJUST = "density_adjust"
+DENSITY_KEYS = ("density", "density_yellow", "density_magenta", "density_cyan")
+
+
+def density_adjust_from(options) -> tuple:
+    """인쇄 옵션에서 (전체, 노랑, 빨강, 파랑) 진하기를 꺼낸다. 규칙은 color_adjust_from과 같다."""
+    return _adjust_values(options, DENSITY_KEYS)
 
 # (진행률 0~100, 사용자에게 보여 줄 한국어 문구)
 ProgressCallback = Callable[[int, str], None]

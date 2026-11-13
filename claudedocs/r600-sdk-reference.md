@@ -93,9 +93,9 @@
 | `R600ClearCanvas` | 없음 | 사용 중 |
 | `R600CommitCanvas` | `char* szImgInfo`, `int* pImgInfoLen` | 사용 중 |
 | `R600PrintDraw` | `const char* szImgFront`, `const char* szImgBack` | 사용 중 |
-| `R600GetPreviewImg` | `const char* szImgInfo`, `char* preview`, `int* previewLen` | 미사용 |
+| `R600GetPreviewImg` | `const char* szImgInfo`, `char* preview`, `int* previewLen` (SDK가 만든 인쇄 그림 파일 경로를 돌려준다) | 테스트에서 사용 |
 | `R600SetImagePara` | `int nWhiteTransparent`, `int nRotation`, `float fScale` | 사용 중 |
-| `R600SetImgVisualParam` | `int nBrightness`, `int nContrast`, `int nSaturation` | 미사용 |
+| `R600SetImgVisualParam` | `int nBrightness`, `int nContrast`, `int nSaturation` (각 -100~100, 0이 원래대로. 범위 밖은 오류 8388609. 값은 다시 넣을 때까지 남는다 — 실제 DLL로 확인) | 사용 중 |
 | `R600SetAddImageMode` | `int nMode`, `int nValueThreshold` | 미사용 |
 | `R600SetAddImageMode_Rtai` | `int nMode`, `bool YMC`, `bool K`, `const char* ImagePath`, `int nValueThreshold` | 미사용 |
 | `R600DrawImage` | `double dX`, `double dY`, `double dWidth`, `double dHeight`, `const char* szImgFilePath`, `int nSetNoAbsoluteBlack` | 사용 중 |
