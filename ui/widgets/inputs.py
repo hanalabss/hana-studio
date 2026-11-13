@@ -219,6 +219,7 @@ class StepperField(QFrame):
 
         self._minus.clicked.connect(lambda: self.step_by(-1))
         self._plus.clicked.connect(lambda: self.step_by(1))
+        self._edit.textEdited.connect(self._on_text_edited)
         self._edit.editingFinished.connect(self._commit_text)
         self._render()
 
@@ -269,6 +270,22 @@ class StepperField(QFrame):
         self._edit.setText(f"{number} {self._suffix}".strip())
         self._minus.setEnabled(self.isEnabled() and self._value > self._min)
         self._plus.setEnabled(self.isEnabled() and self._value < self._max)
+
+    def _on_text_edited(self, text: str) -> None:
+        """치는 도중에도 값을 바로 반영한다. 글자는 건드리지 않는다(커서가 튀지 않게).
+
+        Enter나 포커스 이동을 기다리면, 숫자만 치고 바로 인쇄를 누를 때 예전 값이 쓰인다.
+        """
+        match = _NUMBER.search(text)
+        if not match:
+            return
+        value = self._clamp(float(match.group(0).replace(",", ".")))
+        if value == self._value:
+            return
+        self._value = value
+        self._minus.setEnabled(self.isEnabled() and value > self._min)
+        self._plus.setEnabled(self.isEnabled() and value < self._max)
+        self.valueChanged.emit(value)
 
     def _commit_text(self) -> None:
         match = _NUMBER.search(self._edit.text())
