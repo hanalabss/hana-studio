@@ -149,6 +149,27 @@ def crop_from_adjustment(
     )
 
 
+PHOTO_ZOOM_MIN, PHOTO_ZOOM_MAX = 1.0, 3.0
+
+
+def clamp_adjustment(
+    adjustment: PhotoAdjustment, image_size: Sequence[float], frame_size: Sequence[float], fit: str = "fill"
+) -> PhotoAdjustment:
+    """사진 조정값을 틀에 빈 곳이 생기지 않는 범위(배율 PHOTO_ZOOM_MIN~MAX)로 줄인다."""
+    zoom = max(PHOTO_ZOOM_MIN, min(PHOTO_ZOOM_MAX, float(adjustment.zoom or 1.0)))
+    draw_w, draw_h = _drawn_size(image_size, frame_size, fit, zoom)
+
+    def limit(offset: float, drawn: float, frame: float) -> float:
+        if frame <= 0:
+            return 0.0
+        room = abs(drawn - frame) / 2.0 / frame
+        return max(-room, min(room, float(offset)))
+
+    return PhotoAdjustment(
+        zoom, limit(adjustment.offset_x, draw_w, float(frame_size[0])),
+        limit(adjustment.offset_y, draw_h, float(frame_size[1])))
+
+
 def adjustment_from_crop(
     crop: Crop, image_size: Sequence[float], frame_size: Sequence[float], fit: str = "fill"
 ) -> PhotoAdjustment:

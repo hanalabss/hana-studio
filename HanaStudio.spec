@@ -38,6 +38,10 @@ qrcode_hidden = collect_submodules('qrcode')
 barcode_hidden = collect_submodules('barcode')
 barcode_datas = collect_data_files('barcode')        # barcode/fonts/DejaVuSansMono.ttf
 
+# 명단 '얼굴에 맞추기'가 쓰는 OpenCV 정면 얼굴 검출기(파일 하나만)
+import cv2 as _cv2
+face_datas = [(os.path.join(_cv2.data.haarcascades, 'haarcascade_frontalface_default.xml'), 'cv2/data')]
+
 ### ====== SMART 프린터 SDK (SmartComm2.dll + 색 프로파일) ======
 # 실행 파일 기준 _internal/dll/smart 에서 찾는다(printer.smart_printer.default_dll_candidates).
 # 아래 ('dll', 'dll')이 폴더째 넣지만, 빠지면 SMART 인쇄가 통째로 안 되므로 따로 적어 둔다.
@@ -79,7 +83,7 @@ a = Analysis(
         # === 프로젝트 내부 모듈 ===
         ('dll', 'dll'),
         ('models', '_internal/models'),
-    ] + smart_datas + openpyxl_datas + barcode_datas + numba_datas + scipy_datas,  # <<< numba + scipy 데이터 포함
+    ] + smart_datas + openpyxl_datas + barcode_datas + face_datas + numba_datas + scipy_datas,  # <<< numba + scipy 데이터 포함
 
     hiddenimports=[
         # === Qt ===
