@@ -99,6 +99,10 @@ class SettingsPage(BasePage):
         self.auto_panel = self._build_auto_print(auto_print) if auto_print is not None else None
         if self.auto_panel is not None:
             column.addWidget(self.auto_panel)
+        operators = getattr(services, "operators", None)
+        self.operator_panel = self._build_operators(operators) if operators is not None else None
+        if self.operator_panel is not None:
+            column.addWidget(self.operator_panel)
         column.addWidget(self._build_history())
         column.addWidget(self._build_files())
         if self.is_admin:
@@ -229,6 +233,97 @@ class SettingsPage(BasePage):
         self.migrated_note = label("", "hint", wrap=True)
         panel.body.addWidget(self.migrated_note)
         return panel
+
+    # ---- 작업자 ----
+    def _build_operators(self, book) -> Panel:
+        self.operators = book
+        panel = Panel("작업자", "작업자를 더하면 프로그램을 켤 때 누가 쓰는지 확인하고, 인쇄 기록에 작업한 사람을 남깁니다.")
+        panel.body.setSpacing(SPACE["md"])
+        self.operator_current = label("", "secondary", wrap=True)
+        panel.body.addWidget(self.operator_current)
+        buttons = QHBoxLayout()
+        buttons.setSpacing(SPACE["sm"])
+        self.operator_switch = SecondaryButton("작업자 바꾸기", "sm")
+        self.operator_switch.clicked.connect(self.switch_operator)
+        self.operator_add = SecondaryButton("작업자 더하기", "sm", icon="plus")
+        self.operator_add.clicked.connect(self.add_operator)
+        buttons.addWidget(self.operator_switch)
+        buttons.addWidget(self.operator_add)
+        buttons.addStretch(1)
+        panel.body.addLayout(buttons)
+        self.operator_rows = QVBoxLayout()
+        self.operator_rows.setSpacing(2)
+        panel.body.addLayout(self.operator_rows)
+        self.operator_note = label("비밀번호를 모두 잊었으면 '파일이 있는 곳 > 설정과 인쇄 기록' 폴더의 "
+                                   "operators.json을 지우세요. 작업자 확인 없이 시작합니다.", "hint", wrap=True)
+        panel.body.addWidget(self.operator_note)
+        book.changed.connect(self._sync_operators)
+        book.currentChanged.connect(lambda _name: self._sync_operators())
+        self._sync_operators()
+        return panel
+
+    def _sync_operators(self) -> None:
+        book = self.operators
+        current = book.current_operator()
+        if not book.enabled:
+            text = "작업자 확인을 쓰지 않습니다."
+        elif current is None:
+            text = "지금 작업자가 정해지지 않았습니다. '작업자 바꾸기'로 고르세요."
+        else:
+            text = f"지금 작업자: {current.name}" + (" (관리자)" if current.admin else "")
+        self.operator_current.setText(text)
+        manage = book.can_manage()
+        self.operator_switch.setVisible(book.enabled)
+        self.operator_add.setEnabled(manage)
+        self.operator_add.setToolTip("" if manage else "관리자 작업자만 더할 수 있습니다.")
+        self.operator_note.setVisible(book.enabled)
+        while self.operator_rows.count():
+            item = self.operator_rows.takeAt(0)
+            if item.layout() is not None:
+                while item.layout().count():
+                    child = item.layout().takeAt(0)
+                    if child.widget() is not None:
+                        child.widget().deleteLater()
+            elif item.widget() is not None:
+                item.widget().deleteLater()
+        self.operator_remove_buttons = {}
+        for operator in book.operators():
+            row = QHBoxLayout()
+            row.setSpacing(SPACE["sm"])
+            name = label(operator.name + ("  · 관리자" if operator.admin else ""), "strong")
+            name.setProperty("i18n_skip", True)
+            row.addWidget(name, 1)
+            remove = QuietButton("지우기", "sm", icon="trash")
+            remove.setEnabled(manage)
+            remove.clicked.connect(lambda _checked=False, n=operator.name: self.remove_operator(n))
+            row.addWidget(remove)
+            self.operator_rows.addLayout(row)
+            self.operator_remove_buttons[operator.name] = remove
+
+    def switch_operator(self) -> bool:
+        from ui.operators import SignInDialog
+
+        return SignInDialog(self.operators, self, closing_text="그만두기").exec() == SignInDialog.Accepted
+
+    def add_operator(self) -> bool:
+        from ui.operators import AddOperatorDialog
+
+        return AddOperatorDialog(self.operators, self).exec() == AddOperatorDialog.Accepted
+
+    def remove_operator(self, name: str, ask: bool = True) -> bool:
+        from services.operators import OperatorError
+        from ui.widgets import confirm
+
+        if ask and not confirm(self, f"'{name}' 작업자를 지울까요?",
+                               "지운 작업자로는 들어올 수 없습니다. 지난 인쇄 기록의 이름은 남습니다.",
+                               "지우기", danger=True):
+            return False
+        try:
+            self.operators.remove(name)
+        except OperatorError as exc:
+            inform(self, "작업자를 지울 수 없습니다", str(exc))
+            return False
+        return True
 
     # ---- 폴더 자동 인쇄 ----
     def _build_auto_print(self, auto) -> Panel:

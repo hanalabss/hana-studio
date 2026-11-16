@@ -148,11 +148,14 @@ class HistoryPage(BasePage):
         card.setObjectName("TableCard")
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(6, 4, 6, 6)
-        self.jobs_model = RowsModel([
+        self._job_columns = [
             ColumnSpec("when", "언제", 132), ColumnSpec("name", "인쇄 이름", None),
             ColumnSpec("printer", "프린터", 160, optional=1),
             ColumnSpec("result", "결과", 90, tone_key="tone"), ColumnSpec("counts", "장수", 150),
-        ])
+        ]
+        # 작업자 계정을 쓴 기록이 있을 때만 '작업자' 칸을 보인다.
+        self._operator_column = ColumnSpec("operator", "작업자", 96)
+        self.jobs_model = RowsModel(self._job_columns)
         self.jobs_table = RowsTable(self.jobs_model)
         self.jobs_table.setAccessibleName("인쇄 기록 목록")
         self.jobs_table.selectionModel().selectionChanged.connect(lambda *_: self._on_job_selected())
@@ -397,12 +400,19 @@ class HistoryPage(BasePage):
             rows.append({
                 "id": job.id, "when": date_text(job.created_at), "name": job.name or "이름 없는 인쇄",
                 "printer": job.device_name or "알 수 없음",
+                "operator": getattr(job, "operator", None) or "",
                 "result": JOB_STATE_LABELS.get(job.status, job.status),
                 "tone": JOB_STATE_TONES.get(job.status, ""),
                 "counts": job_counts_short(job.total_cards, job.success_cards),
                 "_tip": brief(job.error_text) if job.error_text else "",
             })
         keep = self._selected_id
+        columns = list(self._job_columns)
+        if any(row["operator"] for row in rows):
+            columns.insert(2, self._operator_column)
+        if [c.key for c in columns] != [c.key for c in self.jobs_model.columns()]:
+            self.jobs_model.set_columns(columns)
+            self.jobs_table.apply_widths()
         self.jobs_model.set_rows(rows)
         self.jobs_table.setVisible(bool(rows))
         self.no_match.setVisible(not rows)
@@ -466,7 +476,9 @@ class HistoryPage(BasePage):
         set_prop(self.detail_tag, "tone", JOB_STATE_TONES.get(job.status, ""))
         family = FAMILY_NAMES.get(job.family, "")
         printer = " ".join(part for part in (job.device_name, f"({family})" if family else "") if part)
-        self.detail_meta.setText(", ".join(part for part in (date_text(job.created_at), printer) if part))
+        operator = (getattr(job, "operator", None) or "").strip()
+        self.detail_meta.setText(", ".join(part for part in (
+            date_text(job.created_at), printer, f"작업자 {operator}" if operator else "") if part))
         self.detail_counts.setText(job_counts_text(job.total_cards, job.success_cards, job.failed_cards))
         self.detail_error.setText(brief(job.error_text) if job.error_text and job.status != JOB_COMPLETED else "")
         self.detail_error.setVisible(bool(self.detail_error.text()))

@@ -293,7 +293,18 @@ def main():
                     pass
 
                 elif step == 8:
-                    # 완료 - 로딩 화면 닫고 메인 윈도우 표시
+                    # 완료 - 작업자 계정을 쓰면 누가 쓰는지 먼저 확인한다(그만두면 프로그램을 닫는다).
+                    # 로딩 화면을 닫기 전에 물어야 창이 하나도 없는 순간이 생기지 않는다.
+                    from ui.operators import ask_operator
+                    window = state['main_window']
+                    if not ask_operator(getattr(getattr(window, 'services', None), 'operators', None)):
+                        print("[OPERATOR] 작업자 확인을 그만두어 종료합니다")
+                        shutdown = getattr(window, 'shutdown', None)
+                        if callable(shutdown):
+                            shutdown()
+                        loading.close()
+                        app.quit()
+                        return
                     loading.close()
                     state['main_window'].showMaximized()
                     print("[OK] 메인 윈도우 표시")

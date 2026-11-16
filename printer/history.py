@@ -70,6 +70,7 @@ _ADDED_COLUMNS = (
     ("cards", "record_name", "TEXT"),
     ("jobs", "list_id", "TEXT"),
     ("jobs", "list_name", "TEXT"),
+    ("jobs", "operator", "TEXT"),        # 인쇄한 작업자(작업자 계정을 쓸 때만)
 )
 
 
@@ -91,6 +92,7 @@ class JobRecord:
     finished_at: Optional[str]
     list_id: Optional[str] = None
     list_name: Optional[str] = None
+    operator: Optional[str] = None
 
 
 @dataclass
@@ -120,6 +122,7 @@ def default_history_path() -> str:
 class JobHistory:
     def __init__(self, path: Optional[str] = None):
         self.path = path or default_history_path()
+        self.operator_provider = None       # () -> 지금 작업자 이름. 작업 기록을 만들 때 적는다
         directory = os.path.dirname(os.path.abspath(self.path))
         os.makedirs(directory, exist_ok=True)
         with self._connect() as connection:
@@ -155,15 +158,21 @@ class JobHistory:
     # -- 기록 -------------------------------------------------------------
     def start_job(self, name: str = "", device: Optional[PrinterDevice] = None,
                   total_cards: int = 0, options: Optional[Dict[str, Any]] = None) -> int:
-        """작업 한 건을 만들고 이력 ID를 돌려준다(상태: pending)."""
+        """작업 한 건을 만들고 이력 ID를 돌려준다(상태: pending). 작업자는 operator_provider에서 읽는다."""
+        operator = None
+        if self.operator_provider is not None:
+            try:
+                operator = self.operator_provider() or None
+            except Exception:
+                operator = None
         with self._connect() as connection:
             cursor = connection.execute(
                 "INSERT INTO jobs (name, family, device_name, device_address, total_cards, "
-                "status, options_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "status, options_json, created_at, operator) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (name, device.family if device else "", device.name if device else "",
                  device.address if device else "", int(total_cards), JOB_PENDING,
                  json.dumps(options, ensure_ascii=False, default=str) if options else None,
-                 now_text()))
+                 now_text(), operator))
             return int(cursor.lastrowid)
 
     def mark_job_started(self, job_id: int) -> None:
@@ -235,9 +244,9 @@ class JobHistory:
                 clauses.append(f"{column} {operator} ?")
                 params.append(value)
         if search:
-            clauses.append("(name LIKE ? OR device_name LIKE ? OR error_text LIKE ? "
+            clauses.append("(name LIKE ? OR device_name LIKE ? OR error_text LIKE ? OR operator LIKE ? "
                            "OR id IN (SELECT job_id FROM cards WHERE record_name LIKE ?))")
-            params.extend([f"%{search}%"] * 4)
+            params.extend([f"%{search}%"] * 5)
         return (" WHERE " + " AND ".join(clauses)) if clauses else "", params
 
     def list_jobs(self, limit: int = 100, offset: int = 0, status: Optional[str] = None,

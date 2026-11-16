@@ -6,6 +6,7 @@ from typing import Any
 
 from printer.history import JobHistory
 from services.auto_print import FolderAutoPrinter
+from services.operators import OperatorBook
 from services.print_service import PrintService
 from services.printers import PrinterService
 
@@ -22,8 +23,11 @@ class AppServices:
     """
 
     def __init__(self, printers: PrinterService | None = None, printing: PrintService | None = None,
-                 history: JobHistory | None = None, queue: Any = None) -> None:
+                 history: JobHistory | None = None, queue: Any = None,
+                 operators: OperatorBook | None = None) -> None:
         self.history = history if history is not None else JobHistory()
+        self.operators = operators if operators is not None else _operator_book()
+        self.history.operator_provider = lambda: self.operators.current if self.operators else None
         if printing is None:
             printing = PrintService(queue, history=self.history)
         self.printing = printing
@@ -64,3 +68,11 @@ def _work_dir() -> str:
     from services.printers import app_data_dir
 
     return os.path.join(app_data_dir(), "auto_print")
+
+
+def _operator_book() -> OperatorBook | None:
+    try:
+        return OperatorBook()
+    except Exception:
+        log.exception("작업자 목록을 읽지 못했습니다. 작업자 확인 없이 시작합니다.")
+        return None
