@@ -700,3 +700,21 @@ def test_bleed_in_image_only_when_the_ratio_says_so():
     assert bleed_in_image((638, 1016), (54.0, 86.0)) == 0.0        # 카드와 같은 비율
     assert bleed_in_image((200, 60), (85.6, 53.98)) == 0.0
     assert bleed_in_image((0, 10), (54.0, 86.0)) == 0.0
+
+
+def test_qr_item_can_become_datamatrix(editor):
+    item = editor.add("qr")
+    section = editor.inspector.code
+    assert section.code2d_box.isVisible()
+    pick(section.code2d_combo, "datamatrix")
+    assert item.symbology == "datamatrix"
+    assert not section.level_box.isVisible()               # DataMatrix는 오류 정정 수준이 고정
+    assert "리더기" in section.code2d_hint.text()
+    from ui.editor.controller import display_name
+    assert display_name(item) == "DataMatrix"
+    section.data_edit.setText("x" * 400)
+    section.data_edit.textEdited.emit("x" * 400)
+    assert "너무 깁니다" in section.validation.text()
+    editor.controller.undo_stack.undo()
+    editor.controller.undo_stack.undo()
+    assert item.symbology == "qr" and section.level_box.isVisible()

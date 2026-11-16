@@ -23,6 +23,11 @@ SYMBOLOGY_OPTIONS = (
     ("code128c", "Code 128-C", "숫자만, 짝수 자리로 담습니다. 긴 숫자를 가장 짧게 찍습니다."),
     ("ean13", "EAN-13 (상품 바코드)", "숫자 12~13자리만 담습니다. 가게에서 쓰는 상품 바코드입니다."),
 )
+CODE_2D_OPTIONS = (
+    ("qr", "QR 코드", "휴대폰 카메라로 바로 읽힙니다. 주소나 긴 글을 담을 때 알맞습니다."),
+    ("datamatrix", "DataMatrix", "작은 칸에 사번 같은 짧은 내용을 담습니다. 출입·근태 리더기에서 많이 씁니다. "
+     "한글은 리더기가 UTF-8(ECI)을 지원해야 읽힙니다."),
+)
 QR_LEVEL_OPTIONS = (
     ("L", "가볍게", "가장 큼직하게 찍힙니다. 카드가 긁히면 읽기 어려울 수 있습니다."),
     ("M", "보통", "대부분의 카드에 알맞습니다."),
@@ -63,6 +68,14 @@ class CodeSection(Section):
         self.show_text_check.toggled.connect(lambda on: self.edit({"show_text": on}))
         self.column.addWidget(self.show_text_check)
 
+        self.code2d_combo = ComboBox()
+        for key, text, _hint in CODE_2D_OPTIONS:
+            self.code2d_combo.addItem(text, key)
+        self.code2d_combo.activated.connect(self._on_code2d)
+        self.code2d_hint = label("", "hint", wrap=True)
+        self.code2d_box = group("코드 종류", self.code2d_combo, self.code2d_hint)
+        self.column.addWidget(self.code2d_box)
+
         self.level_combo = ComboBox()
         for key, text, _hint in QR_LEVEL_OPTIONS:
             self.level_combo.addItem(text, key)
@@ -87,13 +100,18 @@ class CodeSection(Section):
             self.column_combo.set_columns(names, column, self.context.has_list())
             self.data_label.setText("예시 값 (명단을 보지 않을 때 보여 줄 값)")
         else:
-            self.data_label.setText("바코드에 담을 글자" if is_barcode else "QR에 담을 글자나 주소")
+            self.data_label.setText("바코드에 담을 글자" if is_barcode else "코드에 담을 글자나 주소")
         self.data_edit.setAccessibleName(self.data_label.text())
         if not self.data_edit.hasFocus():
             set_text_if_changed(self.data_edit, item.data)
         self.symbology_box.setVisible(is_barcode)
         self.show_text_check.setVisible(is_barcode)
-        self.level_box.setVisible(not is_barcode)
+        symbology_2d = getattr(item, "symbology", "qr") if not is_barcode else ""
+        self.code2d_box.setVisible(not is_barcode)
+        self.level_box.setVisible(not is_barcode and symbology_2d == "qr")
+        if not is_barcode:
+            set_combo_data(self.code2d_combo, symbology_2d)
+            self.code2d_hint.setText(self._hint(CODE_2D_OPTIONS, symbology_2d))
         if is_barcode:
             set_combo_data(self.symbology_combo, item.symbology)
             self.symbology_hint.setText(self._hint(SYMBOLOGY_OPTIONS, item.symbology))
@@ -120,7 +138,7 @@ class CodeSection(Section):
             if item.kind == "barcode":
                 barcodes.normalize(item.symbology, data)
             else:
-                barcodes.qr_matrix(data, item.error_correction)
+                barcodes.matrix_2d(data, item.symbology, item.error_correction)
         except barcodes.BarcodeError as exc:
             return str(exc)
         return ""
@@ -156,6 +174,12 @@ class CodeSection(Section):
     def _on_symbology(self, index: int) -> None:
         key = self.symbology_combo.itemData(index)
         self.symbology_hint.setText(self._hint(SYMBOLOGY_OPTIONS, key))
+        self.edit({"symbology": key})
+
+    def _on_code2d(self, index: int) -> None:
+        key = self.code2d_combo.itemData(index)
+        self.code2d_hint.setText(self._hint(CODE_2D_OPTIONS, key))
+        self.level_box.setVisible(key == "qr")
         self.edit({"symbology": key})
 
     def _on_level(self, index: int) -> None:
