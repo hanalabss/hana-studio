@@ -187,3 +187,73 @@ def test_ean13_is_decodable(qimage_array):
     found, texts, kinds = cv2.barcode.BarcodeDetector().detectAndDecodeWithType(canvas)[:3]
     assert found
     assert (list(texts), list(kinds)) == (["8801234567893"], ["EAN_13"])
+
+
+# ---------------------------------------------------------------- 다눌과 같은 종류(39 Extended, 93, 128-A/B/C)
+
+def _bits(symbology: str, data: str) -> str:
+    return "".join("1" if m else "0" for m in barcodes.linear_modules(symbology, data))
+
+
+@pytest.mark.parametrize("code_set, data", [("C", "20261117"), ("B", "Hello-b9"), ("A", "\x01AB")])
+def test_code128_forced_set_matches_python_barcode(code_set, data):
+    """한 집합만 쓰는 입력은 python-barcode가 만드는 것과 모듈 하나까지 같아야 한다."""
+    import barcode
+
+    expected = barcode.get_barcode_class("code128")(data).build()[0]
+    assert _bits(f"code128{code_set.lower()}", data) == expected
+
+
+def test_code128_forced_sets_start_with_their_own_start_code():
+    from barcode.charsets import code128 as table
+
+    for code_set, data in (("a", "AB12"), ("b", "AB12"), ("c", "1234")):
+        start = table.CODES[table.START_CODES[code_set.upper()]]
+        assert _bits(f"code128{code_set}", data).startswith(start)
+        assert _bits(f"code128{code_set}", data).endswith(CODE128_STOP)
+
+
+def test_code93_reference_checksum_test93():
+    """널리 쓰이는 예: TEST93의 체크 문자는 '+6'이다."""
+    bits = _bits("code93", "TEST93")
+    body = bits[9:-10]
+    chars = [body[i:i + 9] for i in range(0, len(body), 9)]
+    decoded = "".join((barcodes._CODE93_CHARS + "????")[barcodes._CODE93_PATTERNS.index(c)] for c in chars)
+    assert decoded == "TEST93+6"
+    assert bits.startswith(barcodes._CODE93_START_STOP) and bits.endswith(barcodes._CODE93_START_STOP + "1")
+
+
+def test_code93_patterns_are_well_formed():
+    import re
+
+    patterns = barcodes._CODE93_PATTERNS
+    assert len(patterns) == 47 and len(set(patterns)) == 47
+    for pattern in patterns:
+        runs = [len(run) for run in re.findall(r"1+|0+", pattern)]
+        assert len(pattern) == 9 and len(runs) == 6 and pattern[0] == "1" and max(runs) <= 4
+
+
+def test_code39_extended_uses_full_ascii_pairs():
+    plain = _bits("code39", "+A/A")
+    assert _bits("code39ext", "a!") == plain
+    assert barcodes._FULL_ASCII["\\"] == "%L" and barcodes._FULL_ASCII[chr(127)] == "%T"
+    assert len(barcodes._FULL_ASCII) == 128
+
+
+@pytest.mark.parametrize("symbology, data, message", [
+    ("code128c", "123", "짝수"),
+    ("code128c", "12AB", "숫자만"),
+    ("code128a", "abc", "쓸 수 없는"),
+    ("code39ext", "한글", "쓸 수 없는"),
+    ("code93", "é", "쓸 수 없는"),
+])
+def test_new_symbologies_reject_bad_data(symbology, data, message):
+    with pytest.raises(BarcodeError, match=message):
+        barcodes.normalize(symbology, data)
+
+
+@pytest.mark.parametrize("symbology", ["code128a", "code128b", "code128c", "code39ext", "code93"])
+def test_new_symbologies_render_exact_size(qimage_array, symbology):
+    data = "1234" if symbology == "code128c" else "AB12"
+    image = barcodes.render_linear(symbology, data, 600, 80)
+    assert (image.width(), image.height()) == (600, 80)

@@ -14,13 +14,13 @@ from shiboken6 import isValid
 from design import cutout, renderer, storage
 from design.binding import ColumnSource, FixedSource
 from printer.base import CAP_WHITE
-from ui.widgets import Divider, ProgressBar, SecondaryButton, SegmentedControl, label
+from ui.widgets import Divider, MmField, ProgressBar, SecondaryButton, SegmentedControl, label
 
 from ..background import (
     DEFAULT_THRESHOLD, MAX_THRESHOLD, MAX_TOLERANCE, METHOD_AI, METHOD_COLOR, MIN_THRESHOLD, MIN_TOLERANCE,
     CutoutSettings, CutoutWork, RemovalJob, RembgEngine, has_settings, save_cutout, save_mask_of,
 )
-from ..common import LinkButton, NoteRow, group, hbox, use_local_icon
+from ..common import LinkButton, NoteRow, field_row, group, hbox, use_local_icon
 from .base import InspectorContext, Section
 from .detail import ColumnCombo
 
@@ -125,6 +125,13 @@ class ImageSection(Section):
             "사진 칸을 카드 크기에 딱 맞게 키워 그림이 카드를 가득 채우게 하고, 글자와 바코드 뒤로 보냅니다.")
         self.fill_card_button.clicked.connect(self.fill_card)
         self.column.addWidget(group("칸에 맞추는 방법", self.fit_control, self.fit_hint, self.fill_card_button))
+
+        self.radius_field = MmField(0.0, 0.0, 50.0, 0.5)
+        self.radius_field.valueChanged.connect(
+            lambda value: self.edit({"corner_radius_mm": float(value)}, merge="radius"))
+        self.radius_row = field_row("모서리", self.radius_field)
+        self.radius_row.setToolTip("사진 모서리를 둥글게 깎는 정도입니다. 0이면 각진 모서리입니다.")
+        self.column.addWidget(self.radius_row)
 
         self.column.addWidget(Divider())
         self._build_cutout()
@@ -275,6 +282,7 @@ class ImageSection(Section):
         if item is None:
             return
         bound = item.source is not None and bool(item.source.columns())
+        self.radius_field.set_value(float(getattr(item, "corner_radius_mm", 0.0) or 0.0), emit=False)
         self.source_control.set_current("column" if bound else "file", emit=False)
         self.file_box.setVisible(not bound)
         self.column_box.setVisible(bound)

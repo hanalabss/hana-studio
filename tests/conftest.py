@@ -11,6 +11,18 @@ def _isolated_recent_designs(tmp_path, monkeypatch):
     monkeypatch.setenv("HANA_STUDIO_RECENT_FILE", str(tmp_path / "recent_projects.json"))
 
 
+@pytest.fixture(autouse=True)
+def _isolated_length_units(tmp_path):
+    """테스트가 사용자가 고른 길이 단위(설정)를 읽거나 바꾸지 않게 한다. 언제나 mm로 시작한다."""
+    from PySide6.QtCore import QSettings
+
+    from ui.units import LengthUnits
+
+    LengthUnits.set_instance(LengthUnits(QSettings(str(tmp_path / "units.ini"), QSettings.IniFormat)))
+    yield
+    LengthUnits.set_instance(None)
+
+
 @pytest.fixture(scope="session")
 def qapp():
     from PySide6.QtWidgets import QApplication

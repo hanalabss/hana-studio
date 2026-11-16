@@ -117,7 +117,9 @@ class TextItem(Item):
     bold: bool = False
     italic: bool = False
     underline: bool = False
+    strikeout: bool = False
     color: str = "#000000"
+    background: str | None = None   # 글자 상자 바탕색. None이면 투명
     h_align: str = "left"      # left | center | right
     v_align: str = "top"       # top | middle | bottom
     auto_shrink: bool = False
@@ -135,6 +137,7 @@ class ImageItem(Item):
     record_crops: dict[str, Crop] = field(default_factory=dict)
     mask_asset: str | None = None      # 화이트 층 마스크(흰색 = 흰 잉크를 까는 곳)
     cutout_asset: str | None = None    # 배경을 지운 그림(RGBA). 있으면 asset 대신 이것을 그린다
+    corner_radius_mm: float = 0.0      # 모서리를 둥글게 자르는 반지름. 0이면 네모
 
     def _encode(self, name: str, value: Any) -> Any:
         if name == "crop":
@@ -211,7 +214,7 @@ class BarcodeItem(Item):
     KIND: ClassVar[str] = "barcode"
     w: float = 40.0
     h: float = 12.0
-    symbology: str = "code128"  # code128 | code39 | ean13
+    symbology: str = "code128"  # design.barcodes.SYMBOLOGIES 중 하나
     data: str = ""
     show_text: bool = True
     color: str = "#000000"

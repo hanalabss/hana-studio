@@ -11,6 +11,8 @@ from PySide6.QtWidgets import (
     QSizePolicy, QStyle, QStyledItemDelegate, QToolButton, QWidget,
 )
 
+from shiboken6 import isValid
+
 from ui.theme import mark_themed
 
 from ._util import on_theme_changed, theme_color
@@ -311,8 +313,61 @@ class StepperField(QFrame):
 
 
 class MmField(StepperField):
-    """mm 단위 숫자 칸. 기본 0.5mm씩 움직인다."""
+    """길이 칸. 값(value, valueChanged)은 언제나 mm이고, 기본 0.5mm씩 움직인다.
+
+    보이는 숫자와 쳐 넣는 숫자는 사용자가 고른 단위(ui.units, 기본 mm)를 따른다.
+    follow_units=False면 언제나 mm로 보인다(인쇄 위치 조정처럼 mm로 정해진 값).
+    """
 
     def __init__(self, value: float = 0.0, minimum: float = 0.0, maximum: float = 200.0,
-                 step: float = 0.5, decimals: int = 1, parent: QWidget | None = None):
+                 step: float = 0.5, decimals: int = 1, parent: QWidget | None = None,
+                 follow_units: bool = True):
+        self._units = None
+        if follow_units:
+            from ui.units import LengthUnits
+            self._units = LengthUnits.instance()
         super().__init__(value, minimum, maximum, step, decimals, "mm", parent)
+        if self._units is not None:
+            self._units.changed.connect(self._on_units_changed)
+
+    def _unit(self):
+        from ui.units import unit_of
+        return unit_of(self._units.key if self._units is not None else "mm")
+
+    def _on_units_changed(self, _key: str) -> None:
+        if isValid(self):
+            self._render()
+
+    def _render(self) -> None:
+        unit = self._unit()
+        if unit.key == "mm":
+            super()._render()
+            return
+        decimals = max(unit.decimals, self._decimals) if unit.key in ("cm", "inch") else unit.decimals
+        self._edit.setText(f"{self._value / unit.mm:.{decimals}f} {unit.suffix}")
+        self._minus.setEnabled(self.isEnabled() and self._value > self._min)
+        self._plus.setEnabled(self.isEnabled() and self._value < self._max)
+
+    def _typed_mm(self, text: str) -> float | None:
+        match = _NUMBER.search(text)
+        if not match:
+            return None
+        return float(match.group(0).replace(",", ".")) * self._unit().mm
+
+    def _on_text_edited(self, text: str) -> None:
+        mm = self._typed_mm(text)
+        if mm is None:
+            return
+        value = self._clamp(mm)
+        if value == self._value:
+            return
+        self._value = value
+        self._minus.setEnabled(self.isEnabled() and value > self._min)
+        self._plus.setEnabled(self.isEnabled() and value < self._max)
+        self.valueChanged.emit(value)
+
+    def _commit_text(self) -> None:
+        mm = self._typed_mm(self._edit.text())
+        if mm is not None:
+            self.set_value(mm)
+        self._render()
