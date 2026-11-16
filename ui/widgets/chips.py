@@ -89,6 +89,7 @@ class FieldChip(QLabel):
         self._name = name
         self._kind = kind
         self._press_pos: QPoint | None = None
+        self.setProperty("i18n_skip", True)     # 명단 항목 이름(사용자 값)은 번역하지 않는다
         self.setObjectName("FieldChip")
         self.setFixedHeight(SIZES["chip"])
         self.setAlignment(Qt.AlignCenter)
