@@ -15,7 +15,8 @@ from ._util import FocusRingMixin
 
 class _Segment(FocusRingMixin, QPushButton):
     def __init__(self, key: str, text: str, parent: QWidget | None = None):
-        super().__init__(text, parent)
+        from ui.i18n import translate
+        super().__init__(translate(text), parent)     # 폭을 번역된 글자로 재도록 만들 때 바꾼다
         self.key = key
         self.setCheckable(True)
         self.setProperty("segment", "true")

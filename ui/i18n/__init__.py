@@ -28,6 +28,12 @@ LANGUAGES: tuple[tuple[str, str], ...] = (("ko", "한국어"), ("en", "English")
 SKIP_PROPERTY = "i18n_skip"      # 이 속성이 참인 위젯은 번역하지 않는다(명단 값을 보여 주는 칩 등)
 _DIR = Path(__file__).resolve().parent
 
+# 일본어·중국어 글자가 □로 보이지 않게, 화면 글꼴 뒤에 붙일 그 언어의 Windows 기본 글꼴.
+FALLBACK_FONTS = {
+    "ja": (("Yu Gothic UI", "Yu Gothic", "Meiryo UI", "Meiryo", "MS UI Gothic"), ("YuGothM.ttc", "YuGothR.ttc", "meiryo.ttc")),
+    "zh": (("Microsoft YaHei UI", "Microsoft YaHei", "SimSun"), ("msyh.ttc", "simsun.ttc")),
+}
+
 _table: dict[str, str] = {}
 _language = DEFAULT_LANGUAGE
 _installed = False
@@ -194,11 +200,33 @@ def install(app: QApplication, code: str | None = None) -> str:
     if not _table:
         _language = DEFAULT_LANGUAGE
         return _language
+    _add_fallback_fonts(app, code)
     _patch()
     _filter = _Filter(app)
     app.installEventFilter(_filter)
     _installed = True
     return _language
+
+
+def _add_fallback_fonts(app: QApplication, code: str) -> None:
+    families, files = FALLBACK_FONTS.get(code, ((), ()))
+    if not families:
+        return
+    import os
+
+    from PySide6.QtGui import QFontDatabase
+    available = set(QFontDatabase.families())
+    if not available & set(families):
+        folder = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"
+        for name in files:
+            if (folder / name).is_file():
+                QFontDatabase.addApplicationFont(str(folder / name))
+        available = set(QFontDatabase.families())
+    extra = [name for name in families if name in available]
+    if extra:
+        font = app.font()
+        font.setFamilies([*font.families(), *[n for n in extra if n not in font.families()]])
+        app.setFont(font)
 
 
 def uninstall(app: QApplication | None = None) -> None:
