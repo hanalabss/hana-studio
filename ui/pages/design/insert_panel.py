@@ -76,6 +76,7 @@ class InsertPanel(QWidget):
     imageFileRequested = Signal()
     fieldRequested = Signal(str, str)     # 열 이름, kind
     listPageRequested = Signal()
+    encodingRequested = Signal()          # 마그네틱·IC 카드 기록 설정(인쇄 설정)으로
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -104,6 +105,12 @@ class InsertPanel(QWidget):
         layout.addLayout(grid)
         for key in ("text", "line", "barcode", "qr"):
             self.tiles[key].clicked.connect(lambda _=False, kind=key: self.addRequested.emit(kind))
+        # 다눌의 '마그네틱'·'RF-RW' 도구. 카드에 그리는 것이 아니라 카드에 기록하는 것이라 인쇄 설정에서 정한다.
+        self.encoding_link = LinkButton("마그네틱·IC 카드 기록")
+        self.encoding_link.setToolTip("카드 뒷면 마그네틱 띠나 IC(RF) 칩에 명단 값을 기록합니다. 인쇄 설정에서 정합니다")
+        self.encoding_link.clicked.connect(self.encodingRequested)
+        layout.addSpacing(SPACE["xs"])
+        layout.addWidget(link_row(self.encoding_link))
 
         image_menu = QMenu(self)
         self.image_file_action = QAction("그림 파일 고르기…", self)

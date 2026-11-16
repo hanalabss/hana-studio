@@ -112,3 +112,50 @@ def test_mifare_bad_key_blocks_accept(qapp):
     assert "키가 들어 있는" in sheet.mifare_problem()
     sheet.accept()
     assert not sheet.mifare_error.isHidden() and sheet.result() == 0
+
+
+# ---------------------------------------------------------------- 캔버스 오른쪽 클릭 메뉴
+
+def _texts(menu):
+    return [a.text().split("\t")[0] for a in menu.actions() if not a.isSeparator()]
+
+
+def test_canvas_menu_for_image_offers_camera_and_rotation(editor, monkeypatch):
+    editor.controller.select([editor.photo.id])
+    menu = editor.build_canvas_menu()
+    texts = _texts(menu)
+    assert "카메라로 사진 찍기…" in texts and "오른쪽으로 90° 돌리기" in texts and "복사" in texts
+    action = next(a for a in menu.actions() if a.text().startswith("오른쪽으로 90°"))
+    action.trigger()
+    assert editor.photo.rotation == 90.0
+    editor.undo()
+    assert editor.photo.rotation == 0.0
+
+
+def test_canvas_menu_on_empty_space_offers_paste_and_select_all(editor):
+    editor.controller.clear_selection()
+    texts = _texts(editor.build_canvas_menu())
+    assert texts == ["붙여넣기", "전체 선택"]
+
+
+def test_right_click_selects_item_under_cursor(editor, qapp, monkeypatch):
+    from PySide6.QtCore import QPoint
+    from PySide6.QtGui import QContextMenuEvent
+
+    shown = []
+    monkeypatch.setattr(editor, "show_canvas_menu", lambda pos: shown.append(pos))
+    editor.view.contextMenuAt.disconnect()
+    editor.view.contextMenuAt.connect(editor.show_canvas_menu)
+    editor.controller.clear_selection()
+    item = editor.photo
+    point = editor.view._to_view(item.x + item.w / 2, item.y + item.h / 2).toPoint()
+    event = QContextMenuEvent(QContextMenuEvent.Reason.Mouse, point, editor.view.viewport().mapToGlobal(point))
+    editor.view.contextMenuEvent(event)
+    assert editor.controller.selection == [item.id] and shown
+
+
+def test_encoding_link_explains_when_no_list(editor):
+    messages = []
+    editor.notify = lambda text, *a, **k: messages.append(text)
+    editor.insert_panel.encoding_link.click()
+    assert messages and "명단" in messages[0]

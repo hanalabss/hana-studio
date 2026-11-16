@@ -566,6 +566,18 @@ class EditorController(QObject):
         items = self._movable(ids)
         return self.move_items_to({it.id: (it.x + dx, it.y + dy) for it in items}, merge_token)
 
+    def resize_by(self, dw: float, dh: float, ids: Iterable[str] | None = None, merge_token: Any = None) -> bool:
+        """고른 항목들의 너비·높이를 dw·dh(mm)만큼 바꾼다. 왼쪽 위 자리는 그대로(다눌의 Shift+화살표)."""
+        changes: dict[str, dict[str, Any]] = {}
+        for item in self._movable(ids):
+            floor = 0.0 if item.kind == "line" else 0.5
+            w, h = max(floor, item.w + dw), max(floor, item.h + dh)
+            if (w, h) != (item.w, item.h):
+                changes[item.id] = {"w": w, "h": h}
+        if not changes:
+            return False
+        return self._push(commands.ResizeCommand(self, "크기 조절", self._side_key, changes, merge_token=merge_token))
+
     def set_geometry(self, item_id: str, values: Mapping[str, Any], merge_token: Any = None) -> bool:
         """캔버스에서 크기를 끌어 바꿀 때 쓴다(x, y, w, h, flip, rotation)."""
         if self.item(item_id) is None:
@@ -573,6 +585,13 @@ class EditorController(QObject):
         return self._push(commands.ResizeCommand(
             self, "크기 조절", self._side_key, {item_id: dict(values)}, merge_token=merge_token,
         ))
+
+    def rotate_by(self, delta: float, ids: Iterable[str] | str | None = None) -> bool:
+        """고른 항목을 각자 delta도만큼 더 돌린다(다눌의 좌측·우측 회전). 실행 취소 한 단계."""
+        changes = {it.id: {"rotation": (it.rotation + float(delta)) % 360.0} for it in self._movable(ids)}
+        if not changes:
+            return False
+        return self._push(commands.RotateCommand(self, "회전", self._side_key, changes))
 
     def set_rotation(self, ids: Iterable[str] | str | None, degrees: float, merge_token: Any = None) -> bool:
         changes = {it.id: {"rotation": float(degrees) % 360.0} for it in self._movable(ids)}

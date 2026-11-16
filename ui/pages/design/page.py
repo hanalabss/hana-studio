@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from typing import Callable
 
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QDialog, QFileDialog, QFrame, QHBoxLayout, QMenu, QStackedLayout, QVBoxLayout, QWidget,
@@ -129,6 +129,7 @@ class DesignPage(BasePage):
         self.insert_panel.imageFileRequested.connect(lambda: self.add_image_file())
         self.insert_panel.fieldRequested.connect(self.add_field)
         self.insert_panel.listPageRequested.connect(self.go_to_list)
+        self.insert_panel.encodingRequested.connect(self.open_encoding_settings)
         side_layout.addWidget(self.insert_panel)
         side_layout.addWidget(Divider())
         self.layers_panel = LayersPanel(self.controller)
@@ -140,6 +141,7 @@ class DesignPage(BasePage):
         center.setContentsMargins(0, 0, 0, 0)
         center.setSpacing(0)
         self.view = EditorView(self.controller, palette_for())
+        self.view.contextMenuAt.connect(self.show_canvas_menu)
         self.canvas_bar = CanvasBar(self.controller, self.view)
         self.canvas_bar.addBackRequested.connect(self.add_back_side)
         self.canvas_bar.compactChanged.connect(lambda compact: self.save_button.setVisible(not compact))
@@ -260,6 +262,24 @@ class DesignPage(BasePage):
 
     def go_to_print(self) -> None:
         self.go_to(PAGE_PRINT)
+
+    def open_encoding_settings(self) -> None:
+        """마그네틱·IC 카드 기록은 인쇄 설정에 있다. 인쇄 화면으로 가서 설정 창을 연다."""
+        from printer.base import CAP_MAGNETIC, CAP_MIFARE
+
+        if not self.workspace.column_names():
+            self.notify("마그네틱·IC 카드에는 사람마다 명단의 값을 기록합니다. 먼저 명단을 넣어 주세요.")
+            return
+        shell = self._wired_shell
+        page = shell.page(PAGE_PRINT) if shell is not None else None
+        if page is None or not hasattr(page, "open_options"):
+            return
+        if not {CAP_MAGNETIC, CAP_MIFARE} & set(page._capabilities()):
+            self.notify("지금 고른 프린터는 마그네틱·IC 카드를 기록하지 못합니다. 기록 장치가 있는 프린터를 고르면 "
+                        "인쇄 설정에 나타납니다.")
+            return
+        self.go_to(PAGE_PRINT)
+        QTimer.singleShot(0, page.open_options)
 
     def needs_list(self) -> bool:
         """명단이 있어야 하는 카드인가: 사람마다 바뀌는 칸이 있거나, 이미 명단을 넣어 두었을 때."""
@@ -434,6 +454,44 @@ class DesignPage(BasePage):
         button = self.inspector.more_button
         button.setProperty("menu", "true")
         button.setMenu(menu)
+
+    def build_canvas_menu(self) -> QMenu:
+        """캔버스 오른쪽 클릭 메뉴(다눌처럼 고른 항목에 바로 할 일을 모아 둔다)."""
+        controller = self.controller
+        items = controller.selected_items()
+        menu = QMenu(self)
+
+        def add(text: str, slot, enabled: bool = True) -> QAction:
+            action = menu.addAction(text, lambda: slot())
+            action.setEnabled(enabled)
+            return action
+
+        if items:
+            add("잘라내기	Ctrl+X", controller.cut)
+            add("복사	Ctrl+C", controller.copy)
+        add("붙여넣기	Ctrl+V", controller.paste, controller.can_paste())
+        if not items:
+            menu.addSeparator()
+            add("전체 선택	Ctrl+A", controller.select_all)
+            return menu
+        add("하나 더 만들기	Ctrl+D", controller.duplicate)
+        add("지우기	Delete", controller.delete)
+        menu.addSeparator()
+        add("맨 앞으로 가져오기", controller.bring_to_front)
+        add("맨 뒤로 보내기", controller.send_to_back)
+        ids = [item.id for item in items]
+        add("왼쪽으로 90° 돌리기", lambda: controller.rotate_by(-90.0, ids))
+        add("오른쪽으로 90° 돌리기", lambda: controller.rotate_by(90.0, ids))
+        locked = all(item.locked for item in items)
+        add("잠금 풀기" if locked else "움직이지 않게 잠그기", lambda: controller.set_locked(ids, not locked))
+        if len(items) == 1 and items[0].kind == "image":
+            menu.addSeparator()
+            add("그림 바꾸기…", self.inspector.image.choose_image)
+            add("카메라로 사진 찍기…", self.inspector.image.take_photo)
+        return menu
+
+    def show_canvas_menu(self, global_pos) -> None:
+        self.build_canvas_menu().exec(global_pos)
 
     def _refresh_local_icons(self) -> None:
         self.save_button.setIcon(icons.icon("save", "text", 16))
