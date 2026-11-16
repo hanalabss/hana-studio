@@ -11,7 +11,7 @@ from PySide6.QtCore import QObject, QThread, Signal
 from design import presets
 from design.model import Document, LineItem, RectItem, TextItem
 from printer import registry
-from printer.base import CAP_MIFARE, PrinterDevice, PrinterError
+from printer.base import CAP_CONTACT_IC, CAP_MIFARE, PrinterDevice, PrinterError
 from ui.pages.printing.text import capability_words, plain, status_sentence, supply_text
 from ui.theme import SWATCH_PRESETS
 
@@ -101,6 +101,30 @@ def run_mifare_check(device: PrinterDevice) -> list[CheckLine]:
             printer.close()
         except Exception:
             log.debug("IC 카드 시험 뒤 프린터를 닫지 못했습니다.", exc_info=True)
+
+
+def run_contact_check(device: PrinterDevice) -> list[CheckLine]:
+    """카드 한 장을 넣어 접촉식 칩의 응답(ATR)만 읽고 배출한다. 인쇄도 쓰기도 하지 않는다."""
+    try:
+        printer = registry.open(device)
+    except PrinterError as exc:
+        return [CheckLine("error", "연결", f"연결하지 못했습니다. {plain(exc.message)}")]
+    try:
+        if CAP_CONTACT_IC not in printer.capabilities() or not hasattr(printer, "test_contact_card"):
+            return [CheckLine("warn", "접촉식 칩", "이 프린터로는 접촉식 칩 카드를 읽을 수 없습니다.")]
+        result = printer.test_contact_card()
+        return [CheckLine("ok", "접촉식 칩", f"칩이 응답했습니다. (ATR {result['atr']})"),
+                CheckLine("idle", "인코더 위치", f"{result['position']}번 위치에서 읽혔습니다.")]
+    except PrinterError as exc:
+        return [CheckLine("error", "접촉식 칩", plain(exc.message))]
+    except Exception as exc:
+        log.exception("접촉식 칩 시험 실패")
+        return [CheckLine("error", "접촉식 칩", f"시험하다가 문제가 생겼습니다. ({exc})")]
+    finally:
+        try:
+            printer.close()
+        except Exception:
+            log.debug("접촉식 칩 시험 뒤 프린터를 닫지 못했습니다.", exc_info=True)
 
 
 def _supply_tone(value: int, cards_left: int | None) -> str:

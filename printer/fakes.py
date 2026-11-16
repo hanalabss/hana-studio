@@ -350,6 +350,17 @@ class FakeR600Library(FakeLibrary):
         _fill(buffer, b"\x04\xA1\xB2\xC3")
         return 0
 
+    contact_position = None     # 접촉식 칩이 읽히는 자리(None이면 어디서나)
+
+    def _h_R600CPUCardReset(self, slot, info, info_len, uid, uid_len):
+        if self.contact_position is not None and self._impr_position != self.contact_position:
+            return R600_ERR_PRINT
+        atr = bytes.fromhex("3B6800000073C84013009000")
+        ctypes.memmove(info, atr, len(atr))
+        _set(info_len, len(atr))
+        _set(uid_len, 0)
+        return 0
+
     def _h_R600M1CardPwdAuth(self, is_hex, key_type, block, password):
         key = password.decode("ascii") if isinstance(password, bytes) else str(password)
         return 0 if key.upper() == self.mifare_key else R600_ERR_PRINT

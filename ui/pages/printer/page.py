@@ -5,10 +5,10 @@ import logging
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QPlainTextEdit, QScrollArea, QVBoxLayout, QWidget,
+    QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QMenu, QPlainTextEdit, QScrollArea, QVBoxLayout, QWidget,
 )
 
-from printer.base import CAP_MIFARE, FAMILY_RTAI, FAMILY_SMART, PrinterDevice
+from printer.base import CAP_CONTACT_IC, CAP_MIFARE, FAMILY_RTAI, FAMILY_SMART, PrinterDevice
 from services.print_service import PrintServiceError
 from services.printers import default_capabilities
 from ui.pages.printing.style import apply_page_style
@@ -23,7 +23,7 @@ from ui.widgets import (
     IconWidget, Panel, PrimaryButton, QuietButton, SecondaryButton, confirm, label, set_prop,
 )
 
-from .probe import CheckLine, ProbeTask, build_test_document, run_mifare_check
+from .probe import CheckLine, ProbeTask, build_test_document, run_contact_check, run_mifare_check
 from .status import bind_printer_status
 
 log = logging.getLogger(__name__)
@@ -69,6 +69,7 @@ class DeviceCard(QFrame):
     probeRequested = Signal(object)
     testPrintRequested = Signal(object)
     mifareTestRequested = Signal(object)
+    contactTestRequested = Signal(object)
 
     def __init__(self, device: PrinterDevice, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -115,9 +116,17 @@ class DeviceCard(QFrame):
         self.probe_button.clicked.connect(lambda: self.probeRequested.emit(self.device))
         self.test_button.clicked.connect(lambda: self.testPrintRequested.emit(self.device))
         self.mifare_button = SecondaryButton("IC 카드 시험")
-        self.mifare_button.setToolTip("카드 한 장을 넣어 IC(Mifare) 카드 번호만 읽고 내보냅니다. 인쇄하지 않습니다")
-        self.mifare_button.clicked.connect(lambda: self.mifareTestRequested.emit(self.device))
-        self.mifare_button.setVisible(CAP_MIFARE in default_capabilities(device))
+        self.mifare_button.setToolTip("카드 한 장을 넣어 IC 칩을 읽기만 하고 내보냅니다. 인쇄하지 않습니다")
+        caps = default_capabilities(device)
+        ic_menu = QMenu(self.mifare_button)
+        self.mifare_action = ic_menu.addAction("비접촉 카드 (Mifare·RF)",
+                                               lambda: self.mifareTestRequested.emit(self.device))
+        self.mifare_action.setVisible(CAP_MIFARE in caps)
+        self.contact_action = ic_menu.addAction("접촉식 칩 카드 (스마트 카드)",
+                                                lambda: self.contactTestRequested.emit(self.device))
+        self.contact_action.setVisible(CAP_CONTACT_IC in caps)
+        self.mifare_button.setMenu(ic_menu)
+        self.mifare_button.setVisible(bool({CAP_MIFARE, CAP_CONTACT_IC} & caps))
         for button in (self.use_button, self.probe_button, self.test_button, self.mifare_button):
             buttons.addWidget(button)
         buttons.addStretch(1)
@@ -310,6 +319,7 @@ class PrinterPage(BasePage):
             card.probeRequested.connect(self.probe_device)
             card.testPrintRequested.connect(self.test_print)
             card.mifareTestRequested.connect(self.mifare_test)
+            card.contactTestRequested.connect(self.contact_test)
             self._cards_box.addWidget(card)
             self.cards.append(card)
         self._fill_checklist()
@@ -464,13 +474,17 @@ class PrinterPage(BasePage):
         self._sync()
         self.services.printers.poll_now()
 
-    def mifare_test(self, device: PrinterDevice) -> bool:
+    def contact_test(self, device: PrinterDevice) -> bool:
+        """접촉식 칩 시험: 카드 한 장을 넣어 칩 응답만 읽고 배출한다(인쇄·쓰기 없음)."""
+        return self.mifare_test(device, contact=True)
+
+    def mifare_test(self, device: PrinterDevice, contact: bool = False) -> bool:
         """IC 카드 시험: 카드 한 장을 넣어 카드 번호만 읽고 배출한다(인쇄·쓰기 없음)."""
         if self.busy_reason() or self.services.printers.is_busy:
             return False
         if not self.confirm(
                 self, "IC 카드를 시험할까요?",
-                f"{device.name}에 IC(Mifare) 카드 한 장을 넣어 카드 번호만 읽고 내보냅니다. "
+                f"{device.name}에 {'접촉식 칩' if contact else 'IC(Mifare)'} 카드 한 장을 넣어 칩을 읽기만 하고 내보냅니다. "
                 "인쇄하거나 카드에 쓰지 않으므로 나온 카드는 다시 쓸 수 있습니다.",
                 confirm_text="카드 넣고 시험", cancel_text="그만두기"):
             return False
@@ -479,7 +493,7 @@ class PrinterPage(BasePage):
             card.set_results([CheckLine("idle", "IC 카드", "카드를 넣어 읽고 있습니다.")])
         lock = getattr(self.services.printers, "_sdk_lock", None)
         self._probe_device = device
-        self._probe = ProbeTask(device, lock, self, work=run_mifare_check)
+        self._probe = ProbeTask(device, lock, self, work=run_contact_check if contact else run_mifare_check)
         self._probe.finished_lines.connect(self._on_mifare_done)
         self._probe.start()
         self._sync()

@@ -56,6 +56,7 @@ EXTRA_SIGNATURES: Dict[str, Tuple[list, Any]] = {
     "R600M1CardRead": ([_i32, _u8, _str], _u32),
     "R600M1CardWrite": ([_i32, _u8, _str], _u32),
     "R600M1CardHalt": ([], _u32),
+    "R600CPUCardReset": ([ctypes.c_int, _P(ctypes.c_char), _P(_u8), _P(ctypes.c_char), _P(_u8)], _u32),
     "R600PrtReset": ([], _u32),
 }
 
@@ -380,6 +381,15 @@ class R600ExtrasMixin:
     def m1_halt(self) -> None:
         """R600M1CardHalt: Mifare 카드 통신 종료."""
         self._ext_check(self._ext("R600M1CardHalt")(), "Mifare 종료")
+
+    # -- 접촉식 칩(CPU 카드) -------------------------------------------------
+    def cpu_card_reset(self, slot: int = 0) -> Tuple[bytes, bytes]:
+        """R600CPUCardReset: 접촉식 칩을 리셋해 (ATR, UID)를 받는다. slot 값의 의미는 실기 확인 필요."""
+        info, uid = ctypes.create_string_buffer(256), ctypes.create_string_buffer(64)
+        info_len, uid_len = ctypes.c_ubyte(255), ctypes.c_ubyte(63)
+        ret = self._ext("R600CPUCardReset")(slot, info, ctypes.byref(info_len), uid, ctypes.byref(uid_len))
+        self._ext_check(ret, "접촉식 칩 리셋")
+        return info.raw[:info_len.value], uid.raw[:uid_len.value]
 
     # -- 레이어 이미지 준비 -------------------------------------------------
     def _prepare_layer_file(self, image_path: str, rotation: int, prefix: str) -> str:

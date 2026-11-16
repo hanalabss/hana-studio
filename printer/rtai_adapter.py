@@ -16,7 +16,7 @@ import time
 from typing import Any, Dict, Mapping, Optional, Set, Tuple, Union
 
 from .base import (
-    CAP_BLACK_RESIN, CAP_CARD_MOVE, CAP_COLOR_ADJUST, CAP_DUAL_SIDE, CAP_GAMMA_ADJUST, CAP_K_SPLIT, CAP_MAGNETIC, CAP_MIFARE,
+    CAP_BLACK_RESIN, CAP_CARD_MOVE, CAP_CONTACT_IC, CAP_COLOR_ADJUST, CAP_DUAL_SIDE, CAP_GAMMA_ADJUST, CAP_K_SPLIT, CAP_MAGNETIC, CAP_MIFARE,
     CAP_POSITION_OFFSET, apply_gamma, color_adjust_from, gamma_adjust_from,
     CAP_RIBBON_LEVEL, CAP_STATUS, CAP_UV, CAP_WHITE, FAMILY_RTAI, ORIENTATION_PORTRAIT,
     STAGE_BACK_IMAGE, STAGE_DONE, STAGE_EJECT, STAGE_FEED, STAGE_FRONT_IMAGE, STAGE_MAGNETIC, STAGE_MIFARE,
@@ -153,7 +153,7 @@ class RtaiAdapter(CardPrinter):
     CAPABILITIES = frozenset({
         CAP_DUAL_SIDE, CAP_WHITE, CAP_UV, CAP_MAGNETIC, CAP_STATUS, CAP_RIBBON_LEVEL,
         CAP_K_SPLIT, CAP_MIFARE, CAP_CARD_MOVE, CAP_POSITION_OFFSET, CAP_COLOR_ADJUST, CAP_GAMMA_ADJUST,
-        CAP_BLACK_RESIN,
+        CAP_BLACK_RESIN, CAP_CONTACT_IC,
     })
 
     def __init__(self, lib: Any = None, dll_path: Optional[str] = None,
@@ -514,6 +514,33 @@ class RtaiAdapter(CardPrinter):
             self._eject_quietly()
             raise self._translate(exc) from exc
         return {"position": position, "serial": serial.hex().upper(), "block": block, "data": data}
+
+    def test_contact_card(self, slot: int = 0) -> Dict[str, Any]:
+        """카드 한 장을 넣어 접촉식 칩을 리셋하고 ATR(칩 응답)만 읽은 뒤 배출한다. 인쇄·쓰기 없음.
+
+        접촉 단자로 옮기는 위치 번호(SDK 문서 3.5: 1~4 가운데 하나)는 실기 확인 전이라 차례로 시험한다.
+        """
+        self._require_connected()
+        printer = self._printer
+        last: Optional[Exception] = None
+        try:
+            printer.inject_card()
+            for position in PROBE_POSITIONS:
+                try:
+                    printer.move_card_impr(position)
+                    atr, uid = printer.cpu_card_reset(slot)
+                except R600PrinterError as exc:
+                    last = exc
+                    continue
+                if atr:
+                    printer.eject_card()
+                    return {"position": position, "atr": atr.hex().upper(), "uid": uid.hex().upper()}
+            printer.eject_card()
+        except (R600PrinterError, PrinterError) as exc:
+            self._eject_quietly()
+            raise self._translate(exc) from exc
+        raise PrinterError("접촉식 칩을 읽지 못했습니다. 칩이 있는 카드를 넣었는지, 프린터에 접촉식 인코더가 있는지 "
+                           "확인하세요." + (f" ({last})" if last else ""), recoverable=True)
 
     # -- 인쇄 -------------------------------------------------------------
     def print_card(self, job: CardJob, progress: Optional[ProgressCallback] = None) -> None:

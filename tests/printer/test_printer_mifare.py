@@ -103,3 +103,20 @@ def test_test_mifare_reads_only_and_ejects(adapter, r600_lib):
     names = r600_lib.call_names()
     assert "R600M1CardWrite" not in names and "R600PrintDraw" not in names
     assert names[-1] == "R600CardEject"
+
+
+# ── 접촉식 칩(다눌의 '스마트 카드' 탭) ────────────────────────────────────────
+
+def test_contact_card_reads_atr_only_and_ejects(adapter, r600_lib):
+    r600_lib.contact_position = 3
+    result = adapter.test_contact_card()
+    assert result["atr"] == "3B6800000073C84013009000" and result["position"] == 3
+    names = r600_lib.call_names()
+    assert "R600PrintDraw" not in names and names[-1] == "R600CardEject"
+
+
+def test_contact_card_missing_chip_is_reported(adapter, r600_lib):
+    r600_lib.contact_position = 9
+    with pytest.raises(PrinterError, match="접촉식 칩을 읽지 못했습니다"):
+        adapter.test_contact_card()
+    assert r600_lib.call_names()[-1] == "R600CardEject"

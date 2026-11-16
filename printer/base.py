@@ -26,6 +26,7 @@ CAP_STATUS = "status"
 CAP_RIBBON_LEVEL = "ribbon_level"
 CAP_K_SPLIT = "k_split"
 CAP_MIFARE = "mifare"
+CAP_CONTACT_IC = "contact_ic"      # 접촉식 칩(CPU 카드) 읽기
 CAP_CARD_MOVE = "card_move"
 CAP_POSITION_OFFSET = "position_offset"
 CAP_COLOR_ADJUST = "color_adjust"      # 밝기·명암·채도를 프린터 쪽에서 조정
