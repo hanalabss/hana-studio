@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QModelIndex, QPoint, QRect, QRectF, Qt, Signal
-from PySide6.QtGui import QFont, QFontMetrics, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QFont, QFontMetrics, QKeySequence, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDateEdit,
@@ -307,6 +307,8 @@ class CellDelegate(QStyledItemDelegate):
 class PeopleTable(Rethemed, QTableView):
     rowActivated = Signal(int)          # 두 번 누른 줄
     deleteRequested = Signal()
+    copyRequested = Signal()             # Ctrl+C: 고른 줄을 엑셀에 붙일 수 있게 복사
+    pasteRequested = Signal()            # Ctrl+V: 엑셀에서 복사한 것을 고른 칸부터 붙여 넣기
     photoPickRequested = Signal(QModelIndex)
     columnMenuRequested = Signal(int, QPoint)
     currentRowChanged = Signal(int)
@@ -539,6 +541,14 @@ class PeopleTable(Rethemed, QTableView):
                 return
             if key == Qt.Key_Delete:
                 self.deleteRequested.emit()
+                event.accept()
+                return
+            if event.matches(QKeySequence.StandardKey.Copy):
+                self.copyRequested.emit()
+                event.accept()
+                return
+            if event.matches(QKeySequence.StandardKey.Paste):
+                self.pasteRequested.emit()
                 event.accept()
                 return
         super().keyPressEvent(event)

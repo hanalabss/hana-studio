@@ -83,6 +83,7 @@ a = Analysis(
     hiddenimports=[
         # === Qt ===
         'PySide6.QtCore', 'PySide6.QtWidgets', 'PySide6.QtGui',
+        'PySide6.QtMultimedia', 'PySide6.QtMultimediaWidgets',   # 카메라로 사진 찍기
 
         # === 온라인 업데이트 ===
         'velopack',

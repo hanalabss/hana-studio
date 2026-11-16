@@ -183,6 +183,11 @@ def _image(p):
     _line(p, 4.5, 17.5, 10, 12.5, 13.5, 16, 16, 13.5, 19.5, 17)
 
 
+def _camera(p):
+    _line(p, 3.5, 8.5, 3.5, 18.5, 20.5, 18.5, 20.5, 8.5, 16.5, 8.5, 15, 6, 9, 6, 7.5, 8.5, 3.5, 8.5)
+    p.drawEllipse(QPointF(12, 13), 3.2, 3.2)
+
+
 def _text(p):
     _line(p, 5, 7.5, 5, 5, 19, 5, 19, 7.5)
     _line(p, 12, 5, 12, 19)
@@ -435,6 +440,7 @@ _PAINTERS: dict[str, Callable[[QPainter], None]] = {
     "search": _search,
     "folder": _folder,
     "image": _image,
+    "camera": _camera,
     "text": _text,
     "trash": _trash,
     "import": _import,

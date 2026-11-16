@@ -9,6 +9,7 @@ from typing import Iterable
 from PySide6.QtCore import QEvent, QModelIndex, QPoint, Qt, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
     QFileDialog,
     QHBoxLayout,
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from data.clipboard import PasteResult, copy_rows, parse_tsv, paste_grid, undo_paste
 from data.errors import DataError
 from data.export import export_csv, export_xlsx
 from data.filters import Condition, Group, all_of, quick_search, unprinted_only, printed_only
@@ -188,6 +190,8 @@ class PeoplePage(BasePage):
         self.table.currentRowChanged.connect(self._on_current_row)
         self.table.rowActivated.connect(self.edit_person_at)
         self.table.deleteRequested.connect(lambda: self.delete_people())
+        self.table.copyRequested.connect(lambda: self.copy_people())
+        self.table.pasteRequested.connect(lambda: self.paste_people())
         self.table.photoPickRequested.connect(self._pick_photo_for)
         self.table.columnMenuRequested.connect(self._show_column_menu)
         self.table.allToggled.connect(self._on_all_toggled)
@@ -982,6 +986,88 @@ class PeoplePage(BasePage):
             self.reveal(created[-1], f"{people(len(created))}을 복제했습니다")
         return created
 
+    # ================================================================ 복사·붙여 넣기 (다눌의 Ctrl+C / Ctrl+V)
+    def _field_names(self) -> list[str]:
+        return [spec.name for spec in self.model.specs if spec.kind == KIND_FIELD]
+
+    def copy_people(self, ids: Iterable[int] | None = None) -> int:
+        """고른 사람들을 탭 구분 글자로 클립보드에 넣는다. 엑셀에 그대로 붙여 넣을 수 있다."""
+        store = self.store
+        targets = self._target_ids(ids)
+        if store is None or not targets:
+            return 0
+        records = [r for r in (store.get(i) for i in targets) if r is not None]
+        names = self._field_names()
+        QApplication.clipboard().setText(copy_rows(records, names, with_header=len(records) > 1))
+        self.toast(f"{people(len(records))}을 복사했습니다. 엑셀에 붙여 넣을 수 있습니다.", "ok")
+        return len(records)
+
+    def paste_people(self, text: str | None = None, append: bool = False) -> PasteResult | None:
+        """엑셀에서 복사한 것을 넣는다. 고른 칸부터 오른쪽·아래로 덮어쓰고, 남는 줄은 새 사람으로 추가한다.
+
+        append=True거나 고른 칸이 없으면 맨 끝에 새 사람으로만 추가한다.
+        """
+        store = self.store
+        if store is None:
+            self.toast("붙여 넣으려면 먼저 명단을 열거나 만드세요.", "warn")
+            return None
+        grid = parse_tsv(QApplication.clipboard().text() if text is None else text)
+        if not grid:
+            self.toast("붙여 넣을 내용이 없습니다. 엑셀에서 칸을 고르고 Ctrl+C로 복사한 뒤 해 보세요.", "warn")
+            return None
+        self.commit_pending_delete()
+        names = self._field_names()
+        index = self.table.currentIndex()
+        spec = index.data(SpecRole) if index.isValid() else None
+        if append or spec is None or spec.kind != KIND_FIELD or index.row() < 0:
+            start_column, targets = 0, []
+        else:
+            start_column = names.index(spec.name)
+            targets = self.model.ids()[index.row():]
+        try:
+            result = paste_grid(store, grid, names[start_column:], targets)
+        except DataError as exc:
+            self.toast(str(exc), "error")
+            return None
+        if not result.changed_rows:
+            self.toast("붙여 넣을 내용이 없습니다.", "warn")
+            return result
+        self._after_paste(result.inserted[-1] if result.inserted else next(iter(result.updated)))
+        fixed, added = people(len(result.updated)), people(len(result.inserted))
+        if result.updated and result.inserted:
+            text_done = f"{fixed}을 고치고 {added}을 새로 넣었습니다."
+        elif result.updated:
+            text_done = f"{fixed}을 고쳤습니다."
+        else:
+            text_done = f"{added}을 새로 넣었습니다."
+        if result.cut_columns:
+            text_done += f" 오른쪽에 항목이 모자라 {result.cut_columns}칸은 넣지 못했습니다."
+        self.toast(text_done, "warn" if result.cut_columns else "ok", "되돌리기",
+                   lambda r=result: self.undo_paste(r), timeout_ms=10000)
+        return result
+
+    def undo_paste(self, result: PasteResult) -> None:
+        store = self.store
+        if store is None:
+            return
+        try:
+            undo_paste(store, result)
+        except DataError as exc:
+            self.toast(str(exc), "error")
+            return
+        self._after_paste(next(iter(result.updated), None))
+        self.toast("붙여 넣기를 되돌렸습니다.", "info")
+
+    def _after_paste(self, keep: int | None) -> None:
+        self._own_change = True
+        try:
+            self.workspace.notify_records_changed()
+        finally:
+            self._own_change = False
+        self.photos.invalidate()
+        self._apply_view(keep=keep)
+        self._sync_all()
+
     def _pick_photo_for(self, index: QModelIndex) -> None:
         spec = index.data(SpecRole)
         if spec is None or not spec.is_photo:
@@ -990,6 +1076,39 @@ class PeoplePage(BasePage):
         path = pick_photo_file(self, str(folder) if folder else "")
         if path:
             self.set_photo(index, path)
+
+    def _photo_aspect(self, column: str) -> float:
+        """이 사진 항목을 쓰는 디자인 사진 칸의 가로:세로. 못 찾으면 증명사진(3:4)."""
+        document = self.workspace.editor.document if self.workspace.editor is not None else None
+        if document is not None:
+            for _side, item in document.iter_items():
+                if item.kind == "image" and item.source is not None and column in item.source.columns() and item.h > 0:
+                    return item.w / item.h
+        return 3 / 4
+
+    def take_photo_for(self, row: int, column: str) -> str | None:
+        """카메라로 그 사람 사진을 찍어 사진 폴더에 저장하고 명단에 넣는다(다눌의 '사진 캡쳐')."""
+        from ui.camera import save_photo, take_photo, unique_path
+
+        store = self.store
+        record = self.model.record_at(row)
+        col = self.model.column_of(column)
+        if store is None or record is None or col < 0:
+            return None
+        image = take_photo(self, self._photo_aspect(column))
+        if image is None:
+            return None
+        folder = self.photos.folder(column) or Path(store.path).parent / f"{Path(store.path).stem} 사진"
+        key = next((display_value(record.get(n)) for n in ("사번", "이름") if display_value(record.get(n))),
+                   f"사람{record['_id']}")
+        try:
+            path = save_photo(image, unique_path(folder, key))
+        except OSError as exc:
+            self.toast(str(exc), "error")
+            return None
+        self.set_photo(self.model.index(row, col), path)
+        self.toast(f"사진을 찍어 넣었습니다. ({Path(path).name})", "ok")
+        return path
 
     def set_photo(self, index: QModelIndex, path: str) -> None:
         spec = index.data(SpecRole)
@@ -1170,6 +1289,7 @@ class PeoplePage(BasePage):
         menu.addAction("지우기…", lambda: self.remove_column(name))
         menu.addSeparator()
         menu.addAction("항목 추가…", lambda: self.add_column())
+        menu.addAction("엑셀에서 복사한 것 붙여 넣기", lambda: self.paste_people(append=True))
         menu.exec(pos)
 
     # ================================================================ 메뉴
@@ -1184,10 +1304,17 @@ class PeoplePage(BasePage):
         menu = QMenu(self)
         if count == 1:
             menu.addAction("이 사람 고치기…", lambda: self.edit_person_at(index.row()))
+            for spec in self.model.specs:
+                if spec.kind == KIND_FIELD and spec.is_photo:
+                    menu.addAction(f"카메라로 '{spec.name}' 찍기…",
+                                   lambda r=index.row(), n=spec.name: self.take_photo_for(r, n))
         all_checked = all(self.model.is_checked(i) for i in ids)
         who = "이 사람" if count == 1 else f"고른 {people(count)}"
         menu.addAction(f"{who} 인쇄에서 빼기" if all_checked else f"{who} 인쇄할 사람으로 체크",
                        lambda: self.model.set_checked(ids, not all_checked))
+        menu.addSeparator()
+        menu.addAction(f"{who} 복사 (엑셀에 붙여 넣기용)	Ctrl+C", lambda: self.copy_people(ids))
+        menu.addAction("여기부터 붙여 넣기	Ctrl+V", lambda: self.paste_people())
         menu.addSeparator()
         menu.addAction(f"{who} 복제", lambda: self.duplicate_people(ids))
         menu.addAction(f"{who} 지우기", lambda: self.delete_people(ids))

@@ -108,8 +108,11 @@ class ImageSection(Section):
         self.source_control.currentChanged.connect(self.set_mode)
         self.replace_button = SecondaryButton("그림 바꾸기", icon="image")
         self.replace_button.clicked.connect(self.choose_image)
+        self.camera_button = SecondaryButton("카메라로 찍기", icon="camera")
+        self.camera_button.setToolTip("컴퓨터에 연결된 카메라로 사진을 찍어 이 칸에 넣습니다")
+        self.camera_button.clicked.connect(self.take_photo)
         self.file_label = label("", "hint", wrap=True)
-        self.file_box = self._box(self.replace_button, self.file_label)
+        self.file_box = self._box(hbox(self.replace_button, self.camera_button, None), self.file_label)
         self.column_combo = ColumnCombo()
         self.column_combo.setAccessibleName("사진이 들어 있는 명단 항목")
         self.column_combo.activated.connect(lambda _i: self.set_column(self.column_combo.column()))
@@ -417,6 +420,29 @@ class ImageSection(Section):
         path = self.context.pick_image("카드에 넣을 그림 고르기")
         if path:
             self.replace_image(path)
+
+    def take_photo(self) -> bool:
+        """카메라로 찍어 이 칸에 넣는다(다눌의 '사진 캡쳐'). 칸 모양에 맞춰 가운데를 자른다."""
+        from ui.camera import save_photo, take_photo, temp_photo_path
+
+        item = self.item
+        if item is None:
+            return False
+        image = take_photo(self, item.w / item.h if item.h > 0 else None)
+        if image is None:
+            return False
+        path = temp_photo_path()
+        try:
+            save_photo(image, path)
+            return self.replace_image(str(path))
+        except OSError as exc:
+            self.controller.message.emit(str(exc))
+            return False
+        finally:
+            try:
+                path.unlink()
+            except OSError:
+                pass
 
     def replace_image(self, path: str) -> bool:
         item = self.item
