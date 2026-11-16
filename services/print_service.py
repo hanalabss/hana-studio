@@ -21,7 +21,7 @@ from design.model import Document
 from printer.base import STAGE_UNKNOWN, PrinterDevice, ProgressEvent
 from services.printers import default_capabilities
 from services.render_job import (
-    CANCEL_MESSAGE, CardFeeder, PrintOptions, RenderJob, magnetic_mapping, needs_records,
+    CANCEL_MESSAGE, CardFeeder, PrintOptions, RenderJob, magnetic_mapping, mifare_setting, needs_records,
 )
 
 log = logging.getLogger(__name__)
@@ -243,7 +243,8 @@ class PrintService(QObject):
         if capabilities is None:
             capabilities = default_capabilities(device) or None
 
-        uses_data = needs_records(document) or bool(magnetic_mapping(document, options))
+        uses_data = (needs_records(document) or bool(magnetic_mapping(document, options))
+                     or bool(mifare_setting(document, options)))
         if selection is None and (store is None or not uses_data):
             render_job = RenderJob.for_copies(document, options.copies, options, capabilities)
         else:

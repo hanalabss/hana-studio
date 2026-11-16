@@ -19,12 +19,15 @@ from .base import (
     CAP_BLACK_RESIN, CAP_CARD_MOVE, CAP_COLOR_ADJUST, CAP_DUAL_SIDE, CAP_GAMMA_ADJUST, CAP_K_SPLIT, CAP_MAGNETIC, CAP_MIFARE,
     CAP_POSITION_OFFSET, apply_gamma, color_adjust_from, gamma_adjust_from,
     CAP_RIBBON_LEVEL, CAP_STATUS, CAP_UV, CAP_WHITE, FAMILY_RTAI, ORIENTATION_PORTRAIT,
-    STAGE_BACK_IMAGE, STAGE_DONE, STAGE_EJECT, STAGE_FEED, STAGE_FRONT_IMAGE, STAGE_MAGNETIC,
+    STAGE_BACK_IMAGE, STAGE_DONE, STAGE_EJECT, STAGE_FEED, STAGE_FRONT_IMAGE, STAGE_MAGNETIC, STAGE_MIFARE,
     STAGE_PRINT, STAGE_SETUP, STAGE_UNKNOWN, STAGE_WAIT, UNIT_UNKNOWN,
     CardJob, CardPrinter, MagneticTracks, PrinterDevice, PrinterError, PrinterStatus,
     ProgressCallback, SideImages,
 )
 from .exceptions import R600PrinterError
+from .mifare import (
+    DEFAULT_KEY as DEFAULT_MIFARE_KEY, KNOWN_POSITIONS, PROBE_POSITIONS, MifareWrite, sdk_key_type,
+)
 from .r600_extras import (
     MAG_COERCIVITY_HIGH, MAG_DEFAULT_TIMEOUT, MAG_POSITION_STANDARD, UV_DEFAULT_THICKNESS,
     UV_DEFAULT_THRESHOLD,
@@ -162,6 +165,7 @@ class RtaiAdapter(CardPrinter):
         self._printer = None
         self._gamma_files: list = []
         self._add_mode_touched = False      # R600SetAddImageMode_Rtai를 건드린 적이 있는가
+        self._device_key = ""
         self.settle_seconds = settle_seconds
         self.timeout_ms = timeout_ms
 
@@ -186,6 +190,7 @@ class RtaiAdapter(CardPrinter):
         if self.is_connected:
             self.close()
         name = device.address or device.name
+        self._device_key = f"{device.connection}:{name}"
         info = PrinterInfo(name, "TCP" if device.connection in ("tcp", "net") else "USB")
         try:
             if self._lib is not None:
@@ -438,6 +443,78 @@ class RtaiAdapter(CardPrinter):
         if return_position is not None:
             printer.move_card(return_position)
 
+    # -- Mifare(비접촉 IC) ---------------------------------------------------
+    @property
+    def mifare_position(self) -> Optional[int]:
+        """카드 번호가 읽힌 비접촉 인코더 위치. 한 번 찾으면 이 프린터에 대해 기억한다."""
+        return KNOWN_POSITIONS.get(self._device_key)
+
+    def _find_mifare_position(self, preferred: Optional[int]) -> Tuple[int, bytes]:
+        """카드 번호(UID)가 읽히는 인코더 위치를 찾는다. (위치, UID)."""
+        printer = self._printer
+        candidates = [p for p in (preferred, self.mifare_position) if p] + list(PROBE_POSITIONS)
+        last_error: Optional[Exception] = None
+        for position in dict.fromkeys(candidates):
+            try:
+                printer.move_card_impr(position)
+                serial = printer.m1_get_serial()
+            except R600PrinterError as exc:
+                last_error = exc
+                continue
+            if serial:
+                KNOWN_POSITIONS[self._device_key] = position
+                return position, serial
+        raise PrinterError("IC 카드를 찾지 못했습니다. 비접촉(Mifare) 카드를 넣었는지, 프린터에 IC 인코더가 "
+                           "있는지 확인하세요." + (f" ({last_error})" if last_error else ""), recoverable=True)
+
+    def _encode_mifare(self, write: MifareWrite) -> bytes:
+        """카드 안에서: 인코더로 옮기기 → 인증 → 쓰기 → 다시 읽어 확인 → 통신 끝. 카드 번호를 돌려준다."""
+        printer = self._printer
+        _position, serial = self._find_mifare_position(write.position)
+        try:
+            try:
+                printer.m1_authenticate(write.block, write.key, sdk_key_type(write.key_type))
+            except R600PrinterError as exc:
+                raise PrinterError(f"IC 카드 인증에 실패했습니다. 키({write.key_type})가 맞는지 확인하세요. ({exc})",
+                                   recoverable=True) from exc
+            printer.m1_write(write.block, write.data)
+            read = printer.m1_read(write.block).replace(" ", "").upper()
+            if read[:len(write.data)] != write.data:
+                raise PrinterError("IC 카드에 쓴 내용과 다시 읽은 내용이 다릅니다.", recoverable=True)
+        finally:
+            try:
+                printer.m1_halt()
+            except R600PrinterError as exc:
+                log.warning("Mifare 통신 종료 실패: %s", exc)
+        return serial
+
+    def test_mifare(self, block: int = 1, key: str = DEFAULT_MIFARE_KEY, key_type: str = "A") -> Dict[str, Any]:
+        """카드 한 장을 넣어 카드 번호와 블록을 읽기만 하고 배출한다(인쇄·쓰기 없음).
+
+        IC 인코더 위치를 찾아 기억해 두므로, 인쇄 전에 한 번 해 두면 좋다.
+        """
+        self._require_connected()
+        printer = self._printer
+        try:
+            printer.inject_card()
+            position, serial = self._find_mifare_position(None)
+            data = None
+            try:
+                printer.m1_authenticate(block, key, sdk_key_type(key_type))
+                data = printer.m1_read(block)
+            except R600PrinterError as exc:
+                log.info("Mifare 시험 읽기 실패(카드 번호는 읽음): %s", exc)
+            finally:
+                try:
+                    printer.m1_halt()
+                except R600PrinterError:
+                    pass
+            printer.eject_card()
+        except (R600PrinterError, PrinterError) as exc:
+            self._eject_quietly()
+            raise self._translate(exc) from exc
+        return {"position": position, "serial": serial.hex().upper(), "block": block, "data": data}
+
     # -- 인쇄 -------------------------------------------------------------
     def print_card(self, job: CardJob, progress: Optional[ProgressCallback] = None) -> None:
         self._require_connected()
@@ -490,6 +567,10 @@ class RtaiAdapter(CardPrinter):
             if not tracks.is_empty():
                 report(12 if dual else 18, "마그네틱 기록 중...", STAGE_MAGNETIC)
                 self._encode_magnetic(tracks, options)
+            mifare = MifareWrite.from_options(options.get("mifare"))
+            if mifare is not None:
+                report(13 if dual else 20, "IC 카드 기록 중...", STAGE_MIFARE)
+                self._encode_mifare(mifare)
             report(15 if dual else 25, "리본 설정 중...", STAGE_SETUP)
             if options.get("k_split") is not None:
                 printer.set_k_split_print(bool(options["k_split"]) and dual)

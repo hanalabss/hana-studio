@@ -93,6 +93,7 @@ STAGE_UNKNOWN = ""                 # 단계 정보를 주지 않는 드라이버
 STAGE_PREPARE = "prepare"          # 인쇄할 이미지 준비(PC 쪽 작업)
 STAGE_FEED = "feed"                # 카드 삽입
 STAGE_MAGNETIC = "magnetic"        # 마그네틱 기록
+STAGE_MIFARE = "mifare"            # Mifare(비접촉 IC) 기록
 STAGE_SETUP = "setup"              # 리본 등 인쇄 설정
 STAGE_FRONT_IMAGE = "front_image"  # 앞면 이미지를 SDK에 올림
 STAGE_BACK_IMAGE = "back_image"    # 뒷면 이미지를 SDK에 올림
@@ -104,7 +105,7 @@ STAGE_EJECT = "eject"              # 카드 배출
 STAGE_DONE = "done"                # 이 카드 끝
 
 STAGE_LABELS = {
-    STAGE_PREPARE: "이미지 준비", STAGE_FEED: "카드 삽입", STAGE_MAGNETIC: "마그네틱 기록",
+    STAGE_PREPARE: "이미지 준비", STAGE_FEED: "카드 삽입", STAGE_MAGNETIC: "마그네틱 기록", STAGE_MIFARE: "IC 카드 기록",
     STAGE_SETUP: "인쇄 설정", STAGE_FRONT_IMAGE: "앞면 준비", STAGE_BACK_IMAGE: "뒷면 준비",
     STAGE_PRINT: "인쇄", STAGE_PRINT_FRONT: "앞면 인쇄", STAGE_PRINT_BACK: "뒷면 인쇄",
     STAGE_WAIT: "인쇄 완료 대기", STAGE_EJECT: "카드 배출", STAGE_DONE: "완료",

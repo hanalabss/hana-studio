@@ -464,3 +464,40 @@ def test_black_layer_is_made_only_when_chosen_and_supported():
 def test_black_resin_choice_is_saved_with_the_project():
     assert PrintOptions.from_dict(PrintOptions(black_resin=True).to_dict()).black_resin is True
     assert PrintOptions.from_dict({}).black_resin is False
+
+
+# ── IC 카드(Mifare): 다눌의 RF 항목 ─────────────────────────────────────────
+
+def test_mifare_value_goes_to_card_options_per_person(store, simple_document):
+    from printer.base import CAP_MIFARE
+    from printer.mifare import block_data
+
+    options = PrintOptions(mifare={"column": "이름", "block": 5, "key_type": "B", "key": "a0a1a2a3a4a5"})
+    record_id = store.ids()[0]
+    job = RenderJob.for_records(simple_document, store, [record_id], options, capabilities={CAP_MIFARE})
+    try:
+        card = job.render(0)
+    finally:
+        job.close()
+    name = store.get(record_id)["이름"]
+    assert card.options["mifare"] == {"block": 5, "data": block_data(name), "key": "A0A1A2A3A4A5",
+                                      "key_type": "B", "position": None}
+
+
+def test_mifare_is_skipped_without_capability_and_bad_value_fails_the_card(store, simple_document):
+    from printer.base import CAP_MIFARE
+
+    record_id = store.ids()[0]
+    options = PrintOptions(mifare={"column": "이름", "block": 4})
+    job = RenderJob.for_records(simple_document, store, [record_id], options, capabilities=set())
+    try:
+        assert "mifare" not in job.render(0).options
+    finally:
+        job.close()
+    store.update(record_id, {"이름": "가" * 10})          # 30바이트: 블록 하나(16바이트)를 넘는다
+    job = RenderJob.for_records(simple_document, store, [record_id], options, capabilities={CAP_MIFARE})
+    try:
+        with pytest.raises(rj.RenderJobError, match="IC 카드"):
+            job.render(0)
+    finally:
+        job.close()

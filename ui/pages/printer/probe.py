@@ -11,7 +11,7 @@ from PySide6.QtCore import QObject, QThread, Signal
 from design import presets
 from design.model import Document, LineItem, RectItem, TextItem
 from printer import registry
-from printer.base import PrinterDevice, PrinterError
+from printer.base import CAP_MIFARE, PrinterDevice, PrinterError
 from ui.pages.printing.text import capability_words, plain, status_sentence, supply_text
 from ui.theme import SWATCH_PRESETS
 
@@ -72,6 +72,37 @@ def run_probe(device: PrinterDevice) -> list[CheckLine]:
     return lines
 
 
+def run_mifare_check(device: PrinterDevice) -> list[CheckLine]:
+    """카드 한 장을 넣어 IC(Mifare) 카드 번호만 읽고 배출한다. 인쇄도 쓰기도 하지 않는다.
+
+    읽힌 인코더 위치를 찾아 두는 것이 목적이다. 위치는 프린터 어댑터가 기억해 인쇄 때 쓴다.
+    """
+    try:
+        printer = registry.open(device)
+    except PrinterError as exc:
+        return [CheckLine("error", "연결", f"연결하지 못했습니다. {plain(exc.message)}")]
+    try:
+        if CAP_MIFARE not in printer.capabilities() or not hasattr(printer, "test_mifare"):
+            return [CheckLine("warn", "IC 카드", "이 프린터로는 IC 카드(Mifare)를 읽거나 쓸 수 없습니다.")]
+        result = printer.test_mifare()
+        lines = [CheckLine("ok", "IC 카드", f"카드 번호 {result['serial']}을(를) 읽었습니다."),
+                 CheckLine("idle", "인코더 위치", f"{result['position']}번 위치에서 읽혔습니다. 인쇄할 때 이 위치를 씁니다.")]
+        if result.get("data") is None:
+            lines.append(CheckLine("warn", "키", "카드 번호는 읽었지만 기본 키(FFFFFFFFFFFF)로는 블록을 열지 못했습니다. "
+                                              "인쇄 설정에서 카드에 맞는 키를 넣어 주세요."))
+        return lines
+    except PrinterError as exc:
+        return [CheckLine("error", "IC 카드", plain(exc.message))]
+    except Exception as exc:
+        log.exception("IC 카드 시험 실패")
+        return [CheckLine("error", "IC 카드", f"시험하다가 문제가 생겼습니다. ({exc})")]
+    finally:
+        try:
+            printer.close()
+        except Exception:
+            log.debug("IC 카드 시험 뒤 프린터를 닫지 못했습니다.", exc_info=True)
+
+
 def _supply_tone(value: int, cards_left: int | None) -> str:
     if value <= 0:
         return "error"
@@ -94,15 +125,17 @@ class ProbeTask(QThread):
 
     finished_lines = Signal(object, object)     # device, list[CheckLine]
 
-    def __init__(self, device: PrinterDevice, lock: Any = None, parent: QObject | None = None) -> None:
+    def __init__(self, device: PrinterDevice, lock: Any = None, parent: QObject | None = None,
+                 work=None) -> None:
         super().__init__(parent)
         self._device = device
         self._lock = lock if lock is not None else threading.Lock()
+        self._work = work or run_probe
 
     def run(self) -> None:
         with self._lock:
             try:
-                lines = run_probe(self._device)
+                lines = self._work(self._device)
             except Exception as exc:
                 log.exception("프린터 점검 스레드 오류")
                 lines = [CheckLine("error", "점검", f"점검하지 못했습니다. ({exc})")]

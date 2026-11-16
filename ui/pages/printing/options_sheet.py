@@ -5,15 +5,16 @@ import copy
 from dataclasses import dataclass, field
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLineEdit, QVBoxLayout, QWidget
 
 from design.model import Document
 from printer.base import (CAP_COLOR_ADJUST, CAP_DENSITY_ADJUST, CAP_DUAL_SIDE, CAP_GAMMA_ADJUST,
-                          CAP_BLACK_RESIN, CAP_MAGNETIC, CAP_UV, CAP_WHITE, COLOR_ADJUST_MAX, COLOR_ADJUST_MIN, DENSITY_KEYS)
+                          CAP_BLACK_RESIN, CAP_MAGNETIC, CAP_MIFARE, CAP_UV, CAP_WHITE, COLOR_ADJUST_MAX, COLOR_ADJUST_MIN, DENSITY_KEYS)
 
 DENSITY_TITLES = {"density": "전체", "density_yellow": "노랑", "density_magenta": "빨강",
                   "density_cyan": "파랑"}
-from services.render_job import PrintOptions, magnetic_mapping, uses_black_text, uses_uv, uses_white
+from printer.mifare import DEFAULT_BLOCK, DEFAULT_KEY, MifareError, check_block, check_key
+from services.render_job import PrintOptions, magnetic_mapping, mifare_setting, uses_black_text, uses_uv, uses_white
 from ui.pages.settings.prefs import COPIES_MAX, OFFSET_LIMIT_MM
 from ui.theme import SPACE
 from ui.widgets import (
@@ -74,6 +75,8 @@ def summary_text(choices: PrintChoices, document: Document, capabilities: set[st
         parts.append("검정 글자는 검정 리본으로")
     if magnetic_mapping(document, options) and CAP_MAGNETIC in capabilities:
         parts.append("마그네틱 기록")
+    if mifare_setting(document, options) and CAP_MIFARE in capabilities:
+        parts.append("IC 카드 기록")
     if options.offset_x_mm or options.offset_y_mm:
         parts.append(f"위치 가로 {options.offset_x_mm:+.1f} 세로 {options.offset_y_mm:+.1f}mm")
     gamma = options.gamma if CAP_GAMMA_ADJUST in capabilities else 0
@@ -216,6 +219,39 @@ class OptionsSheet(Dialog):
                 self.magnetic[key] = combo
                 tracks.addWidget(FormRow(title, combo), 1)
             extras.addLayout(tracks)
+        self.mifare_column: ComboBox | None = None
+        if CAP_MIFARE in capabilities and columns:
+            current = mifare_setting(document, options)
+            extras.addWidget(label("IC 카드(Mifare)에 넣을 명단 항목", "label"))
+            self.mifare_column = ComboBox([_NONE, *columns])
+            if current.get("column") in columns:
+                self.mifare_column.setCurrentText(current["column"])
+            self.mifare_block = StepperField(int(current.get("block", DEFAULT_BLOCK)), 1, 62, 1, 0, "번")
+            self.mifare_block.setToolTip("값을 쓸 블록. 3, 7, 11…번은 키가 든 블록이라 쓸 수 없습니다")
+            self.mifare_key_type = SegmentedControl([("A", "키 A"), ("B", "키 B")])
+            self.mifare_key_type.set_current(str(current.get("key_type", "A")).upper(), emit=False)
+            self.mifare_key = QLineEdit(str(current.get("key", DEFAULT_KEY)))
+            self.mifare_key.setAccessibleName("IC 카드 키")
+            self.mifare_key.setPlaceholderText(DEFAULT_KEY)
+            self.mifare_format = ComboBox(["글자 그대로", "16진수"])
+            self.mifare_format.setCurrentIndex(1 if current.get("format") == "hex" else 0)
+            row = QHBoxLayout()
+            row.setSpacing(SPACE["md"])
+            row.addWidget(FormRow("항목", self.mifare_column), 2)
+            row.addWidget(FormRow("블록", self.mifare_block), 1)
+            row.addWidget(FormRow("값 형식", self.mifare_format), 1)
+            extras.addLayout(row)
+            keys = QHBoxLayout()
+            keys.setSpacing(SPACE["md"])
+            keys.addWidget(FormRow("키 종류", self.mifare_key_type), 1)
+            keys.addWidget(FormRow("키 (16진수 12글자)", self.mifare_key), 2)
+            extras.addLayout(keys)
+            self.mifare_error = label("", "hint", wrap=True)
+            self.mifare_error.setProperty("tone", "warn")
+            self.mifare_error.setVisible(False)
+            extras.addWidget(self.mifare_error)
+            extras.addWidget(label("한 블록에 영문·숫자 16자(한글 5자 정도)까지 들어갑니다. 쓴 뒤 다시 읽어 "
+                                   "확인하고, 다르면 그 카드는 인쇄하지 않습니다.", "hint", wrap=True))
         if extras.count():
             self.body.addWidget(Divider())
             self.body.addWidget(label("이 프린터로 할 수 있는 것", "title"))
@@ -283,4 +319,33 @@ class OptionsSheet(Dialog):
                        if combo.currentIndex() > 0}
             # 문서에 정해 둔 줄을 "쓰지 않음"으로 바꾸려면 빈 값이 아니라 빈 묶음이어야 한다.
             options.magnetic = mapping or ({"track1": ""} if magnetic_mapping(self._document, None) else None)
+        if self.mifare_column is not None:
+            if self.mifare_column.currentIndex() > 0:
+                options.mifare = {
+                    "column": self.mifare_column.currentText(), "block": int(self.mifare_block.value()),
+                    "key": self.mifare_key.text().replace(" ", "").upper() or DEFAULT_KEY,
+                    "key_type": self.mifare_key_type.current(),
+                    "format": "hex" if self.mifare_format.currentIndex() == 1 else "text",
+                }
+            else:
+                options.mifare = {"column": ""} if mifare_setting(self._document, None) else None
         return result
+
+    def mifare_problem(self) -> str:
+        """IC 카드 설정이 잘못됐으면 그 까닭. 없으면 빈 글자."""
+        if self.mifare_column is None or self.mifare_column.currentIndex() <= 0:
+            return ""
+        try:
+            check_block(int(self.mifare_block.value()))
+            check_key(self.mifare_key.text() or DEFAULT_KEY)
+        except MifareError as exc:
+            return str(exc)
+        return ""
+
+    def accept(self) -> None:
+        problem = self.mifare_problem()
+        if problem:
+            self.mifare_error.setText(problem)
+            self.mifare_error.setVisible(True)
+            return
+        super().accept()

@@ -335,12 +335,33 @@ class FakeR600Library(FakeLibrary):
             _set(length_ref, len(data))
         return 0
 
+    # Mifare: mifare_position 자리에 카드가 있을 때만 카드 번호가 읽힌다(None이면 어디서나).
+    mifare_position = None
+    mifare_key = "FFFFFFFFFFFF"
+    _impr_position = None
+
+    def _h_R600CardMoveImpr(self, position):
+        self._impr_position = int(position)
+        return 0
+
     def _h_R600M1CardGetSN(self, mode, buffer):
+        if self.mifare_position is not None and self._impr_position != self.mifare_position:
+            return R600_ERR_PRINT
         _fill(buffer, b"\x04\xA1\xB2\xC3")
         return 0
 
+    def _h_R600M1CardPwdAuth(self, is_hex, key_type, block, password):
+        key = password.decode("ascii") if isinstance(password, bytes) else str(password)
+        return 0 if key.upper() == self.mifare_key else R600_ERR_PRINT
+
+    def _h_R600M1CardWrite(self, is_hex, block, data):
+        blocks = self.__dict__.setdefault("mifare_blocks", {})
+        blocks[int(block)] = data.decode("ascii") if isinstance(data, bytes) else str(data)
+        return 0
+
     def _h_R600M1CardRead(self, is_hex, block, buffer):
-        _fill(buffer, b"00112233445566778899AABBCCDDEEFF")
+        blocks = self.__dict__.get("mifare_blocks", {})
+        _fill(buffer, blocks.get(int(block), "00112233445566778899AABBCCDDEEFF").encode("ascii"))
         return 0
 
 

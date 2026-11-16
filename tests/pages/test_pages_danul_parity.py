@@ -78,3 +78,37 @@ def test_new_barcode_kinds_are_selectable(editor, key, data, ok):
     section.data_edit.textEdited.emit(data)
     assert item.symbology == key
     assert section.validation.isVisible() is (not ok)
+
+
+# ---------------------------------------------------------------- IC 카드(Mifare) 인쇄 설정
+
+def test_mifare_section_only_for_capable_printer_and_saves_choices(qapp):
+    from design.model import Document
+    from printer.base import CAP_MIFARE
+    from ui.pages.printing.options_sheet import OptionsSheet, PrintChoices
+
+    columns = ["이름", "사번"]
+    assert OptionsSheet(PrintChoices(), Document(), set(), columns, people=True).mifare_column is None
+    sheet = OptionsSheet(PrintChoices(), Document(), {CAP_MIFARE}, columns, people=True)
+    assert sheet.mifare_column is not None
+    sheet.mifare_column.setCurrentText("사번")
+    sheet.mifare_block.set_value(8)
+    sheet.mifare_key_type.set_current("B")
+    sheet.mifare_key.setText("a0a1a2a3a4a5")
+    options = sheet.choices().options
+    assert options.mifare == {"column": "사번", "block": 8, "key": "A0A1A2A3A4A5", "key_type": "B",
+                              "format": "text"}
+
+
+def test_mifare_bad_key_blocks_accept(qapp):
+    from design.model import Document
+    from printer.base import CAP_MIFARE
+    from ui.pages.printing.options_sheet import OptionsSheet, PrintChoices
+
+    sheet = OptionsSheet(PrintChoices(), Document(), {CAP_MIFARE}, ["사번"], people=True)
+    sheet.mifare_column.setCurrentText("사번")
+    sheet.mifare_key.setText("123")
+    sheet.mifare_block.set_value(7)
+    assert "키가 들어 있는" in sheet.mifare_problem()
+    sheet.accept()
+    assert not sheet.mifare_error.isHidden() and sheet.result() == 0

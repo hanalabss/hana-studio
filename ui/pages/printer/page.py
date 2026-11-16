@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QPlainTextEdit, QScrollArea, QVBoxLayout, QWidget,
 )
 
-from printer.base import FAMILY_RTAI, FAMILY_SMART, PrinterDevice
+from printer.base import CAP_MIFARE, FAMILY_RTAI, FAMILY_SMART, PrinterDevice
 from services.print_service import PrintServiceError
 from services.printers import default_capabilities
 from ui.pages.printing.style import apply_page_style
@@ -23,7 +23,7 @@ from ui.widgets import (
     IconWidget, Panel, PrimaryButton, QuietButton, SecondaryButton, confirm, label, set_prop,
 )
 
-from .probe import CheckLine, ProbeTask, build_test_document
+from .probe import CheckLine, ProbeTask, build_test_document, run_mifare_check
 from .status import bind_printer_status
 
 log = logging.getLogger(__name__)
@@ -68,6 +68,7 @@ class DeviceCard(QFrame):
     useRequested = Signal(object)
     probeRequested = Signal(object)
     testPrintRequested = Signal(object)
+    mifareTestRequested = Signal(object)
 
     def __init__(self, device: PrinterDevice, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -113,7 +114,11 @@ class DeviceCard(QFrame):
         self.use_button.clicked.connect(lambda: self.useRequested.emit(self.device))
         self.probe_button.clicked.connect(lambda: self.probeRequested.emit(self.device))
         self.test_button.clicked.connect(lambda: self.testPrintRequested.emit(self.device))
-        for button in (self.use_button, self.probe_button, self.test_button):
+        self.mifare_button = SecondaryButton("IC 카드 시험")
+        self.mifare_button.setToolTip("카드 한 장을 넣어 IC(Mifare) 카드 번호만 읽고 내보냅니다. 인쇄하지 않습니다")
+        self.mifare_button.clicked.connect(lambda: self.mifareTestRequested.emit(self.device))
+        self.mifare_button.setVisible(CAP_MIFARE in default_capabilities(device))
+        for button in (self.use_button, self.probe_button, self.test_button, self.mifare_button):
             buttons.addWidget(button)
         buttons.addStretch(1)
         layout.addLayout(buttons)
@@ -143,7 +148,7 @@ class DeviceCard(QFrame):
         self.supplies.setText(supplies)
         self.supplies.setVisible(bool(supplies))
         self.abilities.setText("할 수 있는 일: " + (", ".join(abilities) if abilities else "한 면 컬러 인쇄"))
-        for button in (self.use_button, self.probe_button, self.test_button):
+        for button in (self.use_button, self.probe_button, self.test_button, self.mifare_button):
             button.setEnabled(not busy_reason)
         self.note.setVisible(False)
 
@@ -304,6 +309,7 @@ class PrinterPage(BasePage):
             card.useRequested.connect(self.use_device)
             card.probeRequested.connect(self.probe_device)
             card.testPrintRequested.connect(self.test_print)
+            card.mifareTestRequested.connect(self.mifare_test)
             self._cards_box.addWidget(card)
             self.cards.append(card)
         self._fill_checklist()
@@ -455,6 +461,38 @@ class PrinterPage(BasePage):
         card = self.card_for(device)
         if card is not None:
             card.set_results(list(lines), "점검 결과 (카드와 리본은 쓰지 않았습니다)")
+        self._sync()
+        self.services.printers.poll_now()
+
+    def mifare_test(self, device: PrinterDevice) -> bool:
+        """IC 카드 시험: 카드 한 장을 넣어 카드 번호만 읽고 배출한다(인쇄·쓰기 없음)."""
+        if self.busy_reason() or self.services.printers.is_busy:
+            return False
+        if not self.confirm(
+                self, "IC 카드를 시험할까요?",
+                f"{device.name}에 IC(Mifare) 카드 한 장을 넣어 카드 번호만 읽고 내보냅니다. "
+                "인쇄하거나 카드에 쓰지 않으므로 나온 카드는 다시 쓸 수 있습니다.",
+                confirm_text="카드 넣고 시험", cancel_text="그만두기"):
+            return False
+        card = self.card_for(device)
+        if card is not None:
+            card.set_results([CheckLine("idle", "IC 카드", "카드를 넣어 읽고 있습니다.")])
+        lock = getattr(self.services.printers, "_sdk_lock", None)
+        self._probe_device = device
+        self._probe = ProbeTask(device, lock, self, work=run_mifare_check)
+        self._probe.finished_lines.connect(self._on_mifare_done)
+        self._probe.start()
+        self._sync()
+        return True
+
+    def _on_mifare_done(self, device: PrinterDevice, lines: list) -> None:
+        task, self._probe = self._probe, None
+        if task is not None:
+            task.wait(5000)
+            task.deleteLater()
+        card = self.card_for(device)
+        if card is not None:
+            card.set_results(list(lines), "IC 카드 시험 결과 (인쇄하지 않았습니다)")
         self._sync()
         self.services.printers.poll_now()
 
