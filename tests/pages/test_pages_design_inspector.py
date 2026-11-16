@@ -374,7 +374,7 @@ def test_barcode_data_symbology_and_validation(editor):
 
     pick(section.symbology_combo, "ean13")
     assert item.symbology == "ean13"
-    assert "숫자 12~13자리" in section.symbology_hint.text()
+    assert "숫자 12~13자리" in section.symbology_combo.toolTip()
     assert section.validation.isVisible()
     assert "12자리 또는 13자리" in section.validation.text()
     assert section.validation_message() == section.validation.text()
@@ -709,7 +709,7 @@ def test_qr_item_can_become_datamatrix(editor):
     pick(section.code2d_combo, "datamatrix")
     assert item.symbology == "datamatrix"
     assert not section.level_box.isVisible()               # DataMatrix는 오류 정정 수준이 고정
-    assert "리더기" in section.code2d_hint.text()
+    assert "리더기" in section.code2d_combo.toolTip()
     from ui.editor.controller import display_name
     assert display_name(item) == "DataMatrix"
     section.data_edit.setText("x" * 400)
@@ -718,3 +718,29 @@ def test_qr_item_can_become_datamatrix(editor):
     editor.controller.undo_stack.undo()
     editor.controller.undo_stack.undo()
     assert item.symbology == "qr" and section.level_box.isVisible()
+
+
+def test_code_notice_shows_only_when_it_applies(editor):
+    from ui.pages.design.inspector.code import FULL_ASCII_NOTICE, KOREAN_NOTICE
+
+    editor.add("qr")
+    section = editor.inspector.code
+
+    def type_in(text):
+        section.data_edit.setText(text)
+        section.data_edit.textEdited.emit(text)
+
+    type_in("HANA-001")
+    assert not section.validation.isVisible()                   # 평소에는 설명이 없다
+    type_in("하나스튜디오")
+    assert section.validation.isVisible() and section.validation.text() == KOREAN_NOTICE
+    assert section.validation.property("tone") == "warn"
+    type_in("HANA-002")
+    assert not section.validation.isVisible()
+
+    editor.add("barcode")
+    pick(section.symbology_combo, "code39ext")
+    type_in("HANA39")
+    assert not section.validation.isVisible()
+    type_in("Hana39")
+    assert section.validation.text() == FULL_ASCII_NOTICE
