@@ -31,6 +31,8 @@ from .start_panel import StartPanel, pil_to_qimage
 from .style import SIDE_WIDTH, build_stylesheet, palette_for
 
 DESIGN_FILTER = f"하나스튜디오 디자인 (*{storage.EXTENSION})"
+OPEN_FILTER = (f"디자인 파일 (*{storage.EXTENSION} *.dnc);;하나스튜디오 디자인 (*{storage.EXTENSION});;"
+               "다눌 디자인 (*.dnc)")
 IMAGE_FILTER = "그림 파일 (" + " ".join(f"*{ext}" for ext in IMAGE_EXTENSIONS) + ")"
 STRIP_MIN_WIDTH = 1500
 COMPACT_HEIGHT = 580
@@ -40,7 +42,7 @@ class FileDialogs:
     """파일 고르기 창. 테스트에서는 이 객체를 바꿔 끼운다."""
 
     def open_design(self, parent) -> str | None:
-        path, _ = QFileDialog.getOpenFileName(parent, "디자인 열기", "", DESIGN_FILTER)
+        path, _ = QFileDialog.getOpenFileName(parent, "디자인 열기", "", OPEN_FILTER)
         return path or None
 
     def save_design(self, parent, suggested: str) -> str | None:
@@ -536,6 +538,8 @@ class DesignPage(BasePage):
         path = path or self.dialogs.open_design(self)
         if not path:
             return False
+        if path.lower().endswith(".dnc"):
+            return self._open_danul(path)
         try:
             self.controller.open(path)
         except (storage.StorageError, EditorError, OSError, ValueError) as exc:
@@ -543,6 +547,25 @@ class DesignPage(BasePage):
             return False
         self._remember(path)
         self._begin()
+        return True
+
+    def _open_danul(self, path: str) -> bool:
+        """다눌 디자인(.dnc)을 하나스튜디오 디자인으로 바꿔 연다. 저장하면 .hsd로 저장된다."""
+        from design.danul import DanulError, load_dnc
+
+        try:
+            result = load_dnc(path)
+        except (DanulError, storage.StorageError, OSError) as exc:
+            self.notify(f"다눌 디자인을 열지 못했습니다. {exc}", "error")
+            return False
+        self.controller.set_document(result.document, None, owns_workdir=True)
+        self._begin()
+        message = "다눌 디자인을 열었습니다. 저장하면 하나스튜디오 디자인(.hsd)으로 저장됩니다."
+        if result.mdb_path:
+            message += f" 다눌 명단은 명단 화면의 '가져오기'에서 열 수 있습니다: {result.mdb_path}"
+        if result.notes:
+            message += " 알림: " + " / ".join(dict.fromkeys(result.notes))
+        self.notify(message, "warn" if result.notes else "ok")
         return True
 
     def start_from_image(self, path: str | None = None) -> bool:

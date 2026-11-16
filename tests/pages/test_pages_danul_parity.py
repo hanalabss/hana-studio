@@ -159,3 +159,21 @@ def test_encoding_link_explains_when_no_list(editor):
     editor.notify = lambda text, *a, **k: messages.append(text)
     editor.insert_panel.encoding_link.click()
     assert messages and "명단" in messages[0]
+
+
+# ---------------------------------------------------------------- 다눌 디자인(.dnc) 열기
+
+def test_open_danul_design_from_open_dialog(page, tmp_path):
+    import shutil
+    from pathlib import Path
+
+    sample = Path(__file__).resolve().parents[1] / "design" / "data" / "danul_sample.dnc"
+    path = tmp_path / "사원증.dnc"
+    shutil.copy(sample, path)
+    messages = []
+    page.notify = lambda text, kind="info": messages.append((text, kind))
+    assert page.open_design(str(path))
+    document = page.controller.document
+    assert document.name == "사원증" and len(document.side("front").items) == 6
+    assert page.controller.path is None, "다눌 파일 위에 덮어쓰지 않고 새 .hsd로 저장하게 한다"
+    assert "다눌 디자인을 열었습니다" in messages[-1][0] and "사원.mdb" in messages[-1][0]

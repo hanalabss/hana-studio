@@ -1,0 +1,79 @@
+<?xml version="1.0"?>
+<Card xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <FileWriteDateTime>0001-01-01T00:00:00</FileWriteDateTime>
+  <ImageDataSet />
+  <PrinterName>RTAI LUCA-40KM</PrinterName>
+  <ReaderName />
+  <MDBFilePath>C:\DaNul\사원.mdb</MDBFilePath>
+  <LandScape>false</LandScape>
+  <IsDuplex>false</IsDuplex>
+  <ImageFileExtension>JPG</ImageFileExtension>
+  <SaveFilePath />
+  <Scale>1</Scale>
+  <Sides>
+    <anyType xsi:type="Side">
+      <Name>FrontSide</Name>
+      <Controls>
+        <anyType xsi:type="ControlImage">
+          <ID>a1</ID><Name>로고</Name>
+          <Rectangle><X>10</X><Y>10</Y><Width>100</Width><Height>40</Height></Rectangle>
+          <Text>logo.png</Text><FieldName /><Lock>true</Lock><Dirty>false</Dirty><Filled>false</Filled>
+          <totalRotation>0</totalRotation><ZOrder>0</ZOrder><BorderColor>Black</BorderColor><FillColor>White</FillColor><PenWidth>1</PenWidth>
+          <ImagePath></ImagePath><Margin><X>0</X><Y>0</Y></Margin><Radius>10</Radius><InnerZoom>1</InnerZoom><Fullsize>true</Fullsize>
+        </anyType>
+        <anyType xsi:type="ControlImage">
+          <ID>a2</ID><Name>사진</Name>
+          <Rectangle><X>57</X><Y>80</Y><Width>100</Width><Height>130</Height></Rectangle>
+          <Text /><FieldName>사진</FieldName><Lock>false</Lock><Filled>false</Filled><totalRotation>-90</totalRotation>
+          <BorderColor>Black</BorderColor><FillColor>White</FillColor><PenWidth>1</PenWidth>
+          <ImagePath>C:\photos</ImagePath><Radius>1</Radius><InnerZoom>1</InnerZoom><Fullsize>false</Fullsize>
+        </anyType>
+        <anyType xsi:type="ControlText">
+          <ID>t1</ID><Name>이름</Name>
+          <Rectangle><X>20</X><Y>230</Y><Width>174</Width><Height>30</Height></Rectangle>
+          <Text>홍길동</Text><FieldName>이름</FieldName><Lock>false</Lock><Filled>true</Filled><totalRotation>0</totalRotation>
+          <BorderColor>Black</BorderColor><FillColor>#ffe0e0</FillColor><PenWidth>1</PenWidth>
+          <Font>맑은 고딕, 14pt, style=Bold, Strikeout</Font><FontColor>#1a2b3c</FontColor><FontAlignment>Center</FontAlignment><IsFontSpace>false</IsFontSpace>
+        </anyType>
+        <anyType xsi:type="ControlRectangle">
+          <Rectangle><X>0</X><Y>300</Y><Width>214</Width><Height>40</Height></Rectangle>
+          <Text /><FieldName /><Filled>true</Filled><totalRotation>0</totalRotation>
+          <BorderColor>Transparent</BorderColor><FillColor>Navy</FillColor><PenWidth>0</PenWidth>
+          <IsConnerRound>true</IsConnerRound><Radius>5</Radius>
+        </anyType>
+        <anyType xsi:type="ControlLine">
+          <Rectangle><X>20</X><Y>270</Y><Width>174</Width><Height>4</Height></Rectangle>
+          <Text /><FieldName /><BorderColor>Red</BorderColor><PenWidth>2</PenWidth><Direction>Horizontal</Direction>
+        </anyType>
+        <anyType xsi:type="ControlBarCodeImage">
+          <Rectangle><X>20</X><Y>275</Y><Width>174</Width><Height>22</Height></Rectangle>
+          <Text>A001</Text><FieldName>사번</FieldName><IsVisbleLabel>true</IsVisbleLabel><BarCodeType>CODE93</BarCodeType>
+        </anyType>
+        <anyType xsi:type="ControlMagnetic">
+          <Rectangle><X>0</X><Y>0</Y><Width>50</Width><Height>10</Height></Rectangle>
+          <Text /><FieldName>사번</FieldName><TrackNumber>2</TrackNumber>
+        </anyType>
+        <anyType xsi:type="ControlRFIC">
+          <Rectangle><X>0</X><Y>0</Y><Width>50</Width><Height>10</Height></Rectangle>
+          <Text /><FieldName>사번</FieldName><BlockNumber>08</BlockNumber><KeyNumber>00</KeyNumber>
+        </anyType>
+      </Controls>
+      <IsVisible>true</IsVisible>
+    </anyType>
+    <anyType xsi:type="Side">
+      <Name>BackSide</Name>
+      <Controls>
+        <anyType xsi:type="ControlQRCode">
+          <Rectangle><X>70</X><Y>100</Y><Width>80</Width><Height>60</Height></Rectangle>
+          <Text>https://example.com</Text><FieldName />
+        </anyType>
+      </Controls>
+      <IsVisible>true</IsVisible>
+    </anyType>
+  </Sides>
+  <PrinterPaperSize><Width>214</Width><Height>340</Height></PrinterPaperSize>
+  <CardRectangle><X>75.6</X><Y>75.6</Y><Width>214</Width><Height>340</Height></CardRectangle>
+  <Location><X>75.6</X><Y>75.6</Y></Location>
+  <Size><Width>214</Width><Height>340</Height></Size>
+  <IsDashPoint>false</IsDashPoint>
+</Card>
