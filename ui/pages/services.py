@@ -5,6 +5,7 @@ import logging
 from typing import Any
 
 from printer.history import JobHistory
+from services.auto_print import FolderAutoPrinter
 from services.print_service import PrintService
 from services.printers import PrinterService
 
@@ -27,6 +28,8 @@ class AppServices:
             printing = PrintService(queue, history=self.history)
         self.printing = printing
         self.printers = printers if printers is not None else PrinterService(queue)
+        self.auto_print = FolderAutoPrinter(self.printing, self.printers.current, options=_print_options,
+                                            work_dir=_work_dir())
         self._closed = False
 
     def start(self, retention_days: int | None = None) -> None:
@@ -44,5 +47,20 @@ class AppServices:
         if self._closed:
             return
         self._closed = True
+        self.auto_print.stop()
         self.printing.shutdown()
         self.printers.shutdown()
+
+
+def _print_options():
+    from ui.pages.settings.prefs import Prefs
+
+    return Prefs.instance().print_options()
+
+
+def _work_dir() -> str:
+    import os
+
+    from services.printers import app_data_dir
+
+    return os.path.join(app_data_dir(), "auto_print")

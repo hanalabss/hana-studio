@@ -26,6 +26,8 @@ KEY_COLOR = {"brightness": "print/brightness", "contrast": "print/contrast", "sa
 KEY_CARD_PRESET = "design/default_card"
 KEY_RETENTION = "history/retention_days"
 KEY_MIGRATED = "print/legacy_migrated"
+KEY_AUTO_FOLDER = "auto_print/folder"
+KEY_AUTO_DESIGN = "auto_print/design"
 
 OFFSET_LIMIT_MM = 10.0
 COPIES_MAX = 99
@@ -242,3 +244,16 @@ class Prefs(QObject):
 
     def set_retention_days(self, days: int) -> None:
         self._set(KEY_RETENTION, int(days))
+
+    # ---- 폴더 자동 인쇄 (켜고 끄기는 저장하지 않는다: 다시 켜면 꺼진 상태) ----
+    def auto_print_folder(self) -> str:
+        return str(self._settings.value(KEY_AUTO_FOLDER, "") or "")
+
+    def set_auto_print_folder(self, folder: str) -> None:
+        self._set(KEY_AUTO_FOLDER, str(folder or ""))
+
+    def auto_print_design(self) -> str:
+        return str(self._settings.value(KEY_AUTO_DESIGN, "") or "")
+
+    def set_auto_print_design(self, path: str) -> None:
+        self._set(KEY_AUTO_DESIGN, str(path or ""))

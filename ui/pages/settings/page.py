@@ -7,7 +7,7 @@ import sys
 
 from PySide6.QtCore import QUrl, Qt
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QFileDialog, QFrame, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
 
 from design import presets
 from printer.history import default_history_path
@@ -16,8 +16,8 @@ from ui.pages.printing.style import apply_page_style
 from ui.shell import BasePage
 from ui.theme import SPACE, ThemeManager
 from ui.widgets import (
-    ComboBox, FormRow, MmField, Panel, QuietButton, SecondaryButton, SegmentedControl, StepperField, inform,
-    label,
+    ComboBox, FormRow, MmField, Panel, PrimaryButton, QuietButton, SecondaryButton, SegmentedControl, StepperField,
+    inform, label,
 )
 
 from .prefs import COPIES_MAX, OFFSET_LIMIT_MM, RETENTION_CHOICES, Prefs
@@ -95,6 +95,10 @@ class SettingsPage(BasePage):
         column.addWidget(self._build_screen())
         column.addWidget(self._build_card())
         column.addWidget(self._build_print())
+        auto_print = getattr(services, "auto_print", None)
+        self.auto_panel = self._build_auto_print(auto_print) if auto_print is not None else None
+        if self.auto_panel is not None:
+            column.addWidget(self.auto_panel)
         column.addWidget(self._build_history())
         column.addWidget(self._build_files())
         if self.is_admin:
@@ -225,6 +229,96 @@ class SettingsPage(BasePage):
         self.migrated_note = label("", "hint", wrap=True)
         panel.body.addWidget(self.migrated_note)
         return panel
+
+    # ---- 폴더 자동 인쇄 ----
+    def _build_auto_print(self, auto) -> Panel:
+        self.auto = auto
+        panel = Panel("폴더 자동 인쇄", "정해 둔 폴더에 명단 파일(CSV·Excel)을 넣으면 고른 디자인으로 바로 인쇄합니다.")
+        panel.body.setSpacing(SPACE["md"])
+        self.auto_folder_label = label("", "muted", wrap=True)
+        self.auto_folder_button = SecondaryButton("폴더 고르기", "sm", icon="folder")
+        self.auto_folder_button.clicked.connect(self.choose_auto_folder)
+        self.auto_design_label = label("", "muted", wrap=True)
+        self.auto_design_button = SecondaryButton("디자인 고르기", "sm", icon="design")
+        self.auto_design_button.clicked.connect(self.choose_auto_design)
+        for title, path_label, button in (("감시할 폴더", self.auto_folder_label, self.auto_folder_button),
+                                          ("인쇄할 디자인", self.auto_design_label, self.auto_design_button)):
+            row = QHBoxLayout()
+            row.setSpacing(SPACE["md"])
+            texts = QVBoxLayout()
+            texts.setSpacing(2)
+            texts.addWidget(label(title, "strong"))
+            texts.addWidget(path_label)
+            row.addLayout(texts, 1)
+            row.addWidget(button, 0, Qt.AlignTop)
+            panel.body.addLayout(row)
+        control = QHBoxLayout()
+        control.setSpacing(SPACE["md"])
+        self.auto_toggle = PrimaryButton("자동 인쇄 켜기", "sm", icon="print")
+        self.auto_toggle.clicked.connect(self.toggle_auto_print)
+        control.addWidget(self.auto_toggle)
+        self.auto_status = label(auto.status, "secondary", wrap=True)
+        control.addWidget(self.auto_status, 1)
+        panel.body.addLayout(control)
+        panel.body.addWidget(label(
+            "파일 첫 줄에는 디자인의 칸 이름(이름, 사번 …)을 적습니다. 사진은 같은 폴더에서 찾습니다. "
+            "켜기 전에 폴더에 있던 파일은 인쇄하지 않고, 끝난 파일은 '인쇄함', 문제가 생긴 파일은 '실패' 폴더로 옮깁니다. "
+            "프로그램을 다시 켜면 자동 인쇄는 꺼진 채로 시작합니다.", "hint", wrap=True))
+        self.auto_results = QVBoxLayout()
+        self.auto_results.setSpacing(2)
+        panel.body.addLayout(self.auto_results)
+        auto.statusChanged.connect(self.auto_status.setText)
+        auto.runningChanged.connect(lambda _on: self._sync_auto())
+        auto.fileFinished.connect(lambda _event: self._sync_auto())
+        self._sync_auto()
+        return panel
+
+    def _sync_auto(self) -> None:
+        auto = self.auto
+        folder, design = self.prefs.auto_print_folder(), self.prefs.auto_print_design()
+        self.auto_folder_label.setText(folder or "아직 고르지 않았습니다.")
+        self.auto_design_label.setText(design or "아직 고르지 않았습니다.")
+        self.auto_toggle.setText("자동 인쇄 끄기" if auto.running else "자동 인쇄 켜기")
+        self.auto_toggle.setEnabled(auto.running or bool(folder and design))
+        self.auto_folder_button.setEnabled(not auto.running)
+        self.auto_design_button.setEnabled(not auto.running)
+        self.auto_status.setText(auto.status)
+        while self.auto_results.count():
+            item = self.auto_results.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+        for event in auto.history[:5]:
+            mark = "✓" if event.ok else "✕"
+            self.auto_results.addWidget(label(f"{mark} {event.name} — {event.message}",
+                                              "secondary" if event.ok else "hint", wrap=True))
+
+    def choose_auto_folder(self, path: str | None = None) -> None:
+        if path is None:
+            path = QFileDialog.getExistingDirectory(self, "자동 인쇄할 폴더 고르기", self.prefs.auto_print_folder())
+        if path:
+            self.prefs.set_auto_print_folder(path)
+            self._sync_auto()
+
+    def choose_auto_design(self, path: str | None = None) -> None:
+        if path is None:
+            path, _ = QFileDialog.getOpenFileName(self, "자동 인쇄할 디자인 고르기", self.prefs.auto_print_design(),
+                                                  "하나스튜디오 디자인 (*.hsd)")
+        if path:
+            self.prefs.set_auto_print_design(path)
+            self._sync_auto()
+
+    def toggle_auto_print(self) -> bool:
+        from services.auto_print import AutoPrintError
+
+        if self.auto.running:
+            self.auto.stop()
+            return False
+        try:
+            self.auto.start(self.prefs.auto_print_folder(), self.prefs.auto_print_design())
+        except AutoPrintError as exc:
+            inform(self, "자동 인쇄를 켤 수 없습니다", str(exc))
+            return False
+        return True
 
     def _build_history(self) -> Panel:
         panel = Panel("인쇄 기록")

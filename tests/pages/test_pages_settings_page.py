@@ -196,3 +196,48 @@ def test_license_admin_entry_only_for_admin(qapp, tmp_path, monkeypatch):
     monkeypatch.setattr(admin_panel, "AdminPanel", FakePanel)
     admin.license_button.click()
     assert opened and opened[-1] == "exec"
+
+
+def test_folder_auto_print_panel(env, services, tmp_path, monkeypatch):
+    from PIL import Image
+
+    from design import presets, storage
+    from design.binding import ColumnSource
+    from design.model import TextItem
+    from print_helpers import wait_until
+    from ui.pages.settings import page as page_module
+
+    services.printers.refresh()
+    wait_until(env, lambda: services.printers.devices())
+    services.printers.select(services.printers.devices()[0])
+    folder = tmp_path / "자동"
+    folder.mkdir()
+    document = presets.new_document(presets.CR80)
+    document.side("front").add_item(TextItem(x=5, y=5, w=40, h=10, source=ColumnSource(column="이름")))
+    design = storage.save(document, tmp_path / "카드.hsd")
+
+    page = SettingsPage(services=services)
+    assert page.auto_panel is not None and not page.auto_toggle.isEnabled()      # 폴더·디자인을 고르기 전
+    page.choose_auto_folder(str(folder))
+    page.choose_auto_design(design)
+    assert page.auto_toggle.isEnabled() and str(folder) in page.auto_folder_label.text()
+    assert reopened().auto_print_folder() == str(folder)
+
+    assert page.toggle_auto_print()
+    assert services.auto_print.running and page.auto_toggle.text() == "자동 인쇄 끄기"
+    assert not page.auto_folder_button.isEnabled()
+    (folder / "명단.csv").write_text("이름\n김하나\n", encoding="utf-8-sig")
+    services.auto_print.poll()
+    services.auto_print.poll()
+    wait_until(env, lambda: services.auto_print.history)
+    assert services.auto_print.history[0].ok
+    wait_until(env, lambda: page.auto_results.count() == 1)
+    assert "명단.csv" in page.auto_results.itemAt(0).widget().text()
+
+    page.toggle_auto_print()
+    assert not services.auto_print.running and page.auto_toggle.text() == "자동 인쇄 켜기"
+
+    shown = []
+    monkeypatch.setattr(page_module, "inform", lambda parent, title, message: shown.append(message))
+    page.choose_auto_folder(str(tmp_path / "없는 폴더"))
+    assert not page.toggle_auto_print() and "폴더" in shown[0]
