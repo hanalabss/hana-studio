@@ -95,7 +95,7 @@ class InsertPanel(QWidget):
             ("image", "사진", "image", "로고나 사진 같은 그림을 넣습니다"),
             ("shape", "도형", "shape", "사각형이나 원을 넣습니다"),
             ("line", "선", "line", "구분선을 넣습니다"),
-            ("barcode", "바코드", "barcode", "막대 모양 바코드를 넣습니다"),
+            ("barcode", "바코드", "barcode", "막대 모양 바코드를 넣습니다. 종류(Code 128, Code 39·다눌 바코드_폰트, Code 93, EAN-13 등)는 넣은 뒤 고릅니다"),
             ("qr", "QR", "qr", "QR 코드를 넣습니다"),
         )
         for index, (key, text, icon_name, tooltip) in enumerate(specs):
