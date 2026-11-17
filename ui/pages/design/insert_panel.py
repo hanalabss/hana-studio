@@ -132,6 +132,7 @@ class InsertPanel(QWidget):
         layout.addSpacing(SPACE["xl"] - 4)
         layout.addWidget(label("명단 항목", "strong"))
         layout.addSpacing(SPACE["xs"])
+        self._compact = False
         self.fields_hint = label("", "hint", wrap=True)
         layout.addWidget(self.fields_hint)
         layout.addSpacing(SPACE["sm"])
@@ -157,7 +158,12 @@ class InsertPanel(QWidget):
 
     def set_compact(self, compact: bool) -> None:
         """세로 자리가 모자랄 때 설명 글을 접는다(칩의 풍선 도움말에는 그대로 있다)."""
-        self.fields_hint.setVisible(not compact)
+        self._compact = compact
+        self._sync_fields_hint()
+
+    def _sync_fields_hint(self) -> None:
+        """명단이 없거나 항목이 없을 때만 한 줄."""
+        self.fields_hint.setVisible(bool(self.fields_hint.text()) and not self._compact)
 
     def set_columns(self, columns: list[tuple[str, str]] | None) -> None:
         """columns: [(열 이름, kind)] 또는 None(열린 명단 없음)."""
@@ -165,7 +171,7 @@ class InsertPanel(QWidget):
         self.chips = []
         self._has_list = columns is not None
         if columns is None:
-            self.fields_hint.setText("명단을 넣으면 이름, 부서 같은 항목이 여기에 나타납니다. 아래는 예시입니다.")
+            self.fields_hint.setText("명단을 넣으면 여기에 항목이 나타납니다. 아래는 예시입니다.")
             for name in EXAMPLE_FIELDS:
                 chip = ListFieldChip(name, "image" if name == "사진" else "text")
                 chip.setEnabled(False)
@@ -176,12 +182,13 @@ class InsertPanel(QWidget):
             self.fields_hint.setText("열린 명단에 항목이 없습니다. 명단 화면에서 항목을 추가하세요.")
             self._link_row.setVisible(True)
         else:
-            self.fields_hint.setText("눌러서 넣거나 카드 위로 끌어다 놓으세요. 사람마다 내용이 바뀝니다.")
+            self.fields_hint.setText("")
             for name, kind in columns:
                 chip = ListFieldChip(name, kind)
                 chip.clicked.connect(lambda column, k=kind: self.fieldRequested.emit(column, k))
                 self._add_chip(chip)
             self._link_row.setVisible(False)
+        self._sync_fields_hint()
         self._chip_host.updateGeometry()
 
     def _add_chip(self, chip: ListFieldChip) -> None:

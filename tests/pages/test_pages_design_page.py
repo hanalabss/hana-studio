@@ -379,7 +379,7 @@ def test_page_works_at_minimum_shell_size(shell, qapp):
 
     shell.resize(1280, 800)
     pump(qapp)
-    assert design.layers_panel.hint.isVisible() and design.insert_panel.fields_hint.isVisible()
+    assert not design.layers_panel.hint.isVisible()                                   # 놓인 것이 있으면 설명이 없다
     assert not bar.is_compact() and bar.zoom_in_button.isVisible() and design.save_button.isVisible()
     assert bar.zoom_in_button.geometry().right() <= bar.width()
 

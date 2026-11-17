@@ -1,7 +1,11 @@
-"""바코드와 QR을 골랐을 때: 담을 내용, 종류, 글자 표시, 복원력. 잘못된 값은 그 자리에서 알려 준다."""
+"""바코드와 QR을 골랐을 때: 담을 내용, 종류, 글자 표시, 복원력.
+
+설명은 늘 띄우지 않는다. 종류별 설명은 목록에 마우스를 올릴 때(툴팁)만 보이고,
+화면에는 지금 값에 해당하는 한 줄(못 만드는 이유 > 주의할 점)만 나온다."""
 
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QCheckBox, QLineEdit, QVBoxLayout, QWidget
 
 from design import barcodes, renderer
@@ -16,13 +20,38 @@ SYMBOLOGY_OPTIONS = (
     ("code128", "Code 128 (가장 많이 씀)", "영문, 숫자, 기호를 모두 담습니다. 사번이나 회원번호에 알맞습니다."),
     ("code39", "Code 39 (다눌 '바코드_폰트')", "숫자와 영문 대문자만 담습니다. 오래된 리더기와 잘 맞습니다. "
      "다눌의 '바코드_폰트'가 찍던 것과 같은 바코드입니다."),
-    ("code39ext", "Code 39 Extended", "Code 39에 소문자와 기호까지 담습니다. 리더기에서 Full ASCII를 켜야 읽힙니다."),
+    ("code39ext", "Code 39 Extended", "Code 39에 소문자와 기호까지 담습니다."),
     ("code93", "Code 93", "Code 39보다 짧게 찍히고 영문·숫자·기호를 모두 담습니다."),
     ("code128a", "Code 128-A", "영문 대문자, 숫자, 기호만 담습니다. 다른 프로그램과 똑같이 찍어야 할 때 고릅니다."),
     ("code128b", "Code 128-B", "영문 대소문자, 숫자, 기호를 담습니다. 다른 프로그램과 똑같이 찍어야 할 때 고릅니다."),
     ("code128c", "Code 128-C", "숫자만, 짝수 자리로 담습니다. 긴 숫자를 가장 짧게 찍습니다."),
     ("ean13", "EAN-13 (상품 바코드)", "숫자 12~13자리만 담습니다. 가게에서 쓰는 상품 바코드입니다."),
 )
+CODE_2D_OPTIONS = (
+    ("qr", "QR 코드", "휴대폰 카메라로 바로 읽힙니다. 주소나 긴 글을 담을 때 알맞습니다."),
+    ("datamatrix", "DataMatrix", "작은 칸에 사번 같은 짧은 내용을 담습니다. 출입·근태 리더기에서 많이 씁니다."),
+)
+KOREAN_NOTICE = "한글은 스캐너에 따라 읽히지 않을 수 있습니다."
+FULL_ASCII_NOTICE = "소문자·기호는 스캐너에서 Full ASCII를 켜야 그대로 읽힙니다."
+_CODE39_PLAIN = set("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-. $/+%")
+
+
+def _fill(combo, options) -> None:
+    """목록에는 이름만, 설명은 마우스를 올렸을 때 툴팁으로."""
+    for key, text, hint in options:
+        combo.addItem(text, key)
+        combo.setItemData(combo.count() - 1, hint, Qt.ToolTipRole)
+
+
+def notice_for(kind: str, symbology: str, data: str) -> str:
+    """만들 수는 있지만 읽을 때 주의할 점. 없으면 빈 글자."""
+    if kind == "qr" and any(ord(ch) > 127 for ch in data):
+        return KOREAN_NOTICE
+    if kind == "barcode" and symbology == "code39ext" and any(ch not in _CODE39_PLAIN for ch in data):
+        return FULL_ASCII_NOTICE
+    return ""
+
+
 QR_LEVEL_OPTIONS = (
     ("L", "가볍게", "가장 큼직하게 찍힙니다. 카드가 긁히면 읽기 어려울 수 있습니다."),
     ("M", "보통", "대부분의 카드에 알맞습니다."),
@@ -53,22 +82,24 @@ class CodeSection(Section):
         self.column.addWidget(group("담을 내용", self.source_control, box))
 
         self.symbology_combo = ComboBox()
-        for key, text, _hint in SYMBOLOGY_OPTIONS:
-            self.symbology_combo.addItem(text, key)
+        _fill(self.symbology_combo, SYMBOLOGY_OPTIONS)
         self.symbology_combo.activated.connect(self._on_symbology)
-        self.symbology_hint = label("", "hint", wrap=True)
-        self.symbology_box = group("바코드 종류", self.symbology_combo, self.symbology_hint)
+        self.symbology_box = group("바코드 종류", self.symbology_combo)
         self.column.addWidget(self.symbology_box)
         self.show_text_check = QCheckBox("바코드 아래에 글자도 찍기")
         self.show_text_check.toggled.connect(lambda on: self.edit({"show_text": on}))
         self.column.addWidget(self.show_text_check)
 
+        self.code2d_combo = ComboBox()
+        _fill(self.code2d_combo, CODE_2D_OPTIONS)
+        self.code2d_combo.activated.connect(self._on_code2d)
+        self.code2d_box = group("코드 종류", self.code2d_combo)
+        self.column.addWidget(self.code2d_box)
+
         self.level_combo = ComboBox()
-        for key, text, _hint in QR_LEVEL_OPTIONS:
-            self.level_combo.addItem(text, key)
+        _fill(self.level_combo, QR_LEVEL_OPTIONS)
         self.level_combo.activated.connect(self._on_level)
-        self.level_hint = label("", "hint", wrap=True)
-        self.level_box = group("긁힘에 견디는 정도", self.level_combo, self.level_hint)
+        self.level_box = group("긁힘에 견디는 정도", self.level_combo)
         self.column.addWidget(self.level_box)
 
         self.controller.preview_changed.connect(self._refresh_validation)
@@ -87,40 +118,55 @@ class CodeSection(Section):
             self.column_combo.set_columns(names, column, self.context.has_list())
             self.data_label.setText("예시 값 (명단을 보지 않을 때 보여 줄 값)")
         else:
-            self.data_label.setText("바코드에 담을 글자" if is_barcode else "QR에 담을 글자나 주소")
+            self.data_label.setText("바코드에 담을 글자" if is_barcode else "코드에 담을 글자나 주소")
         self.data_edit.setAccessibleName(self.data_label.text())
         if not self.data_edit.hasFocus():
             set_text_if_changed(self.data_edit, item.data)
         self.symbology_box.setVisible(is_barcode)
         self.show_text_check.setVisible(is_barcode)
-        self.level_box.setVisible(not is_barcode)
+        symbology_2d = getattr(item, "symbology", "qr") if not is_barcode else ""
+        self.code2d_box.setVisible(not is_barcode)
+        self.level_box.setVisible(not is_barcode and symbology_2d == "qr")
+        if not is_barcode:
+            set_combo_data(self.code2d_combo, symbology_2d)
+            self._tip(self.code2d_combo, CODE_2D_OPTIONS, symbology_2d)
         if is_barcode:
             set_combo_data(self.symbology_combo, item.symbology)
-            self.symbology_hint.setText(self._hint(SYMBOLOGY_OPTIONS, item.symbology))
+            self._tip(self.symbology_combo, SYMBOLOGY_OPTIONS, item.symbology)
             self.show_text_check.setChecked(bool(item.show_text))
         else:
             set_combo_data(self.level_combo, str(item.error_correction).upper())
-            self.level_hint.setText(self._hint(QR_LEVEL_OPTIONS, str(item.error_correction).upper()))
+            self._tip(self.level_combo, QR_LEVEL_OPTIONS, str(item.error_correction).upper())
         self._refresh_validation()
 
     @staticmethod
     def _hint(options, key: str) -> str:
         return next((hint for value, _text, hint in options if value == key), "")
 
+    def _tip(self, combo, options, key: str) -> None:
+        combo.setToolTip(self._hint(options, key))
+
+    def _current_data(self) -> str | None:
+        """지금 코드에 담길 값. 명단을 보지 않을 때의 자리 표시(«이름»)면 None."""
+        value = renderer.value_for(self.controller.document, self.item, self.controller.preview_record, None)
+        data = "" if value is None else str(value)
+        if data.startswith("«") and self.controller.preview_record is None:
+            return None
+        return data
+
     def validation_message(self) -> str:
         """지금 값으로 코드를 만들 수 없으면 그 이유. 문제없으면 빈 글자."""
         item = self.item
         if item is None:
             return ""
-        value = renderer.value_for(self.controller.document, item, self.controller.preview_record, None)
-        data = "" if value is None else str(value)
-        if data.startswith("«") and self.controller.preview_record is None:
+        data = self._current_data()
+        if data is None:
             return ""
         try:
             if item.kind == "barcode":
                 barcodes.normalize(item.symbology, data)
             else:
-                barcodes.qr_matrix(data, item.error_correction)
+                barcodes.matrix_2d(data, item.symbology, item.error_correction)
         except barcodes.BarcodeError as exc:
             return str(exc)
         return ""
@@ -129,9 +175,14 @@ class CodeSection(Section):
         if not self.items or self.item.kind not in ("barcode", "qr"):
             return
         message = self.validation_message()
-        self.validation.setText(message)
-        self.validation.setVisible(bool(message))
-        set_prop(self.validation, "tone", "error" if message else "")
+        notice = ""
+        if not message:
+            data = self._current_data()
+            if data:
+                notice = notice_for(self.item.kind, getattr(self.item, "symbology", ""), data)
+        self.validation.setText(message or notice)
+        self.validation.setVisible(bool(message or notice))
+        set_prop(self.validation, "tone", "error" if message else ("warn" if notice else ""))
         set_prop(self.data_edit, "invalid", "true" if message else "false")
 
     # ---- 고치기 ----
@@ -155,10 +206,16 @@ class CodeSection(Section):
 
     def _on_symbology(self, index: int) -> None:
         key = self.symbology_combo.itemData(index)
-        self.symbology_hint.setText(self._hint(SYMBOLOGY_OPTIONS, key))
+        self._tip(self.symbology_combo, SYMBOLOGY_OPTIONS, key)
+        self.edit({"symbology": key})
+
+    def _on_code2d(self, index: int) -> None:
+        key = self.code2d_combo.itemData(index)
+        self._tip(self.code2d_combo, CODE_2D_OPTIONS, key)
+        self.level_box.setVisible(key == "qr")
         self.edit({"symbology": key})
 
     def _on_level(self, index: int) -> None:
         key = self.level_combo.itemData(index)
-        self.level_hint.setText(self._hint(QR_LEVEL_OPTIONS, key))
+        self._tip(self.level_combo, QR_LEVEL_OPTIONS, key)
         self.edit({"error_correction": key})

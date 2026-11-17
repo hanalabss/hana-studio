@@ -144,10 +144,8 @@ class StartPanel(QWidget):
         row.setContentsMargins(SPACE["lg"], SPACE["md"], SPACE["lg"], SPACE["md"])
         row.setSpacing(SPACE["xl"])
         self.size_control = SegmentedControl([(key, text) for key, text, _ in SIZE_OPTIONS], current="cr80")
-        self.size_hint = label("", "hint")
-        size_box = group("카드 크기", self.size_control)
-        size_box.layout().addWidget(self.size_hint)
-        row.addWidget(size_box)
+        self.size_control.set_tips({key: hint for key, _, hint in SIZE_OPTIONS})
+        row.addWidget(group("카드 크기", self.size_control), 0, Qt.AlignTop)
         self.orientation_control = SegmentedControl([("landscape", "가로"), ("portrait", "세로")])
         row.addWidget(group("방향", self.orientation_control), 0, Qt.AlignTop)
         self.sides_control = SegmentedControl([("single", "한 면"), ("dual", "양면")])
@@ -274,7 +272,8 @@ class StartPanel(QWidget):
 
     # ---- 그림 ----
     def _sync_hint(self) -> None:
-        self.size_hint.setText(next(hint for key, _, hint in SIZE_OPTIONS if key == self.preset_key()))
+        """설명은 칸의 툴팁에 있다. 고른 크기의 설명은 칸 묶음 툴팁으로도 보인다."""
+        self.size_control.setToolTip(next(hint for key, _, hint in SIZE_OPTIONS if key == self.preset_key()))
 
     def _on_options_changed(self, *_args) -> None:
         self._sync_hint()

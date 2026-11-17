@@ -13,7 +13,7 @@ from data.store import DataStore, PhotoAdjustment
 from design import renderer
 from design.binding import BindingContext, ColumnSource
 from design.model import Crop
-from services.render_job import crop_from_adjustment
+from services.render_job import PHOTO_ZOOM_MAX, PHOTO_ZOOM_MIN, clamp_adjustment, crop_from_adjustment
 from ui.theme import SPACE
 from ui.widgets import (
     Divider,
@@ -28,7 +28,7 @@ from ui.widgets import (
 from .inputs import Rethemed
 
 SIDE_NAMES = {"front": "앞면", "back": "뒷면"}
-ZOOM_MIN, ZOOM_MAX = 1.0, 3.0
+ZOOM_MIN, ZOOM_MAX = PHOTO_ZOOM_MIN, PHOTO_ZOOM_MAX
 _EPS = 1e-6
 
 
@@ -42,22 +42,6 @@ def _drawn_size(image_size, frame_size, fit: str, zoom: float) -> tuple[float, f
 
 # 명단 미리 보기와 인쇄가 같은 계산을 쓴다(services.render_job 하나뿐).
 crop_for_adjustment = crop_from_adjustment
-
-
-def clamp_adjustment(adjustment: PhotoAdjustment, image_size, frame_size, fit: str = "fill") -> PhotoAdjustment:
-    """빈 곳이 생기지 않는 범위로 줄인다."""
-    zoom = max(ZOOM_MIN, min(ZOOM_MAX, float(adjustment.zoom or 1.0)))
-    draw_w, draw_h = _drawn_size(image_size, frame_size, fit, zoom)
-
-    def limit(offset: float, drawn: float, frame: float) -> float:
-        if frame <= 0:
-            return 0.0
-        room = abs(drawn - frame) / 2.0 / frame
-        return max(-room, min(room, float(offset)))
-
-    return PhotoAdjustment(
-        zoom, limit(adjustment.offset_x, draw_w, float(frame_size[0])),
-        limit(adjustment.offset_y, draw_h, float(frame_size[1])))
 
 
 def photo_items(document, side_key: str, store: DataStore | None) -> list:
@@ -291,6 +275,7 @@ class PreviewPanel(Rethemed, QFrame):
     issueActionRequested = Signal(object)
     adjustmentChanged = Signal(int)         # 사람 id
     applyToAllRequested = Signal(str, object)   # 사진 항목 이름, PhotoAdjustment
+    faceFitAllRequested = Signal(str, object, str)  # 사진 항목 이름, 칸 크기(w, h mm), 맞춤 방식
 
     WIDTH = 340
 
@@ -379,7 +364,6 @@ class PreviewPanel(Rethemed, QFrame):
         self.zoom_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         zoom_row.addWidget(self.zoom_value)
         adjust.addLayout(zoom_row)
-        adjust.addWidget(label("카드에서 점선 안의 사진을 끌면 위치가 바뀝니다.", "hint", wrap=True))
         buttons = QHBoxLayout()
         buttons.setSpacing(SPACE["sm"])
         self.reset_button = QuietButton("처음대로", "sm")
@@ -390,6 +374,21 @@ class PreviewPanel(Rethemed, QFrame):
         buttons.addStretch(1)
         buttons.addWidget(self.apply_all_button)
         adjust.addLayout(buttons)
+        face_row = QHBoxLayout()
+        face_row.setSpacing(SPACE["sm"])
+        self.face_button = QuietButton("얼굴에 맞추기", "sm", icon="sparkle", accent=True)
+        self.face_button.setToolTip("사진에서 얼굴을 찾아 사진 칸 가운데에 알맞은 크기로 놓습니다.")
+        self.face_button.clicked.connect(self.fit_face)
+        self.face_all_button = QuietButton("모든 사람 얼굴에 맞추기", "sm", accent=True)
+        self.face_all_button.setToolTip("명단의 모든 사람 사진에서 얼굴을 찾아 사람마다 맞춥니다.")
+        self.face_all_button.clicked.connect(self._fit_face_all)
+        face_row.addWidget(self.face_button)
+        face_row.addStretch(1)
+        face_row.addWidget(self.face_all_button)
+        adjust.addLayout(face_row)
+        self.face_hint = label("", "hint", wrap=True)
+        self.face_hint.setVisible(False)
+        adjust.addWidget(self.face_hint)
         self.adjust_box.setVisible(False)
         column.addWidget(self.adjust_box)
 
@@ -447,6 +446,7 @@ class PreviewPanel(Rethemed, QFrame):
         self._record = record
         self._index = index
         self._live = None
+        self._show_face_hint("")
         self.refresh()
 
     def record(self) -> dict | None:
@@ -494,8 +494,10 @@ class PreviewPanel(Rethemed, QFrame):
             width_mm, height_mm = document.side_size_mm(self._side)
             w, h = max(1.0, width_mm - 2 * bleed), max(1.0, height_mm - 2 * bleed)
             self.card.set_photo_frame(((item.x - bleed) / w, (item.y - bleed) / h, item.w / w, item.h / h))
+            self.card.setToolTip("점선 안의 사진을 끌면 위치가 바뀝니다.")
         else:
             self.card.set_photo_frame(None)
+            self.card.setToolTip("")
         current = self.current_adjustment()
         self.zoom_slider.blockSignals(True)
         self.zoom_slider.setValue(round(current.zoom * 100))
@@ -560,6 +562,34 @@ class PreviewPanel(Rethemed, QFrame):
     def _drag_end(self) -> None:
         self._drag_base = None
         self._commit_live()
+
+    def fit_face(self) -> bool:
+        """지금 사람의 사진에서 얼굴을 찾아 맞춘다. 못 찾으면 False(안내 문구를 띄운다)."""
+        from services.face_fit import FaceDetectorUnavailable, detect_face, fit_face
+
+        item, image = self._adjust_item()
+        if item is None:
+            return False
+        try:
+            face = detect_face(image)
+        except FaceDetectorUnavailable as exc:
+            self._show_face_hint(str(exc))
+            return False
+        if face is None:
+            self._show_face_hint("이 사진에서 얼굴을 찾지 못했습니다. 정면을 보는 사진인지 확인하거나 직접 맞춰 주세요.")
+            return False
+        self._show_face_hint("")
+        self.set_adjustment(fit_face(face, (image.width(), image.height()), (item.w, item.h), item.fit))
+        return True
+
+    def _show_face_hint(self, text: str) -> None:
+        self.face_hint.setText(text)
+        self.face_hint.setVisible(bool(text))
+
+    def _fit_face_all(self) -> None:
+        item, _ = self._adjust_item()
+        if item is not None:
+            self.faceFitAllRequested.emit(item.source.column, (item.w, item.h), item.fit)
 
     def _apply_all(self) -> None:
         item, _ = self._adjust_item()

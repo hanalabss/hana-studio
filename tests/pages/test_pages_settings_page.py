@@ -196,3 +196,92 @@ def test_license_admin_entry_only_for_admin(qapp, tmp_path, monkeypatch):
     monkeypatch.setattr(admin_panel, "AdminPanel", FakePanel)
     admin.license_button.click()
     assert opened and opened[-1] == "exec"
+
+
+def test_folder_auto_print_panel(env, services, tmp_path, monkeypatch):
+    from PIL import Image
+
+    from design import presets, storage
+    from design.binding import ColumnSource
+    from design.model import TextItem
+    from print_helpers import wait_until
+    from ui.pages.settings import page as page_module
+
+    services.printers.refresh()
+    wait_until(env, lambda: services.printers.devices())
+    services.printers.select(services.printers.devices()[0])
+    folder = tmp_path / "자동"
+    folder.mkdir()
+    document = presets.new_document(presets.CR80)
+    document.side("front").add_item(TextItem(x=5, y=5, w=40, h=10, source=ColumnSource(column="이름")))
+    design = storage.save(document, tmp_path / "카드.hsd")
+
+    page = SettingsPage(services=services)
+    assert page.auto_panel is not None and not page.auto_toggle.isEnabled()      # 폴더·디자인을 고르기 전
+    page.choose_auto_folder(str(folder))
+    page.choose_auto_design(design)
+    assert page.auto_toggle.isEnabled() and str(folder) in page.auto_folder_label.text()
+    assert reopened().auto_print_folder() == str(folder)
+
+    assert page.toggle_auto_print()
+    assert services.auto_print.running and page.auto_toggle.text() == "자동 인쇄 끄기"
+    assert not page.auto_folder_button.isEnabled()
+    (folder / "명단.csv").write_text("이름\n김하나\n", encoding="utf-8-sig")
+    services.auto_print.poll()
+    services.auto_print.poll()
+    wait_until(env, lambda: services.auto_print.history)
+    assert services.auto_print.history[0].ok
+    wait_until(env, lambda: page.auto_results.count() == 1)
+    assert "명단.csv" in page.auto_results.itemAt(0).widget().text()
+
+    page.toggle_auto_print()
+    assert not services.auto_print.running and page.auto_toggle.text() == "자동 인쇄 켜기"
+
+    shown = []
+    monkeypatch.setattr(page_module, "inform", lambda parent, title, message: shown.append(message))
+    page.choose_auto_folder(str(tmp_path / "없는 폴더"))
+    assert not page.toggle_auto_print() and "폴더" in shown[0]
+
+
+def test_operator_panel(env, services, monkeypatch):
+    from ui.operators import AddOperatorDialog, SignInDialog, ask_operator
+    from ui.pages.settings import page as page_module
+
+    book = services.operators
+    page = SettingsPage(services=services)
+    assert "쓰지 않습니다" in page.operator_current.text() and not page.operator_switch.isVisible()
+    assert ask_operator(book)                                   # 작업자가 없으면 묻지 않는다
+
+    dialog = AddOperatorDialog(book, page)
+    assert dialog.admin_check.isChecked() and not dialog.admin_check.isEnabled()   # 처음은 관리자
+    dialog.name_edit.setText("김하나")
+    dialog.pin_edit.setText("1234")
+    dialog.pin_again.setText("1235")
+    assert not dialog.try_add() and "다릅니다" in dialog.error.text()
+    dialog.pin_again.setText("1234")
+    assert dialog.try_add()
+    assert page.operator_current.text() == "지금 작업자: 김하나 (관리자)"
+    assert set(page.operator_remove_buttons) == {"김하나"}
+
+    second = AddOperatorDialog(book, page)
+    second.name_edit.setText("이둘")
+    second.pin_edit.setText("5678")
+    second.pin_again.setText("5678")
+    assert second.try_add() and not book.find("이둘").admin
+
+    sign_in = SignInDialog(book, page)
+    sign_in.name_combo.setCurrentIndex(book.names().index("이둘"))
+    sign_in.pin_edit.setText("0000")
+    assert not sign_in.try_sign_in() and "맞지 않습니다" in sign_in.error.text()
+    assert "operators.json" not in sign_in.error.text()               # 한 번 틀리면 짧게
+    assert not sign_in.try_sign_in() and "operators.json" in sign_in.error.text()   # 두 번째부터 잊었을 때 방법
+    sign_in.pin_edit.setText("5678")
+    assert sign_in.try_sign_in()
+    assert page.operator_current.text() == "지금 작업자: 이둘"
+    assert not page.operator_add.isEnabled() and not page.operator_remove_buttons["김하나"].isEnabled()
+
+    book.sign_in("김하나", "1234")
+    shown = []
+    monkeypatch.setattr(page_module, "inform", lambda parent, title, message: shown.append(message))
+    assert not page.remove_operator("김하나", ask=False) and "관리자가 한 명은" in shown[0]
+    assert page.remove_operator("이둘", ask=False) and book.names() == ["김하나"]

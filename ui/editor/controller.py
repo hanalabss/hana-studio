@@ -70,6 +70,8 @@ def display_name(item: Item) -> str:
     if item.name:
         return item.name
     label = KIND_LABELS.get(item.kind, item.kind or "항목")
+    if item.kind == "qr" and getattr(item, "symbology", "qr") == "datamatrix":
+        label = "DataMatrix"
     if item.kind == "text" and item.source is None:
         snippet = " ".join(str(getattr(item, "text", "")).split())
         if snippet:
@@ -919,7 +921,7 @@ class EditorController(QObject):
                 if item.kind == "barcode":
                     barcodes.normalize(item.symbology, data)
                 else:
-                    barcodes.qr_matrix(data, item.error_correction)
+                    barcodes.matrix_2d(data, item.symbology, item.error_correction)
             except barcodes.BarcodeError as exc:
                 issues.append(("invalid_barcode", str(exc)))
         return issues

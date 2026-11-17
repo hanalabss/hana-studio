@@ -222,6 +222,7 @@ class PeoplePage(BasePage):
         self.preview.nextRequested.connect(lambda: self.step_person(1))
         self.preview.issueActionRequested.connect(self._on_issue_action)
         self.preview.applyToAllRequested.connect(self.apply_adjustment_to_all)
+        self.preview.faceFitAllRequested.connect(self.fit_faces_for_all)
         outer.addWidget(self.preview)
 
     # ================================================================ 틀과의 약속
@@ -852,6 +853,51 @@ class PeoplePage(BasePage):
             store.apply_photo_adjustment_to_all(column, adjustment)
         self.preview.refresh()
         self.toast(f"{people(total)}의 사진을 같은 크기와 위치로 맞췄습니다.", "ok")
+
+    def fit_faces_for_all(self, column: str, frame_size, fit: str = "fill", ask: bool = True):
+        """모든 사람의 사진에서 얼굴을 찾아 사람마다 크기와 위치를 맞춘다. 결과(FaceFitResult)를 돌려준다."""
+        from PySide6.QtWidgets import QApplication, QProgressDialog
+        from services.face_fit import FaceDetectorUnavailable, fit_people
+
+        store = self.store
+        if store is None:
+            return None
+        total = store.count()
+        if ask and not confirm(
+                self, "모든 사람의 사진을 얼굴에 맞출까요?",
+                f"{people(total)}의 사진에서 얼굴을 찾아 사람마다 크기와 위치를 맞춥니다. "
+                "얼굴을 찾은 사람은 직접 맞춰 둔 것이 바뀌고, 못 찾은 사람은 그대로 둡니다.",
+                "얼굴에 맞추기"):
+            return None
+        dialog = QProgressDialog("사진에서 얼굴을 찾고 있습니다…", "그만두기", 0, max(1, total), self)
+        dialog.setWindowTitle("얼굴에 맞추기")
+        dialog.setWindowModality(Qt.WindowModal)
+        dialog.setMinimumDuration(400)
+
+        def progress(done: int, count: int) -> bool:
+            dialog.setMaximum(max(1, count))
+            dialog.setValue(done)
+            QApplication.processEvents()
+            return not dialog.wasCanceled()
+
+        try:
+            result = fit_people(store, column, frame_size, fit, progress=progress)
+        except FaceDetectorUnavailable as exc:
+            dialog.close()
+            self.toast(str(exc), "error")
+            return None
+        dialog.close()
+        self.preview.refresh()
+        message = f"{people(len(result.fitted))}의 사진을 얼굴에 맞췄습니다."
+        skipped = []
+        if result.no_face:
+            skipped.append(f"얼굴을 못 찾은 사진 {len(result.no_face)}장")
+        if result.no_photo:
+            skipped.append(f"사진 없음 {len(result.no_photo)}명")
+        if skipped:
+            message += " " + ", ".join(skipped) + "은 그대로 두었습니다."
+        self.toast(message, "ok" if result.fitted else "warn")
+        return result
 
     # ================================================================ 사람 넣기·고치기·지우기
     def add_person(self, run: bool = True) -> PersonDialog | None:

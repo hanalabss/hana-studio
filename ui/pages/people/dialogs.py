@@ -156,8 +156,9 @@ class PersonDialog(Dialog):
         self.card = CardView()
         self.card.setFixedWidth(320)
         right.addWidget(self.card)
-        self.preview_hint = label("적는 대로 카드에 바로 나타납니다.", "hint", wrap=True)
+        self.preview_hint = label("", "hint", wrap=True)          # 한 명 넣은 뒤에만 보인다
         self.preview_hint.setFixedWidth(320)
+        self.preview_hint.setVisible(False)
         right.addWidget(self.preview_hint)
         right.addStretch(1)
         outer.addLayout(right)
@@ -284,6 +285,7 @@ class PersonDialog(Dialog):
         if keep_open:
             self.set_values({})
             self.preview_hint.setText(f"{people(len(self.saved_ids))}을 넣었습니다. 다음 사람을 적으세요.")
+            self.preview_hint.setVisible(True)
             next(iter(self._inputs.values())).setFocus()
         else:
             self.accept()
@@ -549,12 +551,13 @@ class AddColumnDialog(Dialog):
         self.type_combo = ComboBox()
         for key in COLUMN_TYPES:
             self.type_combo.addItem(TYPE_NAMES[key], key)
-        self.type_row = FormRow("무엇을 적나요?", self.type_combo, TYPE_HINTS["text"])
+        self.type_combo.setToolTip(TYPE_HINTS["text"])
+        self.type_row = FormRow("무엇을 적나요?", self.type_combo)
         self.body.addWidget(self.type_row)
         self.choices_edit = QLineEdit()
         self.choices_edit.setFixedHeight(40)
         self.choices_edit.setPlaceholderText("사원, 대리, 과장")
-        self.choices_row = FormRow("고를 수 있는 값", self.choices_edit, "쉼표로 나눠 적습니다.")
+        self.choices_row = FormRow("고를 수 있는 값", self.choices_edit)
         self.choices_row.setVisible(False)
         self.body.addWidget(self.choices_row)
         self.add_button("취소", "secondary", "reject")
@@ -566,7 +569,7 @@ class AddColumnDialog(Dialog):
 
     def _type_changed(self, *_args) -> None:
         key = self.type_combo.currentData()
-        self.type_row.set_hint(TYPE_HINTS[key])
+        self.type_combo.setToolTip(TYPE_HINTS[key])
         self.choices_row.setVisible(key == "list")
 
     def name(self) -> str:

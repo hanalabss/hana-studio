@@ -158,9 +158,11 @@ class ReadyView(QWidget):
                 self.range_edit = QLineEdit()
                 self.range_edit.setPlaceholderText("예: 1,3,5-9")
                 self.range_edit.setAccessibleName("뽑을 사람 번호")
+                self.range_edit.setToolTip("명단 화면에 보이는 순서의 번호입니다. 쉼표와 줄표로 적습니다.")
                 self.range_edit.setFixedHeight(40)
                 self.range_edit.textChanged.connect(self.rangeEdited)
                 self.range_hint = label("", "hint", wrap=True)
+                self.range_hint.setVisible(False)
                 self.range_box = QWidget()
                 box = QVBoxLayout(self.range_box)
                 box.setContentsMargins(28, 0, 0, 4)
@@ -179,8 +181,6 @@ class ReadyView(QWidget):
                 box.addWidget(self.copies_field)
                 box.addStretch(1)
                 layout.addWidget(self.copies_box)
-        self.no_list_note = label("", "hint", wrap=True)
-        layout.addWidget(self.no_list_note)
 
         layout.addSpacing(SPACE["sm"])
         stats = QFrame()
@@ -444,13 +444,6 @@ class ReadyView(QWidget):
         show(MODE_RANGES, has_list, "번호로 고르기", bool(counts.visible))
         show(MODE_ALL, has_list, f"명단에 보이는 {counts.visible or 0:,}명 모두", bool(counts.visible))
         show(MODE_COPIES, counts.copies_available, f"명단 없이 같은 카드 {copies:,}장")
-        if not has_list:
-            self.no_list_note.setText("명단을 열면 사람마다 이름과 사진이 바뀐 카드를 뽑을 수 있습니다.")
-        elif not counts.copies_available:
-            self.no_list_note.setText("")
-        else:
-            self.no_list_note.setText("")
-        self.no_list_note.setVisible(bool(self.no_list_note.text()))
         if int(self.copies_field.value()) != copies:
             self.copies_field.set_value(copies, emit=False)
         self._sync_mode_boxes()
@@ -463,7 +456,8 @@ class ReadyView(QWidget):
 
     def set_range_error(self, message: str) -> None:
         set_prop(self.range_edit, "invalid", "true" if message else "false")
-        self.range_hint.setText(message or "명단 화면에 보이는 순서의 번호입니다. 쉼표와 줄표로 적습니다.")
+        self.range_hint.setText(message)                  # 잘못 적었을 때만 한 줄
+        self.range_hint.setVisible(bool(message))
         set_prop(self.range_hint, "tone", "error" if message else "")
 
     def set_stats(self, targets: str, printed: str, printed_caption: str, photo: str,

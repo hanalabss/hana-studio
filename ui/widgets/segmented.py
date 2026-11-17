@@ -108,6 +108,12 @@ class SegmentedControl(QFrame):
     def set_option_enabled(self, key: str, enabled: bool) -> None:
         self._segments[key].setEnabled(enabled)
 
+    def set_tips(self, tips: dict[str, str]) -> None:
+        """칸마다 마우스를 올렸을 때 보일 설명."""
+        for key, tip in tips.items():
+            if key in self._segments:
+                self._segments[key].setToolTip(tip)
+
     def button(self, key: str) -> QPushButton:
         return self._segments[key]
 

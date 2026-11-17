@@ -267,13 +267,13 @@ def _code_problem(item: Item, value: Any, dpi: float, check_size: bool = True) -
                     return (f"바코드 칸이 좁아 '{shown}'을(를) 담을 수 없습니다. "
                             f"칸 너비를 {need / scale:.1f}mm 이상으로 넓히세요.")
         elif check_size:
-            need = barcodes.qr_min_size_px(data, item.error_correction, item.border_modules)
+            need = barcodes.qr_min_size_px(data, item.error_correction, item.border_modules, item.symbology)
             have = round(min(item.w, item.h) * scale)
             if need > have:
-                return (f"QR 코드 칸이 작아 내용을 담을 수 없습니다. "
+                return (f"{barcodes.code2d_label(item.symbology)} 칸이 작아 내용을 담을 수 없습니다. "
                         f"한 변을 {need / scale:.1f}mm 이상으로 키우세요.")
         elif data == "":
-            return "QR 코드 데이터가 비어 있습니다."
+            return f"{barcodes.code2d_label(item.symbology)} 데이터가 비어 있습니다."
     except barcodes.BarcodeError as exc:
         return str(exc)
     return None

@@ -1,4 +1,4 @@
-"""바코드·QR 생성. 모듈을 정수 픽셀 폭으로 직접 그려 가장자리가 번지지 않는다."""
+"""바코드·QR·DataMatrix 생성. 모듈을 정수 픽셀 폭으로 직접 그려 가장자리가 번지지 않는다."""
 
 from __future__ import annotations
 
@@ -13,6 +13,8 @@ SYMBOLOGY_LABELS = {
     "code39": "Code 39", "code39ext": "Code 39 Extended", "code93": "Code 93", "ean13": "EAN-13",
 }
 QR_LEVELS = ("L", "M", "Q", "H")
+CODES_2D = ("qr", "datamatrix")
+CODE_2D_LABELS = {"qr": "QR 코드", "datamatrix": "DataMatrix"}
 
 _CODE39_CHARS = set("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-. $/+%")
 _QUIET_ZONE = {key: (10, 10) for key in SYMBOLOGIES}
@@ -224,6 +226,25 @@ def qr_matrix(data: str, error_correction: str = "M") -> list[list[bool]]:
     return [list(row) for row in _qr_matrix(text, level)]
 
 
+def code2d_label(symbology: str | None) -> str:
+    return CODE_2D_LABELS.get(symbology or "qr", "QR 코드")
+
+
+def matrix_2d(data: str, symbology: str = "qr", error_correction: str = "M") -> list[list[bool]]:
+    """2차원 코드(QR·DataMatrix)의 모듈 행렬. DataMatrix는 오류 정정 수준이 정해져 있어 error_correction을 쓰지 않는다."""
+    symbology = symbology or "qr"
+    if symbology == "qr":
+        return qr_matrix(data, error_correction)
+    if symbology == "datamatrix":
+        from design.datamatrix import DataMatrixError, datamatrix_matrix
+
+        try:
+            return datamatrix_matrix(data)
+        except DataMatrixError as exc:
+            raise BarcodeError(str(exc)) from exc
+    raise BarcodeError(f"지원하지 않는 2차원 코드입니다: {symbology}")
+
+
 def _canvas(width_px: int, height_px: int, background) -> QImage:
     if width_px < 1 or height_px < 1:
         raise BarcodeSizeError("바코드를 그릴 영역의 크기가 0입니다.", 1)
@@ -280,8 +301,9 @@ def render_linear(
     return image
 
 
-def qr_min_size_px(data: str, error_correction: str = "M", border_modules: int = 2) -> int:
-    return len(qr_matrix(data, error_correction)) + 2 * max(0, int(border_modules))
+def qr_min_size_px(data: str, error_correction: str = "M", border_modules: int = 2, symbology: str = "qr") -> int:
+    matrix = matrix_2d(data, symbology, error_correction)
+    return max(len(matrix), len(matrix[0])) + 2 * max(0, int(border_modules))
 
 
 def render_qr(
@@ -292,23 +314,25 @@ def render_qr(
     border_modules: int = 2,
     foreground="#000000",
     background="#ffffff",
+    symbology: str = "qr",
 ) -> QImage:
-    """요청한 픽셀 크기의 QR 코드. 칸은 정수 픽셀 정사각형이고 남는 폭은 여백이 된다."""
-    matrix = qr_matrix(data, error_correction)
+    """요청한 픽셀 크기의 2차원 코드(QR·DataMatrix). 칸은 정수 픽셀 정사각형이고 남는 폭은 여백이 된다."""
+    matrix = matrix_2d(data, symbology, error_correction)
     width_px, height_px = (size_px, size_px) if isinstance(size_px, int) else size_px
     width_px, height_px = int(width_px), int(height_px)
     border = max(0, int(border_modules))
-    total = len(matrix) + 2 * border
-    module_px = min(width_px, height_px) // total
+    rows, cols = len(matrix), len(matrix[0])
+    total = max(rows, cols) + 2 * border
+    module_px = min(width_px // (cols + 2 * border), height_px // (rows + 2 * border))
     if module_px < 1:
         raise BarcodeSizeError(
-            f"QR 코드를 그리기에 영역이 너무 작습니다. 최소 {total}px이 필요합니다. "
+            f"{code2d_label(symbology)}를 그리기에 영역이 너무 작습니다. 최소 {total}px이 필요합니다. "
             f"(현재 {min(width_px, height_px)}px)",
             total,
         )
     image = _canvas(width_px, height_px, background)
-    left = (width_px - len(matrix) * module_px) // 2
-    top = (height_px - len(matrix) * module_px) // 2
+    left = (width_px - cols * module_px) // 2
+    top = (height_px - rows * module_px) // 2
     painter = QPainter(image)
     color = QColor(foreground)
     for row_index, row in enumerate(matrix):

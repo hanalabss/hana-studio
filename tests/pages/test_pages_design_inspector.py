@@ -258,7 +258,7 @@ def test_image_fit_and_replace_are_undoable(editor, tmp_path):
     before = _steps(editor)
     section.fit_control.set_current("contain")
     assert item.fit == "contain" and _steps(editor) == before + 1
-    assert "전체가 보이도록" in section.fit_hint.text()
+    assert "전체가 보이도록" in section.fit_control.button("contain").toolTip()
 
     editor.dialogs.image_path = make_image(tmp_path / "b.png", color=(250, 10, 10))
     section.replace_button.click()
@@ -288,7 +288,7 @@ def test_image_binding_to_list_photo_column(editor, workspace, people_store):
     assert section.column_box.isVisible() and not section.file_box.isVisible()
     assert [section.column_combo.itemData(i) for i in range(section.column_combo.count())] == ["사진"]
     assert not section.remove_button.isEnabled()
-    assert "사람마다 사진이 달라" in section.cutout_hint.text()
+    assert "명단 사진은" in section.cutout_hint.text()
 
     section.source_control.set_current("file")
     assert item.source is None
@@ -374,7 +374,7 @@ def test_barcode_data_symbology_and_validation(editor):
 
     pick(section.symbology_combo, "ean13")
     assert item.symbology == "ean13"
-    assert "숫자 12~13자리" in section.symbology_hint.text()
+    assert "숫자 12~13자리" in section.symbology_combo.toolTip()
     assert section.validation.isVisible()
     assert "12자리 또는 13자리" in section.validation.text()
     assert section.validation_message() == section.validation.text()
@@ -495,7 +495,7 @@ def test_detail_position_size_rotation_layer(editor):
     detail.rotation_field.set_value(-90)
     assert (item.w, item.h, item.rotation) == (40.0, 12.5, 270.0)
     detail.layer_control.set_current("white")
-    assert item.layer == "white" and "흰색 잉크" in detail.layer_hint.text()
+    assert item.layer == "white" and "흰색 잉크" in detail.layer_control.button("white").toolTip()
     detail.printable_check.setChecked(True)
     assert item.printable is False
 
@@ -700,3 +700,55 @@ def test_bleed_in_image_only_when_the_ratio_says_so():
     assert bleed_in_image((638, 1016), (54.0, 86.0)) == 0.0        # 카드와 같은 비율
     assert bleed_in_image((200, 60), (85.6, 53.98)) == 0.0
     assert bleed_in_image((0, 10), (54.0, 86.0)) == 0.0
+
+
+def test_qr_item_can_become_datamatrix(editor):
+    item = editor.add("qr")
+    section = editor.inspector.code
+    assert section.code2d_box.isVisible()
+    pick(section.code2d_combo, "datamatrix")
+    assert item.symbology == "datamatrix"
+    assert not section.level_box.isVisible()               # DataMatrix는 오류 정정 수준이 고정
+    assert "리더기" in section.code2d_combo.toolTip()
+    from ui.editor.controller import display_name
+    assert display_name(item) == "DataMatrix"
+    section.data_edit.setText("x" * 400)
+    section.data_edit.textEdited.emit("x" * 400)
+    assert "너무 깁니다" in section.validation.text()
+    editor.controller.undo_stack.undo()
+    editor.controller.undo_stack.undo()
+    assert item.symbology == "qr" and section.level_box.isVisible()
+
+
+def test_code_notice_shows_only_when_it_applies(editor):
+    from ui.pages.design.inspector.code import FULL_ASCII_NOTICE, KOREAN_NOTICE
+
+    editor.add("qr")
+    section = editor.inspector.code
+
+    def type_in(text):
+        section.data_edit.setText(text)
+        section.data_edit.textEdited.emit(text)
+
+    type_in("HANA-001")
+    assert not section.validation.isVisible()                   # 평소에는 설명이 없다
+    type_in("하나스튜디오")
+    assert section.validation.isVisible() and section.validation.text() == KOREAN_NOTICE
+    assert section.validation.property("tone") == "warn"
+    type_in("HANA-002")
+    assert not section.validation.isVisible()
+
+    editor.add("barcode")
+    pick(section.symbology_combo, "code39ext")
+    type_in("HANA39")
+    assert not section.validation.isVisible()
+    type_in("Hana39")
+    assert section.validation.text() == FULL_ASCII_NOTICE
+
+
+def test_fit_note_appears_only_after_changing_the_method(editor, tmp_path):
+    editor.add_image_file(make_image(tmp_path / "same.png", size=(60, 80)))
+    section = editor.inspector.image
+    assert section.fit_hint.isHidden()                         # 넣자마자는 설명이 없다
+    section.fit_control.set_current("contain")
+    assert not section.fit_hint.isHidden() and "똑같이 보입니다" in section.fit_hint.text()

@@ -226,3 +226,21 @@ def test_a_real_print_shows_up_with_names(env, workspace, services, history):
     assert [c["person"] for c in page.card_rows()] == ["김철수", "이영희"]
     assert page.reprint_button.text() == "이 2명 다시 인쇄"
     assert not page.show_failed_button.isVisibleTo(page)
+
+
+def test_operator_column_appears_when_jobs_have_an_operator(env, workspace, services, history):
+    ids = workspace.store.ids()
+    add_job(history, "작업자 없음", [(ids[0], "success", "")])
+    page = HistoryPage(workspace, services)
+    assert "operator" not in [c.key for c in page.jobs_model.columns()]
+
+    services.operators.add("김하나", "1234")
+    job = add_job(history, "봄 사원증", [(ids[1], "success", "")])
+    page.reload()
+    assert [c.key for c in page.jobs_model.columns()][2] == "operator"
+    assert page.job_rows()[0]["operator"] == "김하나" and page.job_rows()[1]["operator"] == ""
+    page.select_job(job)
+    assert "작업자 김하나" in page.detail_meta.text()
+    page.set_search("김하나")
+    page._apply_search()
+    assert titles(page) == ["봄 사원증"]

@@ -123,9 +123,9 @@ class OptionsSheet(Dialog):
 
         self.body.addWidget(Divider())
         self.body.addWidget(label("찍히는 위치 맞추기", "title"))
-        self.body.addWidget(label(
-            "카드에 찍힌 그림이 한쪽으로 치우쳐 나올 때만 바꾸세요. +는 오른쪽·아래쪽, −는 왼쪽·위쪽으로 "
-            "옮깁니다. 이 값은 다음 인쇄에도 그대로 씁니다.", "muted", wrap=True))
+        self.body.addWidget(_note(
+            "그림이 한쪽으로 치우쳐 찍힐 때만 바꾸세요.",
+            "+는 오른쪽·아래쪽, −는 왼쪽·위쪽으로 옮깁니다. 이 값은 다음 인쇄에도 그대로 씁니다."))
         position = QHBoxLayout()
         position.setSpacing(SPACE["lg"])
         self.offset_x = MmField(options.offset_x_mm, -OFFSET_LIMIT_MM, OFFSET_LIMIT_MM, 0.1, 1, follow_units=False)
@@ -142,12 +142,12 @@ class OptionsSheet(Dialog):
         if CAP_COLOR_ADJUST in capabilities:
             self.body.addWidget(Divider())
             self.body.addWidget(label("색 맞추기", "title"))
-            self.body.addWidget(label(
-                "카드에 찍힌 색이 화면보다 어둡거나 밋밋할 때만 바꾸세요. 0이 원래대로이고 "
-                f"{COLOR_ADJUST_MIN}부터 +{COLOR_ADJUST_MAX}까지 넣을 수 있습니다. 화면의 미리 보기에는 "
+            self.body.addWidget(_note(
+                "찍힌 색이 화면보다 어둡거나 밋밋할 때만 바꾸세요.",
+                f"0이 원래대로이고 {COLOR_ADJUST_MIN}부터 +{COLOR_ADJUST_MAX}까지 넣을 수 있습니다. 화면의 미리 보기에는 "
                 "나타나지 않고 인쇄에만 적용됩니다. 이 값은 다음 인쇄에도 그대로 씁니다."
                 + (" '중간 밝기'는 흰색과 검정은 그대로 두고 그 사이의 색만 밝게(+)·어둡게(-) 합니다."
-                   if CAP_GAMMA_ADJUST in capabilities else ""), "muted", wrap=True))
+                   if CAP_GAMMA_ADJUST in capabilities else "")))
             colors = QHBoxLayout()
             colors.setSpacing(SPACE["lg"])
             titles = [("brightness", "밝기"), ("contrast", "명암"), ("saturation", "채도")]
@@ -169,11 +169,11 @@ class OptionsSheet(Dialog):
         if CAP_DENSITY_ADJUST in capabilities:
             self.body.addWidget(Divider())
             self.body.addWidget(label("진하기", "title"))
-            self.body.addWidget(label(
-                "카드에 찍힌 색이 흐리거나 너무 진할 때만 바꾸세요. 0이 원래대로이고 "
-                f"{COLOR_ADJUST_MIN}부터 +{COLOR_ADJUST_MAX}까지, 클수록 진해집니다. '전체'는 모든 색을, "
+            self.body.addWidget(_note(
+                "찍힌 색이 흐리거나 너무 진할 때만 바꾸세요.",
+                f"0이 원래대로이고 {COLOR_ADJUST_MIN}부터 +{COLOR_ADJUST_MAX}까지, 클수록 진해집니다. '전체'는 모든 색을, "
                 "노랑·빨강·파랑은 그 색만 바꿉니다. 화면의 미리 보기에는 나타나지 않고 인쇄에만 "
-                "적용됩니다. 이 값은 다음 인쇄에도 그대로 씁니다.", "muted", wrap=True))
+                "적용됩니다. 이 값은 다음 인쇄에도 그대로 씁니다."))
             densities = QHBoxLayout()
             densities.setSpacing(SPACE["lg"])
             for key in DENSITY_KEYS:
@@ -195,10 +195,10 @@ class OptionsSheet(Dialog):
         if CAP_BLACK_RESIN in capabilities and uses_black_text(document):
             self.black_resin = QCheckBox("검정 글자·바코드를 검정 리본으로 또렷하게 찍기")
             self.black_resin.setChecked(bool(options.black_resin))
-            extras.addWidget(self.black_resin)
-            extras.addWidget(label(
+            self.black_resin.setToolTip(
                 "색이 완전한 검정인 글자·선·바코드·QR만 해당합니다. 색 리본 세 가지를 겹쳐 만든 검정보다 "
-                "가장자리가 선명합니다. 사진과 색 글자는 그대로 색 리본으로 찍습니다.", "muted", wrap=True))
+                "가장자리가 선명합니다. 사진과 색 글자는 그대로 색 리본으로 찍습니다.")
+            extras.addWidget(self.black_resin)
         if CAP_WHITE in capabilities and uses_white(document):
             self.white = QCheckBox("화이트로 꾸민 부분도 찍기")
             self.white.setChecked(self._choices.use_white)
@@ -250,8 +250,8 @@ class OptionsSheet(Dialog):
             self.mifare_error.setProperty("tone", "warn")
             self.mifare_error.setVisible(False)
             extras.addWidget(self.mifare_error)
-            extras.addWidget(label("한 블록에 영문·숫자 16자(한글 5자 정도)까지 들어갑니다. 쓴 뒤 다시 읽어 "
-                                   "확인하고, 다르면 그 카드는 인쇄하지 않습니다.", "hint", wrap=True))
+            self.mifare_column.setToolTip("한 블록에 영문·숫자 16자(한글 5자 정도)까지 들어갑니다. 쓴 뒤 다시 읽어 "
+                                          "확인하고, 다르면 그 카드는 인쇄하지 않습니다.")
         if extras.count():
             self.body.addWidget(Divider())
             self.body.addWidget(label("이 프린터로 할 수 있는 것", "title"))
@@ -260,11 +260,8 @@ class OptionsSheet(Dialog):
         self.body.addWidget(Divider())
         self.stop_on_error = QCheckBox("한 장이 실패하면 남은 카드는 찍지 않고 멈추기")
         self.stop_on_error.setChecked(options.stop_on_error)
+        self.stop_on_error.setToolTip('꺼 두면 실패한 카드를 건너뛰고 끝까지 찍습니다. 리본이 떨어지거나 카드가 걸렸을 때 카드를 여러 장 버리지 않도록 켜 두는 편이 안전합니다.')
         self.body.addWidget(self.stop_on_error)
-        stop_hint = label("꺼 두면 실패한 카드를 건너뛰고 끝까지 찍습니다. 리본이 떨어지면 카드를 여러 장 "
-                          "버릴 수 있으니 켜 두는 편이 안전합니다.", "hint", wrap=True)
-        stop_hint.setContentsMargins(28, 0, 0, 0)
-        self.body.addWidget(stop_hint)
 
         self.add_button("그만두기", "secondary", "reject")
         self.apply_button = self.add_button("이 설정으로 하기", "primary", "accept", default=True)
@@ -349,3 +346,10 @@ class OptionsSheet(Dialog):
             self.mifare_error.setVisible(True)
             return
         super().accept()
+
+
+def _note(short: str, more: str) -> QWidget:
+    """짧은 한 줄만 보이고, 자세한 설명은 마우스를 올렸을 때 툴팁으로."""
+    note = label(short, "muted", wrap=True)
+    note.setToolTip(more)
+    return note

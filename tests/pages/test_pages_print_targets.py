@@ -97,6 +97,10 @@ def test_ranges_resolve_and_errors_are_shown_inline(env, workspace, services):
     assert not page.ready.start_button.isEnabled()
     assert page.ready.reason.text() and page.ready.reason.isVisibleTo(page.ready)
 
+    page.ready.range_edit.setText("2")
+    page.refresh_now()
+    assert page.ready.range_hint.isHidden()                       # 맞게 적으면 설명 줄이 없다
+
     page.ready.range_edit.setText("4-2")
     page.refresh_now()
     assert "작은 번호를 먼저" in page.ready.range_hint.text()

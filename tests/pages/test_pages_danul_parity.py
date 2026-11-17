@@ -77,7 +77,7 @@ def test_new_barcode_kinds_are_selectable(editor, key, data, ok):
     section.data_edit.setText(data)
     section.data_edit.textEdited.emit(data)
     assert item.symbology == key
-    assert section.validation.isVisible() is (not ok)
+    assert (section.validation_message() == "") is ok
 
 
 # ---------------------------------------------------------------- IC 카드(Mifare) 인쇄 설정

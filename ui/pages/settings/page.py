@@ -7,7 +7,7 @@ import sys
 
 from PySide6.QtCore import QUrl, Qt
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QFileDialog, QFrame, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
 
 from design import presets
 from printer.history import default_history_path
@@ -16,8 +16,8 @@ from ui.pages.printing.style import apply_page_style
 from ui.shell import BasePage
 from ui.theme import SPACE, ThemeManager
 from ui.widgets import (
-    ComboBox, FormRow, MmField, Panel, QuietButton, SecondaryButton, SegmentedControl, StepperField, inform,
-    label,
+    ComboBox, FormRow, MmField, Panel, PrimaryButton, QuietButton, SecondaryButton, SegmentedControl, StepperField,
+    inform, label,
 )
 
 from .prefs import COPIES_MAX, OFFSET_LIMIT_MM, RETENTION_CHOICES, Prefs
@@ -95,6 +95,14 @@ class SettingsPage(BasePage):
         column.addWidget(self._build_screen())
         column.addWidget(self._build_card())
         column.addWidget(self._build_print())
+        auto_print = getattr(services, "auto_print", None)
+        self.auto_panel = self._build_auto_print(auto_print) if auto_print is not None else None
+        if self.auto_panel is not None:
+            column.addWidget(self.auto_panel)
+        operators = getattr(services, "operators", None)
+        self.operator_panel = self._build_operators(operators) if operators is not None else None
+        if self.operator_panel is not None:
+            column.addWidget(self.operator_panel)
         column.addWidget(self._build_history())
         column.addWidget(self._build_files())
         if self.is_admin:
@@ -136,8 +144,8 @@ class SettingsPage(BasePage):
             current=ThemeManager.instance().mode)
         self.theme_control.currentChanged.connect(lambda mode: ThemeManager.instance().set_mode(mode))
         self.theme_control.setAccessibleName("화면 색")
+        self.theme_control.set_tips({"system": "Windows 설정의 밝게·어둡게를 따릅니다."})
         panel.body.addWidget(FormRow("화면 색", self.theme_control,
-                                     "'시스템 따라가기'는 Windows 설정의 밝게·어둡게를 따릅니다.",
                                      orientation="horizontal", label_width=_LABEL_WIDTH, control_align="left"))
         from ui import i18n
         self.language_combo = ComboBox([name for _code, name in i18n.LANGUAGES])
@@ -145,18 +153,16 @@ class SettingsPage(BasePage):
         codes = [code for code, _name in i18n.LANGUAGES]
         self.language_combo.setCurrentIndex(codes.index(i18n.stored_language(self.prefs.settings)))
         self.language_combo.currentIndexChanged.connect(self._on_language)
+        self.language_combo.setToolTip("메뉴·버튼 같은 화면 글자를 바꿉니다. 프로그램을 다시 시작하면 적용됩니다.")
         panel.body.addWidget(FormRow("언어 (Language)", self.language_combo,
-                                     "메뉴·버튼 같은 화면 글자를 바꿉니다. 프로그램을 다시 시작하면 적용됩니다.",
                                      orientation="horizontal", label_width=_LABEL_WIDTH, control_align="left"))
         self.guide_check = QCheckBox("카드 꾸미기, 명단 넣기, 인쇄하기 순서 안내 보기")
         self.guide_check.setEnabled(False)
         self.guide_check.toggled.connect(self._on_guide_toggled)
         guide = QVBoxLayout()
         guide.setSpacing(4)
+        self.guide_check.setToolTip('다음에 할 일을 화면 위쪽에 알려 줍니다. 익숙해지면 꺼도 됩니다.')
         guide.addWidget(self.guide_check)
-        hint = label("다음에 할 일을 화면 위쪽에 알려 줍니다. 익숙해지면 꺼도 됩니다.", "hint")
-        hint.setContentsMargins(28, 0, 0, 0)
-        guide.addWidget(hint)
         panel.body.addLayout(guide)
         return panel
 
@@ -179,13 +185,13 @@ class SettingsPage(BasePage):
         self.card_combo = ComboBox([preset.label for preset in presets.PRESETS])
         self.card_combo.currentIndexChanged.connect(
             lambda index: self.prefs.set_card_preset_key(presets.PRESETS[index].key))
+        self.card_combo.setToolTip("새 디자인을 만들 때 처음 고르는 크기입니다. 이미 만든 디자인은 바뀌지 않습니다.")
         panel.body.addWidget(FormRow("기본 카드 크기", self.card_combo,
-                                     "새 디자인을 만들 때 처음 고르는 크기입니다. 이미 만든 디자인은 바뀌지 않습니다.",
                                      orientation="horizontal", label_width=_LABEL_WIDTH))
         return panel
 
     def _build_print(self) -> Panel:
-        panel = Panel("인쇄 기본값", "인쇄 화면을 열 때 처음 들어가 있는 값입니다. 인쇄할 때마다 바꿀 수 있습니다.")
+        panel = Panel("인쇄 기본값")
         panel.body.setSpacing(SPACE["lg"])
         self.copies = StepperField(1, 1, COPIES_MAX, 1, 0, "장")
         self.copies.setFixedWidth(200)
@@ -197,17 +203,14 @@ class SettingsPage(BasePage):
         self.stop_check.toggled.connect(self.prefs.set_stop_on_error)
         stop = QVBoxLayout()
         stop.setSpacing(4)
+        self.stop_check.setToolTip('꺼 두면 실패한 카드를 건너뛰고 끝까지 찍습니다. 리본이 떨어지거나 카드가 걸렸을 때 카드를 여러 장 버리지 않도록 켜 두는 편이 안전합니다.')
         stop.addWidget(self.stop_check)
-        stop_hint = label("리본이 떨어지거나 카드가 걸렸을 때 카드를 여러 장 버리지 않도록 켜 두는 편이 안전합니다.", "hint", wrap=True)
-        stop_hint.setContentsMargins(28, 0, 0, 0)
-        stop.addWidget(stop_hint)
         panel.body.addLayout(stop)
 
         panel.body.addWidget(label("찍히는 위치 맞추기", "strong"))
-        self.offset_note = label(
-            "카드에 찍힌 그림이 한쪽으로 치우쳐 나올 때만 바꾸세요. 오른쪽이나 아래쪽으로 옮기려면 + 값을, "
-            "왼쪽이나 위쪽으로 옮기려면 − 값을 넣습니다. 프린터 화면의 '시험 인쇄 1장'으로 확인할 수 있습니다.",
-            "muted", wrap=True)
+        self.offset_note = label("그림이 한쪽으로 치우쳐 찍힐 때만 바꾸세요.", "muted", wrap=True)
+        self.offset_note.setToolTip("+는 오른쪽·아래쪽, −는 왼쪽·위쪽으로 옮깁니다. "
+                                    "프린터 화면의 '시험 인쇄 1장'으로 확인할 수 있습니다.")
         panel.body.addWidget(self.offset_note)
         position = QHBoxLayout()
         position.setSpacing(SPACE["lg"])
@@ -226,6 +229,183 @@ class SettingsPage(BasePage):
         panel.body.addWidget(self.migrated_note)
         return panel
 
+    # ---- 작업자 ----
+    def _build_operators(self, book) -> Panel:
+        self.operators = book
+        panel = Panel("작업자", "인쇄 기록에 누가 찍었는지 남깁니다.")
+        panel.body.setSpacing(SPACE["md"])
+        self.operator_current = label("", "secondary", wrap=True)
+        panel.body.addWidget(self.operator_current)
+        buttons = QHBoxLayout()
+        buttons.setSpacing(SPACE["sm"])
+        self.operator_switch = SecondaryButton("작업자 바꾸기", "sm")
+        self.operator_switch.clicked.connect(self.switch_operator)
+        self.operator_add = SecondaryButton("작업자 더하기", "sm", icon="plus")
+        self.operator_add.clicked.connect(self.add_operator)
+        buttons.addWidget(self.operator_switch)
+        buttons.addWidget(self.operator_add)
+        buttons.addStretch(1)
+        panel.body.addLayout(buttons)
+        self.operator_rows = QVBoxLayout()
+        self.operator_rows.setSpacing(2)
+        panel.body.addLayout(self.operator_rows)
+        book.changed.connect(self._sync_operators)
+        book.currentChanged.connect(lambda _name: self._sync_operators())
+        self._sync_operators()
+        return panel
+
+    def _sync_operators(self) -> None:
+        book = self.operators
+        current = book.current_operator()
+        if not book.enabled:
+            text = "작업자 확인을 쓰지 않습니다."
+        elif current is None:
+            text = "지금 작업자가 정해지지 않았습니다. '작업자 바꾸기'로 고르세요."
+        else:
+            text = f"지금 작업자: {current.name}" + (" (관리자)" if current.admin else "")
+        self.operator_current.setText(text)
+        manage = book.can_manage()
+        self.operator_switch.setVisible(book.enabled)
+        self.operator_add.setEnabled(manage)
+        self.operator_add.setToolTip("" if manage else "관리자 작업자만 더할 수 있습니다.")
+        while self.operator_rows.count():
+            item = self.operator_rows.takeAt(0)
+            if item.layout() is not None:
+                while item.layout().count():
+                    child = item.layout().takeAt(0)
+                    if child.widget() is not None:
+                        child.widget().deleteLater()
+            elif item.widget() is not None:
+                item.widget().deleteLater()
+        self.operator_remove_buttons = {}
+        for operator in book.operators():
+            row = QHBoxLayout()
+            row.setSpacing(SPACE["sm"])
+            name = label(operator.name + ("  · 관리자" if operator.admin else ""), "strong")
+            name.setProperty("i18n_skip", True)
+            row.addWidget(name, 1)
+            remove = QuietButton("지우기", "sm", icon="trash")
+            remove.setEnabled(manage)
+            remove.clicked.connect(lambda _checked=False, n=operator.name: self.remove_operator(n))
+            row.addWidget(remove)
+            self.operator_rows.addLayout(row)
+            self.operator_remove_buttons[operator.name] = remove
+
+    def switch_operator(self) -> bool:
+        from ui.operators import SignInDialog
+
+        return SignInDialog(self.operators, self, closing_text="그만두기").exec() == SignInDialog.Accepted
+
+    def add_operator(self) -> bool:
+        from ui.operators import AddOperatorDialog
+
+        return AddOperatorDialog(self.operators, self).exec() == AddOperatorDialog.Accepted
+
+    def remove_operator(self, name: str, ask: bool = True) -> bool:
+        from services.operators import OperatorError
+        from ui.widgets import confirm
+
+        if ask and not confirm(self, f"'{name}' 작업자를 지울까요?",
+                               "지운 작업자로는 들어올 수 없습니다. 지난 인쇄 기록의 이름은 남습니다.",
+                               "지우기", danger=True):
+            return False
+        try:
+            self.operators.remove(name)
+        except OperatorError as exc:
+            inform(self, "작업자를 지울 수 없습니다", str(exc))
+            return False
+        return True
+
+    # ---- 폴더 자동 인쇄 ----
+    def _build_auto_print(self, auto) -> Panel:
+        self.auto = auto
+        panel = Panel("폴더 자동 인쇄", "폴더에 명단 파일(CSV·Excel)을 넣으면 고른 디자인으로 바로 인쇄합니다.")
+        panel.body.setSpacing(SPACE["md"])
+        self.auto_folder_label = label("", "muted", wrap=True)
+        self.auto_folder_button = SecondaryButton("폴더 고르기", "sm", icon="folder")
+        self.auto_folder_button.clicked.connect(self.choose_auto_folder)
+        self.auto_design_label = label("", "muted", wrap=True)
+        self.auto_design_button = SecondaryButton("디자인 고르기", "sm", icon="design")
+        self.auto_design_button.clicked.connect(self.choose_auto_design)
+        for title, path_label, button in (("감시할 폴더", self.auto_folder_label, self.auto_folder_button),
+                                          ("인쇄할 디자인", self.auto_design_label, self.auto_design_button)):
+            row = QHBoxLayout()
+            row.setSpacing(SPACE["md"])
+            texts = QVBoxLayout()
+            texts.setSpacing(2)
+            texts.addWidget(label(title, "strong"))
+            texts.addWidget(path_label)
+            row.addLayout(texts, 1)
+            row.addWidget(button, 0, Qt.AlignTop)
+            panel.body.addLayout(row)
+        control = QHBoxLayout()
+        control.setSpacing(SPACE["md"])
+        self.auto_toggle = PrimaryButton("자동 인쇄 켜기", "sm", icon="print")
+        self.auto_toggle.clicked.connect(self.toggle_auto_print)
+        self.auto_toggle.setToolTip(
+            "파일 첫 줄에는 디자인의 칸 이름(이름, 사번 …)을 적습니다. 사진은 같은 폴더에서 찾습니다. "
+            "켜기 전에 폴더에 있던 파일은 인쇄하지 않고, 끝난 파일은 '인쇄함', 문제가 생긴 파일은 '실패' 폴더로 옮깁니다. "
+            "프로그램을 다시 켜면 자동 인쇄는 꺼진 채로 시작합니다.")
+        control.addWidget(self.auto_toggle)
+        self.auto_status = label(auto.status, "secondary", wrap=True)
+        control.addWidget(self.auto_status, 1)
+        panel.body.addLayout(control)
+        self.auto_results = QVBoxLayout()
+        self.auto_results.setSpacing(2)
+        panel.body.addLayout(self.auto_results)
+        auto.statusChanged.connect(self.auto_status.setText)
+        auto.runningChanged.connect(lambda _on: self._sync_auto())
+        auto.fileFinished.connect(lambda _event: self._sync_auto())
+        self._sync_auto()
+        return panel
+
+    def _sync_auto(self) -> None:
+        auto = self.auto
+        folder, design = self.prefs.auto_print_folder(), self.prefs.auto_print_design()
+        self.auto_folder_label.setText(folder or "아직 고르지 않았습니다.")
+        self.auto_design_label.setText(design or "아직 고르지 않았습니다.")
+        self.auto_toggle.setText("자동 인쇄 끄기" if auto.running else "자동 인쇄 켜기")
+        self.auto_toggle.setEnabled(auto.running or bool(folder and design))
+        self.auto_folder_button.setEnabled(not auto.running)
+        self.auto_design_button.setEnabled(not auto.running)
+        self.auto_status.setText(auto.status)
+        while self.auto_results.count():
+            item = self.auto_results.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+        for event in auto.history[:5]:
+            mark = "✓" if event.ok else "✕"
+            self.auto_results.addWidget(label(f"{mark} {event.name} — {event.message}",
+                                              "secondary" if event.ok else "hint", wrap=True))
+
+    def choose_auto_folder(self, path: str | None = None) -> None:
+        if path is None:
+            path = QFileDialog.getExistingDirectory(self, "자동 인쇄할 폴더 고르기", self.prefs.auto_print_folder())
+        if path:
+            self.prefs.set_auto_print_folder(path)
+            self._sync_auto()
+
+    def choose_auto_design(self, path: str | None = None) -> None:
+        if path is None:
+            path, _ = QFileDialog.getOpenFileName(self, "자동 인쇄할 디자인 고르기", self.prefs.auto_print_design(),
+                                                  "하나스튜디오 디자인 (*.hsd)")
+        if path:
+            self.prefs.set_auto_print_design(path)
+            self._sync_auto()
+
+    def toggle_auto_print(self) -> bool:
+        from services.auto_print import AutoPrintError
+
+        if self.auto.running:
+            self.auto.stop()
+            return False
+        try:
+            self.auto.start(self.prefs.auto_print_folder(), self.prefs.auto_print_design())
+        except AutoPrintError as exc:
+            inform(self, "자동 인쇄를 켤 수 없습니다", str(exc))
+            return False
+        return True
+
     def _build_history(self) -> Panel:
         panel = Panel("인쇄 기록")
         self.retention_combo = ComboBox([text for _, text in RETENTION_CHOICES])
@@ -233,8 +413,8 @@ class SettingsPage(BasePage):
         self.retention_combo.currentIndexChanged.connect(
             lambda index: self.prefs.set_retention_days(RETENTION_CHOICES[index][0]))
         self.retention_combo.setAccessibleName("기록을 두는 기간")
+        self.retention_combo.setToolTip("이 기간이 지난 기록은 프로그램을 켤 때 지웁니다. 명단에 적힌 '뽑은 날짜'는 지우지 않습니다.")
         panel.body.addWidget(FormRow("기록을 두는 기간", self.retention_combo,
-                                     "이 기간이 지난 기록은 프로그램을 켤 때 지웁니다. 명단에 적힌 '뽑은 날짜'는 지우지 않습니다.",
                                      orientation="horizontal", label_width=_LABEL_WIDTH, control_align="left"))
         return panel
 
@@ -253,8 +433,7 @@ class SettingsPage(BasePage):
             path_label = label(path, "muted", wrap=True)
             path_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
             texts.addWidget(path_label)
-            if hint:
-                texts.addWidget(label(hint, "hint", wrap=True))
+            row.setToolTip(hint or "")
             layout.addLayout(texts, 1)
             button = SecondaryButton("폴더 열기", "sm", icon="folder")
             button.clicked.connect(lambda _checked=False, p=path: self._open(p))

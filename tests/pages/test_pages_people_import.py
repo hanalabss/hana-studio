@@ -188,7 +188,7 @@ def test_wizard_imports_a_cp949_csv_into_a_new_list(empty_page, workspace, cp949
     assert wizard.title() == "신입사원_명단.csv에서 8명을 가져옵니다"
     assert wizard.mapping() == {"이름": "성명", "부서": "소속부서", "직급": "직급", "사번": "사원번호"}
     assert "카드의 칸 4개를 파일의 열과 맞췄습니다" in wizard.description()
-    assert wizard.rest_check.isChecked() and "입사일" in wizard.rest_hint.text()
+    assert wizard.rest_check.isChecked() and "입사일" in wizard.rest_check.text()
     assert not wizard.mode_card.isVisibleTo(wizard)                  # 새 명단이라 물을 것이 없다
     assert wizard.photo_card.isVisibleTo(wizard)
     assert wizard.photo_source_combo.currentData() == "사원번호"

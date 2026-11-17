@@ -230,7 +230,8 @@ class QRItem(Item):
     w: float = 20.0
     h: float = 20.0
     data: str = ""
-    error_correction: str = "M"  # L | M | Q | H
+    symbology: str = "qr"        # qr | datamatrix
+    error_correction: str = "M"  # L | M | Q | H (QR만)
     color: str = "#000000"
     background: str | None = "#ffffff"
     border_modules: int = 2

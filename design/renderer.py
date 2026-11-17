@@ -596,6 +596,7 @@ def _paint_qr(painter, item, value, s, opts) -> None:
         return barcodes.render_qr(
             data, (width_px, height_px), error_correction=item.error_correction,
             border_modules=item.border_modules, foreground=foreground, background=background,
+            symbology=getattr(item, "symbology", "qr"),
         )
 
     _paint_code(

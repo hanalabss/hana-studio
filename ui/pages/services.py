@@ -5,6 +5,8 @@ import logging
 from typing import Any
 
 from printer.history import JobHistory
+from services.auto_print import FolderAutoPrinter
+from services.operators import OperatorBook
 from services.print_service import PrintService
 from services.printers import PrinterService
 
@@ -21,12 +23,17 @@ class AppServices:
     """
 
     def __init__(self, printers: PrinterService | None = None, printing: PrintService | None = None,
-                 history: JobHistory | None = None, queue: Any = None) -> None:
+                 history: JobHistory | None = None, queue: Any = None,
+                 operators: OperatorBook | None = None) -> None:
         self.history = history if history is not None else JobHistory()
+        self.operators = operators if operators is not None else _operator_book()
+        self.history.operator_provider = lambda: self.operators.current if self.operators else None
         if printing is None:
             printing = PrintService(queue, history=self.history)
         self.printing = printing
         self.printers = printers if printers is not None else PrinterService(queue)
+        self.auto_print = FolderAutoPrinter(self.printing, self.printers.current, options=_print_options,
+                                            work_dir=_work_dir())
         self._closed = False
 
     def start(self, retention_days: int | None = None) -> None:
@@ -44,5 +51,28 @@ class AppServices:
         if self._closed:
             return
         self._closed = True
+        self.auto_print.stop()
         self.printing.shutdown()
         self.printers.shutdown()
+
+
+def _print_options():
+    from ui.pages.settings.prefs import Prefs
+
+    return Prefs.instance().print_options()
+
+
+def _work_dir() -> str:
+    import os
+
+    from services.printers import app_data_dir
+
+    return os.path.join(app_data_dir(), "auto_print")
+
+
+def _operator_book() -> OperatorBook | None:
+    try:
+        return OperatorBook()
+    except Exception:
+        log.exception("작업자 목록을 읽지 못했습니다. 작업자 확인 없이 시작합니다.")
+        return None

@@ -134,6 +134,7 @@ class LayersPanel(QWidget):
         layout.setSpacing(0)
         layout.addWidget(label("카드에 놓인 것", "strong"))
         layout.addSpacing(2)
+        self._compact = False
         self.hint = label("", "hint", wrap=True)
         layout.addWidget(self.hint)
         layout.addSpacing(SPACE["xs"] + 2)
@@ -162,8 +163,8 @@ class LayersPanel(QWidget):
         self.rebuild()
 
     def set_compact(self, compact: bool) -> None:
-        self.hint.setVisible(not compact)
-        self.list.setToolTip("위에 있을수록 앞에 보입니다. 끌어서 순서를 바꿉니다." if compact else "")
+        self._compact = compact
+        self.hint.setVisible(bool(self.hint.text()) and not compact)
 
     # ---- 목록 ----
     def editing_row(self) -> int:
@@ -207,10 +208,9 @@ class LayersPanel(QWidget):
             self.list.verticalScrollBar().setValue(scroll)
         finally:
             self._syncing = False
-        if layers:
-            self.hint.setText("위에 있을수록 앞에 보입니다. 끌어서 순서를 바꿉니다.")
-        else:
-            self.hint.setText("아직 아무것도 없습니다. 위의 버튼으로 넣어 보세요.")
+        self.list.setToolTip("위에 있을수록 앞에 보입니다. 끌어서 순서를 바꿉니다.")
+        self.hint.setText("" if layers else "아직 아무것도 없습니다. 위의 버튼으로 넣어 보세요.")
+        self.hint.setVisible(bool(self.hint.text()) and not self._compact)
 
     def _sync_selection(self, ids: list[str]) -> None:
         if self._syncing:
