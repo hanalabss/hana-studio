@@ -519,7 +519,7 @@ class PrintPage(BasePage):
             rows.append({"id": record_id, "name": self._person_name(record_id, position),
                          "sub": self._person_sub(record_id), "tag": tag, "tone": tone})
         if self._mode == MODE_COPIES or self.workspace.store is None:
-            empty = "명단 없이 같은 카드를 여러 장 뽑습니다."
+            empty = ""          # 명단이 필요하면 오른쪽 '인쇄 전 확인'이 알려 준다
         elif self._resolution.error:
             empty = self._resolution.error
         else:

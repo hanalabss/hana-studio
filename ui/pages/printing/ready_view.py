@@ -181,8 +181,6 @@ class ReadyView(QWidget):
                 box.addWidget(self.copies_field)
                 box.addStretch(1)
                 layout.addWidget(self.copies_box)
-        self.no_list_note = label("", "hint", wrap=True)
-        layout.addWidget(self.no_list_note)
 
         layout.addSpacing(SPACE["sm"])
         stats = QFrame()
@@ -446,13 +444,6 @@ class ReadyView(QWidget):
         show(MODE_RANGES, has_list, "번호로 고르기", bool(counts.visible))
         show(MODE_ALL, has_list, f"명단에 보이는 {counts.visible or 0:,}명 모두", bool(counts.visible))
         show(MODE_COPIES, counts.copies_available, f"명단 없이 같은 카드 {copies:,}장")
-        if not has_list:
-            self.no_list_note.setText("명단을 열면 사람마다 이름과 사진이 바뀐 카드를 뽑을 수 있습니다.")
-        elif not counts.copies_available:
-            self.no_list_note.setText("")
-        else:
-            self.no_list_note.setText("")
-        self.no_list_note.setVisible(bool(self.no_list_note.text()))
         if int(self.copies_field.value()) != copies:
             self.copies_field.set_value(copies, emit=False)
         self._sync_mode_boxes()
