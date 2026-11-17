@@ -4,6 +4,7 @@
 - 이후 실행: 저장된 키로 자동 인증
 """
 
+from utils.legacy_qss import themed_qss
 import json
 import os
 import sys
@@ -142,12 +143,12 @@ class LicenseDialog(QDialog):
         self.setWindowTitle("라이선스 인증 - hanaStudio")
         self.setModal(True)
         self.setFixedSize(400, 280)
-        self.setStyleSheet("""
+        self.setStyleSheet(themed_qss("""
             QDialog {
                 background-color: #F9FAFB;
                 font-family: 'Segoe UI', system-ui, sans-serif;
             }
-        """)
+        """))
 
     def _setup_ui(self):
         """UI 구성"""
@@ -160,7 +161,7 @@ class LicenseDialog(QDialog):
 
         # 컨텐츠
         content = QWidget()
-        content.setStyleSheet("background-color: #FFFFFF;")
+        content.setStyleSheet(themed_qss("background-color: #FFFFFF;"))
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(24, 20, 24, 20)
         content_layout.setSpacing(16)
@@ -181,7 +182,7 @@ class LicenseDialog(QDialog):
         """헤더"""
         header = QFrame()
         header.setFixedHeight(70)
-        header.setStyleSheet("QFrame { background-color: #FFFFFF; }")
+        header.setStyleSheet(themed_qss("QFrame { background-color: #FFFFFF; }"))
 
         header_layout = QVBoxLayout(header)
         header_layout.setContentsMargins(24, 16, 24, 12)
@@ -189,11 +190,11 @@ class LicenseDialog(QDialog):
 
         title = QLabel("라이선스 인증")
         title.setFont(QFont("Segoe UI", 16, QFont.Weight.DemiBold))
-        title.setStyleSheet("color: #111827; background: transparent;")
+        title.setStyleSheet(themed_qss("color: #111827; background: transparent;"))
 
         subtitle = QLabel("라이선스 키를 입력해주세요")
         subtitle.setFont(QFont("Segoe UI", 10))
-        subtitle.setStyleSheet("color: #6B7280; background: transparent;")
+        subtitle.setStyleSheet(themed_qss("color: #6B7280; background: transparent;"))
 
         header_layout.addWidget(title)
         header_layout.addWidget(subtitle)
@@ -203,13 +204,13 @@ class LicenseDialog(QDialog):
         """입력 필드"""
         label = QLabel("라이선스 키")
         label.setFont(QFont("Segoe UI", 10, QFont.Weight.Medium))
-        label.setStyleSheet("color: #374151; background: transparent;")
+        label.setStyleSheet(themed_qss("color: #374151; background: transparent;"))
 
         self.key_input = QLineEdit()
         self.key_input.setPlaceholderText("XXXX-XXXX-XXXX-XXXX")
         self.key_input.setFixedHeight(40)
         self.key_input.setFont(QFont("Consolas", 11))
-        self.key_input.setStyleSheet("""
+        self.key_input.setStyleSheet(themed_qss("""
             QLineEdit {
                 background-color: #FFFFFF;
                 border: 1px solid #D1D5DB;
@@ -224,7 +225,7 @@ class LicenseDialog(QDialog):
                 background-color: #F3F4F6;
                 color: #9CA3AF;
             }
-        """)
+        """))
         self.key_input.returnPressed.connect(self._on_verify_clicked)
 
         parent_layout.addWidget(label)
@@ -241,11 +242,11 @@ class LicenseDialog(QDialog):
 
         self.status_icon = QLabel()
         self.status_icon.setFont(QFont("Segoe UI", 10))
-        self.status_icon.setStyleSheet("background: transparent;")
+        self.status_icon.setStyleSheet(themed_qss("background: transparent;"))
 
         self.status_text = QLabel()
         self.status_text.setFont(QFont("Segoe UI", 9))
-        self.status_text.setStyleSheet("background: transparent;")
+        self.status_text.setStyleSheet(themed_qss("background: transparent;"))
 
         status_layout.addWidget(self.status_icon)
         status_layout.addWidget(self.status_text)
@@ -257,7 +258,7 @@ class LicenseDialog(QDialog):
         """푸터"""
         footer = QFrame()
         footer.setFixedHeight(64)
-        footer.setStyleSheet("QFrame { background-color: #F9FAFB; }")
+        footer.setStyleSheet(themed_qss("QFrame { background-color: #F9FAFB; }"))
 
         footer_layout = QHBoxLayout(footer)
         footer_layout.setContentsMargins(24, 16, 24, 16)
@@ -269,7 +270,7 @@ class LicenseDialog(QDialog):
         self.cancel_btn = QPushButton("취소")
         self.cancel_btn.setFixedSize(70, 32)
         self.cancel_btn.setFont(QFont("Segoe UI", 9))
-        self.cancel_btn.setStyleSheet("""
+        self.cancel_btn.setStyleSheet(themed_qss("""
             QPushButton {
                 background-color: #FFFFFF;
                 border: 1px solid #D1D5DB;
@@ -282,14 +283,14 @@ class LicenseDialog(QDialog):
             QPushButton:pressed {
                 background-color: #F3F4F6;
             }
-        """)
+        """))
         self.cancel_btn.clicked.connect(self.reject)
 
         # 인증 버튼
         self.verify_btn = QPushButton("인증")
         self.verify_btn.setFixedSize(70, 32)
         self.verify_btn.setFont(QFont("Segoe UI", 9, QFont.Weight.Medium))
-        self.verify_btn.setStyleSheet("""
+        self.verify_btn.setStyleSheet(themed_qss("""
             QPushButton {
                 background-color: #3B82F6;
                 border: none;
@@ -305,7 +306,7 @@ class LicenseDialog(QDialog):
             QPushButton:disabled {
                 background-color: #93C5FD;
             }
-        """)
+        """))
         self.verify_btn.clicked.connect(self._on_verify_clicked)
 
         footer_layout.addWidget(self.cancel_btn)
@@ -317,25 +318,25 @@ class LicenseDialog(QDialog):
         self.status_frame.setVisible(True)
 
         if success:
-            self.status_frame.setStyleSheet("""
+            self.status_frame.setStyleSheet(themed_qss("""
                 QFrame {
                     background-color: #ECFDF5;
                     border-radius: 6px;
                 }
-            """)
+            """))
             self.status_icon.setText("✓")
-            self.status_icon.setStyleSheet("color: #10B981; background: transparent;")
-            self.status_text.setStyleSheet("color: #065F46; background: transparent;")
+            self.status_icon.setStyleSheet(themed_qss("color: #10B981; background: transparent;"))
+            self.status_text.setStyleSheet(themed_qss("color: #065F46; background: transparent;"))
         else:
-            self.status_frame.setStyleSheet("""
+            self.status_frame.setStyleSheet(themed_qss("""
                 QFrame {
                     background-color: #FEF2F2;
                     border-radius: 6px;
                 }
-            """)
+            """))
             self.status_icon.setText("✗")
-            self.status_icon.setStyleSheet("color: #EF4444; background: transparent;")
-            self.status_text.setStyleSheet("color: #991B1B; background: transparent;")
+            self.status_icon.setStyleSheet(themed_qss("color: #EF4444; background: transparent;"))
+            self.status_text.setStyleSheet(themed_qss("color: #991B1B; background: transparent;"))
 
         self.status_text.setText(message)
 

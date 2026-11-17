@@ -3,6 +3,7 @@ Admin Panel - 라이선스 관리 UI
 Admin 키로 인증 시 접근 가능
 """
 
+from utils.legacy_qss import themed_qss
 from typing import Optional, List
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -164,12 +165,12 @@ class AdminPanel(QDialog):
         self.setModal(True)
         self.setMinimumSize(800, 500)
         self.resize(900, 600)
-        self.setStyleSheet("""
+        self.setStyleSheet(themed_qss("""
             QDialog {
                 background-color: #F9FAFB;
                 font-family: 'Segoe UI', system-ui, sans-serif;
             }
-        """)
+        """))
 
     def _setup_ui(self):
         """UI 구성"""
@@ -193,7 +194,7 @@ class AdminPanel(QDialog):
         """헤더"""
         header = QFrame()
         header.setFixedHeight(70)
-        header.setStyleSheet("QFrame { background-color: #FFFFFF; border-bottom: 1px solid #E5E7EB; }")
+        header.setStyleSheet(themed_qss("QFrame { background-color: #FFFFFF; border-bottom: 1px solid #E5E7EB; }"))
 
         header_layout = QVBoxLayout(header)
         header_layout.setContentsMargins(24, 16, 24, 12)
@@ -201,11 +202,11 @@ class AdminPanel(QDialog):
 
         title = QLabel("라이선스 관리")
         title.setFont(QFont("Segoe UI", 16, QFont.Weight.DemiBold))
-        title.setStyleSheet("color: #111827; background: transparent; border: none;")
+        title.setStyleSheet(themed_qss("color: #111827; background: transparent; border: none;"))
 
         subtitle = QLabel("등록된 라이선스를 관리합니다")
         subtitle.setFont(QFont("Segoe UI", 10))
-        subtitle.setStyleSheet("color: #6B7280; background: transparent; border: none;")
+        subtitle.setStyleSheet(themed_qss("color: #6B7280; background: transparent; border: none;"))
 
         header_layout.addWidget(title)
         header_layout.addWidget(subtitle)
@@ -215,7 +216,7 @@ class AdminPanel(QDialog):
         """툴바"""
         toolbar = QFrame()
         toolbar.setFixedHeight(60)
-        toolbar.setStyleSheet("QFrame { background-color: #FFFFFF; border-bottom: 1px solid #E5E7EB; }")
+        toolbar.setStyleSheet(themed_qss("QFrame { background-color: #FFFFFF; border-bottom: 1px solid #E5E7EB; }"))
 
         toolbar_layout = QHBoxLayout(toolbar)
         toolbar_layout.setContentsMargins(24, 12, 24, 12)
@@ -225,7 +226,7 @@ class AdminPanel(QDialog):
         self.create_btn = QPushButton("+ 새 라이선스")
         self.create_btn.setFixedHeight(36)
         self.create_btn.setFont(QFont("Segoe UI", 9, QFont.Weight.Medium))
-        self.create_btn.setStyleSheet("""
+        self.create_btn.setStyleSheet(themed_qss("""
             QPushButton {
                 background-color: #3B82F6;
                 border: none;
@@ -236,14 +237,14 @@ class AdminPanel(QDialog):
             QPushButton:hover { background-color: #2563EB; }
             QPushButton:pressed { background-color: #1D4ED8; }
             QPushButton:disabled { background-color: #93C5FD; }
-        """)
+        """))
         self.create_btn.clicked.connect(self._show_create_dialog)
 
         # 새로고침 버튼
         self.refresh_btn = QPushButton("새로고침")
         self.refresh_btn.setFixedHeight(36)
         self.refresh_btn.setFont(QFont("Segoe UI", 9))
-        self.refresh_btn.setStyleSheet("""
+        self.refresh_btn.setStyleSheet(themed_qss("""
             QPushButton {
                 background-color: #FFFFFF;
                 border: 1px solid #D1D5DB;
@@ -253,13 +254,13 @@ class AdminPanel(QDialog):
             }
             QPushButton:hover { background-color: #F9FAFB; }
             QPushButton:pressed { background-color: #F3F4F6; }
-        """)
+        """))
         self.refresh_btn.clicked.connect(self._load_licenses)
 
         # 상태 레이블
         self.status_label = QLabel()
         self.status_label.setFont(QFont("Segoe UI", 9))
-        self.status_label.setStyleSheet("color: #6B7280; background: transparent; border: none;")
+        self.status_label.setStyleSheet(themed_qss("color: #6B7280; background: transparent; border: none;"))
 
         toolbar_layout.addWidget(self.create_btn)
         toolbar_layout.addWidget(self.refresh_btn)
@@ -271,7 +272,7 @@ class AdminPanel(QDialog):
     def _create_table(self, parent_layout):
         """테이블"""
         table_container = QWidget()
-        table_container.setStyleSheet("background-color: #FFFFFF;")
+        table_container.setStyleSheet(themed_qss("background-color: #FFFFFF;"))
         table_layout = QVBoxLayout(table_container)
         table_layout.setContentsMargins(24, 16, 24, 16)
 
@@ -282,7 +283,7 @@ class AdminPanel(QDialog):
         ])
 
         # 테이블 스타일
-        self.table.setStyleSheet("""
+        self.table.setStyleSheet(themed_qss("""
             QTableWidget {
                 background-color: #FFFFFF;
                 border: 1px solid #E5E7EB;
@@ -305,7 +306,7 @@ class AdminPanel(QDialog):
                 border: none;
                 border-bottom: 1px solid #E5E7EB;
             }
-        """)
+        """))
 
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -334,19 +335,19 @@ class AdminPanel(QDialog):
         """푸터"""
         footer = QFrame()
         footer.setFixedHeight(56)
-        footer.setStyleSheet("QFrame { background-color: #F9FAFB; border-top: 1px solid #E5E7EB; }")
+        footer.setStyleSheet(themed_qss("QFrame { background-color: #F9FAFB; border-top: 1px solid #E5E7EB; }"))
 
         footer_layout = QHBoxLayout(footer)
         footer_layout.setContentsMargins(24, 12, 24, 12)
 
         hint_label = QLabel("우클릭으로 라이선스 상태 변경")
         hint_label.setFont(QFont("Segoe UI", 9))
-        hint_label.setStyleSheet("color: #9CA3AF; background: transparent; border: none;")
+        hint_label.setStyleSheet(themed_qss("color: #9CA3AF; background: transparent; border: none;"))
 
         close_btn = QPushButton("닫기")
         close_btn.setFixedSize(80, 32)
         close_btn.setFont(QFont("Segoe UI", 9))
-        close_btn.setStyleSheet("""
+        close_btn.setStyleSheet(themed_qss("""
             QPushButton {
                 background-color: #FFFFFF;
                 border: 1px solid #D1D5DB;
@@ -354,7 +355,7 @@ class AdminPanel(QDialog):
                 color: #374151;
             }
             QPushButton:hover { background-color: #F9FAFB; }
-        """)
+        """))
         close_btn.clicked.connect(self.close)
 
         footer_layout.addWidget(hint_label)
@@ -540,12 +541,12 @@ class CreateLicenseDialog(QDialog):
     def _setup_ui(self):
         self.setWindowTitle("새 라이선스 생성")
         self.setFixedSize(350, 280)
-        self.setStyleSheet("""
+        self.setStyleSheet(themed_qss("""
             QDialog {
                 background-color: #FFFFFF;
                 font-family: 'Segoe UI', system-ui, sans-serif;
             }
-        """)
+        """))
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -576,14 +577,14 @@ class CreateLicenseDialog(QDialog):
         self.memo_input = QLineEdit()
         self.memo_input.setPlaceholderText("회사명, 담당자 등")
         self.memo_input.setFixedHeight(36)
-        self.memo_input.setStyleSheet("""
+        self.memo_input.setStyleSheet(themed_qss("""
             QLineEdit {
                 border: 1px solid #D1D5DB;
                 border-radius: 6px;
                 padding: 0 12px;
             }
             QLineEdit:focus { border-color: #3B82F6; }
-        """)
+        """))
 
         # 버튼
         btn_layout = QHBoxLayout()
@@ -591,7 +592,7 @@ class CreateLicenseDialog(QDialog):
 
         cancel_btn = QPushButton("취소")
         cancel_btn.setFixedSize(80, 36)
-        cancel_btn.setStyleSheet("""
+        cancel_btn.setStyleSheet(themed_qss("""
             QPushButton {
                 background-color: #FFFFFF;
                 border: 1px solid #D1D5DB;
@@ -599,12 +600,12 @@ class CreateLicenseDialog(QDialog):
                 color: #374151;
             }
             QPushButton:hover { background-color: #F9FAFB; }
-        """)
+        """))
         cancel_btn.clicked.connect(self.reject)
 
         create_btn = QPushButton("생성")
         create_btn.setFixedSize(80, 36)
-        create_btn.setStyleSheet("""
+        create_btn.setStyleSheet(themed_qss("""
             QPushButton {
                 background-color: #3B82F6;
                 border: none;
@@ -612,7 +613,7 @@ class CreateLicenseDialog(QDialog):
                 color: #FFFFFF;
             }
             QPushButton:hover { background-color: #2563EB; }
-        """)
+        """))
         create_btn.clicked.connect(self._on_create)
 
         btn_layout.addStretch()
