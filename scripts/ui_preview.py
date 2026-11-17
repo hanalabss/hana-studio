@@ -4,7 +4,6 @@
     python scripts/ui_preview.py --theme dark        어두운 화면으로
     python scripts/ui_preview.py --gallery           위젯을 상태별로 모두 본다
     python scripts/ui_preview.py --shot <폴더>        틀과 갤러리를 두 테마로 PNG 저장 (화면 없이 가능)
-    python scripts/ui_preview.py --legacy            '빠른 인쇄'에 실제 기존 화면을 넣는다
 """
 
 from __future__ import annotations
@@ -28,7 +27,6 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--page", default="design", help="처음 열 화면 id")
     parser.add_argument("--font", default=None, help="글꼴을 강제로 고른다 (예: \"Malgun Gothic\")")
     parser.add_argument("--scale", default=None, help="화면 배율 (예: 1.5)")
-    parser.add_argument("--legacy", action="store_true", help="빠른 인쇄에 실제 기존 화면을 넣는다")
     return parser.parse_args(argv)
 
 
@@ -536,21 +534,10 @@ def build_sample_menu(parent=None):
 # --------------------------------------------------------------------------- 틀
 
 
-def _stub_legacy_factory():
-    from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QLabel, QMainWindow
-
-    window = QMainWindow()
-    note = QLabel("미리 보기에서는 기존 화면을 열지 않습니다.\n--legacy 옵션을 주면 실제 '빠른 인쇄' 화면이 이 자리에 들어옵니다.")
-    note.setAlignment(Qt.AlignCenter)
-    window.setCentralWidget(note)
-    return window
-
-
-def build_shell(use_legacy: bool = False):
+def build_shell():
     from ui.shell import AppShell
 
-    shell = AppShell(legacy_factory=None if use_legacy else _stub_legacy_factory)
+    shell = AppShell()
     shell.set_document("2026 신입 사원증", True)
     shell.set_printer_status("ready", "RTAI R600 준비됨")
     shell.undoRequested.connect(lambda: shell.show_toast("되돌릴 일이 아직 없습니다."))
@@ -666,11 +653,10 @@ def export_screenshots(app, out_dir: str | os.PathLike) -> list[Path]:
             "list": ("ready", "RTAI R600 준비됨"),
             "print": ("busy", "RTAI R600 인쇄 중"),
             "history": ("error", "리본을 다 썼습니다"),
-            "quick": ("offline", "프린터 연결 안 됨"),
             "printer": ("offline", "프린터 연결 안 됨"),
             "settings": ("ready", "RTAI R600 준비됨"),
         }
-        for index, page_id in enumerate(("design", "list", "print", "history", "quick", "printer", "settings")):
+        for index, page_id in enumerate(("design", "list", "print", "history", "printer", "settings")):
             shell.navigate(page_id)
             shell.set_step_done("design", page_id in ("list", "print"))
             shell.set_step_done("list", page_id == "print")
@@ -685,7 +671,7 @@ def export_screenshots(app, out_dir: str | os.PathLike) -> list[Path]:
         shell.show_toast("순서 안내를 숨겼습니다. 설정에서 다시 켤 수 있습니다.", action_text="다시 보기",
                          timeout_ms=0)
         _settle(app)
-        save(shell, f"shell_8_toast_{theme}.png")
+        save(shell, f"shell_7_toast_{theme}.png")
         shell.set_guide_visible(True, persist=False)
 
         shell.printer_popover.adjustSize()
@@ -769,7 +755,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.gallery:
         window, _sections = build_gallery()
     else:
-        window = build_shell(args.legacy)
+        window = build_shell()
         window.navigate(args.page)
     window.show()
     return app.exec()

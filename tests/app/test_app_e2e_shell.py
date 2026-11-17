@@ -1,4 +1,4 @@
-"""틀 전체: 빠른 인쇄(기존 화면), 밝게·어둡게 바꾸기, 여러 번 켜고 끄기."""
+"""틀 전체: 밝게·어둡게 바꾸기, 여러 번 켜고 끄기."""
 import os
 import subprocess
 import sys
@@ -8,57 +8,9 @@ from pathlib import Path
 from app_helpers import *  # noqa: F401,F403
 from app_helpers import click_footer, find_printers, import_people, pick_template, pump, wait_until
 
-from PySide6.QtCore import Qt
-from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QCheckBox, QPushButton, QSpinBox
 
 ROOT = Path(__file__).resolve().parents[2]
 PAGES = ("design", "list", "print", "history", "printer", "settings")
-
-
-def test_quick_print_legacy_screen_opens_inside_the_shell(app_env, app_window, monkeypatch):
-    import hana_studio
-
-    window, app = app_window, app_env
-    # 기존 화면이 나중에 하는 무거운 일(AI 모델, 실제 프린터 DLL)과 저장소의 config.json 쓰기는 막는다.
-    monkeypatch.setattr(hana_studio.HanaStudio, "_lazy_initialize", lambda self: None)
-    monkeypatch.setattr(hana_studio.config, "save_settings", lambda *args, **kwargs: None)
-
-    assert "quick" in window.page_ids()
-    assert window.navigate("quick")
-    host = window.page("quick")
-    assert host.load_now(), host.error()
-    legacy = host.legacy_window()
-    # 기존 화면은 패널과 뷰어를 조금씩 나눠 만든다. 다 만들 때까지 기다린다.
-    wait_until(app, lambda: getattr(legacy.ui, "_panels_initialized", True)
-               and getattr(legacy.ui, "_viewers_initialized", True))
-    pump(app, 50)
-    assert isinstance(legacy, hana_studio.HanaStudio) and host.is_loaded() and host.error() is None
-    assert not legacy.isWindow() and legacy.isVisibleTo(window)       # 따로 뜬 창이 아니라 틀 안에 있다
-    assert window.windowTitle().endswith("빠른 인쇄 - Hana Studio") or "빠른 인쇄" in window.windowTitle()
-
-    # 기존 화면의 자기 위젯이 살아 있다
-    buttons = [b for b in legacy.findChildren(QPushButton) if b.isVisibleTo(legacy)]
-    assert buttons and all(button.isEnabled() or button.text() for button in buttons)
-    spin = next((s for s in legacy.findChildren(QSpinBox) if s.isVisibleTo(legacy)), None)
-    if spin is not None:
-        start = spin.value()
-        spin.setFocus()
-        QTest.keyClick(spin, Qt.Key_Up)
-        assert spin.value() == start + 1
-    check = next((c for c in legacy.findChildren(QCheckBox) if c.isVisibleTo(legacy) and c.isEnabled()), None)
-    if check is not None:
-        was = check.isChecked()
-        check.click()
-        assert check.isChecked() != was
-        check.click()
-    image = window.grab().toImage()
-    assert not image.isNull() and image.width() >= 1000
-
-    # 다른 화면으로 갔다 와도 다시 만들지 않는다
-    window.navigate("design")
-    window.navigate("quick")
-    assert host.legacy_window() is legacy
 
 
 def test_theme_switch_on_every_page_updates_canvas_palette(app_env, app_window, people_csv, photo_folder):

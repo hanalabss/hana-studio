@@ -132,7 +132,7 @@ def build(sample: dict | None = None, with_list: bool = False):
     from ui.pages.workspace import Workspace
     from ui.shell import PAGE_LIST, AppShell
 
-    shell = AppShell(legacy_factory=lambda: None)
+    shell = AppShell()
     workspace = Workspace(shell)
     workspace.editor.new_document(presets.CUT_54X86_BLEED, "employee", name="2026 신입 사원증")
     shell.set_document("2026 신입 사원증", True)

@@ -83,8 +83,7 @@ class AppShell(QMainWindow):
     guideVisibilityChanged = Signal(bool)
 
     def __init__(self, settings: QSettings | None = None, with_default_pages: bool = True,
-                 legacy_factory: Callable[[], QWidget] | None = None, is_admin: bool = False,
-                 parent: QWidget | None = None):
+                 is_admin: bool = False, parent: QWidget | None = None):
         super().__init__(parent)
         self._theme = ThemeManager.instance()
         self._settings = settings if settings is not None else self._theme.settings
@@ -169,7 +168,7 @@ class AppShell(QMainWindow):
         if with_default_pages:
             from .pages import install_default_pages
 
-            install_default_pages(self, legacy_factory, is_admin)
+            install_default_pages(self)
             self.navigate("design")
 
     # ------------------------------------------------------------------ 화면 등록

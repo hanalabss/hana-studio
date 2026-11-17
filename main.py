@@ -265,21 +265,9 @@ def main():
                     import onnxruntime
                     print("[IMPORT] onnxruntime")
 
-                elif step == 3:
-                    status.setText("화면을 준비하는 중...")
-                    app.processEvents()
-                    from ui.components.control_panels import (
-                        PrinterPanel, FileSelectionPanel, PrintModePanel,
-                        PositionAdjustPanel, ProgressPanel, PrintQuantityPanel
-                    )
-                    print("[IMPORT] control_panels")
-
-                elif step == 4:
-                    status.setText("화면을 준비하는 중...")
-                    app.processEvents()
-                    from ui.components.image_viewer import ImageViewer
-                    from ui import main_window
-                    print("[IMPORT] image_viewer")
+                elif step in (3, 4):
+                    # 예전 '빠른 인쇄' 화면 부품을 미리 불러오던 자리(2.0.9에서 빠른 인쇄를 뺐다).
+                    pass
 
                 elif step == 5:
                     status.setText("거의 다 됐습니다...")
@@ -289,7 +277,6 @@ def main():
                     print(f"[INIT] 메인 화면 생성 (Admin: {state['is_admin']})")
 
                 elif step in (6, 7):
-                    # 기존 화면(빠른 인쇄)의 패널·뷰어는 그 화면을 처음 열 때 초기화된다.
                     pass
 
                 elif step == 8:
