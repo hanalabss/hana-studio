@@ -31,7 +31,7 @@ def test_screenshot_export_writes_real_images_for_both_themes(preview, qapp, tmp
     assert len(names) == len(files) >= 40
 
     for theme in ("light", "dark"):
-        for page in ("1_design", "2_list", "3_print", "4_history", "5_quick", "6_printer", "7_settings", "8_toast"):
+        for page in ("1_design", "2_list", "3_print", "4_history", "5_printer", "6_settings", "7_toast"):
             assert f"shell_{page}_{theme}.png" in names
         for section, _factory in preview.GALLERY_SECTIONS:
             assert f"gallery_{section}_{theme}.png" in names
@@ -83,6 +83,4 @@ def test_preview_arguments(preview):
 def test_preview_shell_runs_without_licence_or_printer(preview, qapp, show):
     shell = show(preview.build_shell())
     assert shell.current_page_id() == "design"
-    shell.navigate("quick")
-    assert shell.page("quick").load_now() is True
-    assert not shell.page("quick").legacy_window().isWindow()
+    assert "quick" not in shell.page_ids()                     # 빠른 인쇄는 2.0.9에서 뺐다

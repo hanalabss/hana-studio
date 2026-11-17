@@ -277,7 +277,7 @@ def test_footer_reflects_selection(page, workspace):
 def test_footer_buttons_navigate_in_the_shell(qapp, workspace, people_store, tmp_path):
     from PySide6.QtCore import QSettings
 
-    shell = AppShell(QSettings(str(tmp_path / "shell.ini"), QSettings.IniFormat), legacy_factory=lambda: None)
+    shell = AppShell(QSettings(str(tmp_path / "shell.ini"), QSettings.IniFormat))
     page = PeoplePage(workspace)
     shell.register_page(PAGE_LIST, page, "명단", "people", step_label="명단 넣기")
     shell.navigate(PAGE_LIST)

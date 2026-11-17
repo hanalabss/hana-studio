@@ -20,7 +20,7 @@ def shell(qapp, settings, workspace):
     from ui.pages.design import DesignPage
     from ui.shell import PAGE_DESIGN, AppShell
 
-    window = AppShell(settings=settings, legacy_factory=QWidget)
+    window = AppShell(settings=settings, )
     design = DesignPage(workspace, background_engine=FakeEngine())
     design.dialogs = FakeDialogs()
     window.register_page(PAGE_DESIGN, design, "디자인", "design", step_label="카드 꾸미기")

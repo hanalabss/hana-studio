@@ -1,7 +1,7 @@
 import pytest
 from PySide6.QtCore import QRect, QSettings, QSize, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QLabel, QMainWindow, QWidget
+from PySide6.QtWidgets import QLabel, QWidget
 
 from ui.shell import (
     PAGE_DESIGN,
@@ -9,12 +9,10 @@ from ui.shell import (
     PAGE_LIST,
     PAGE_PRINT,
     PAGE_PRINTER,
-    PAGE_QUICK,
     PAGE_SETTINGS,
     AppShell,
     BasePage,
     FooterAction,
-    LegacyHostPage,
     Page,
     PlaceholderPage,
     fit_geometry,
@@ -22,43 +20,9 @@ from ui.shell import (
 from ui.theme import KEY_GEOMETRY, KEY_GUIDE_VISIBLE, KEY_MAXIMIZED
 
 
-class FakeLegacy(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.setCentralWidget(QLabel("기존 화면"))
-        self.allow_close = True
-        self.close_requests = 0
-
-    def closeEvent(self, event):
-        self.close_requests += 1
-        if self.allow_close:
-            event.accept()
-        else:
-            event.ignore()
-
-
-class Factory:
-    def __init__(self):
-        self.calls = 0
-        self.fail = False
-        self.window = None
-
-    def __call__(self):
-        self.calls += 1
-        if self.fail:
-            raise RuntimeError("프린터 DLL을 찾지 못했습니다")
-        self.window = FakeLegacy()
-        return self.window
-
-
 @pytest.fixture
-def factory():
-    return Factory()
-
-
-@pytest.fixture
-def shell(settings, factory, show):
-    return show(AppShell(settings=settings, legacy_factory=factory))
+def shell(settings, show):
+    return show(AppShell(settings=settings))
 
 
 def labels(buttons):
@@ -69,13 +33,12 @@ def labels(buttons):
 
 
 def test_shell_has_all_pages_and_starts_on_design(shell):
-    assert shell.page_ids() == [PAGE_DESIGN, PAGE_LIST, PAGE_PRINT, PAGE_HISTORY, PAGE_QUICK,
-                                PAGE_PRINTER, PAGE_SETTINGS]
+    assert shell.page_ids() == [PAGE_DESIGN, PAGE_LIST, PAGE_PRINT, PAGE_HISTORY, PAGE_PRINTER, PAGE_SETTINGS]
     assert shell.current_page_id() == PAGE_DESIGN
     assert shell.nav.page_ids() == shell.page_ids()
     assert shell.nav.current() == PAGE_DESIGN
     assert [shell.nav.button(p).text() for p in shell.page_ids()] == [
-        "디자인", "명단", "인쇄", "기록", "빠른 인쇄", "프린터", "설정"]
+        "디자인", "명단", "인쇄", "기록", "프린터", "설정"]
     assert shell.guide.step_ids() == [PAGE_DESIGN, PAGE_LIST, PAGE_PRINT]
     assert [shell.guide.pill(p).text() for p in shell.guide.step_ids()] == ["카드 꾸미기", "명단 넣기", "인쇄하기"]
     assert shell.top_bar.isVisible() and shell.nav.isVisible() and shell.guide.isVisible()
@@ -93,11 +56,11 @@ def test_placeholder_pages_have_helpful_korean_copy(shell):
 
 def test_rail_bottom_items_sit_below_main_items(shell):
     design = shell.nav.button(PAGE_DESIGN).geometry()
-    quick = shell.nav.button(PAGE_QUICK).geometry()
+    history = shell.nav.button(PAGE_HISTORY).geometry()
     printer = shell.nav.button(PAGE_PRINTER).geometry()
     config = shell.nav.button(PAGE_SETTINGS).geometry()
-    assert design.top() < quick.top() < printer.top() < config.top()
-    assert printer.top() - quick.bottom() > 100, "프린터와 설정은 맨 아래에 따로 둔다"
+    assert design.top() < history.top() < printer.top() < config.top()
+    assert printer.top() - history.bottom() > 100, "프린터와 설정은 맨 아래에 따로 둔다"
 
 
 # ------------------------------------------------------------------ 이동
@@ -131,7 +94,7 @@ def test_rail_click_navigates(shell):
 
 @pytest.mark.parametrize("key,page_id", [
     (Qt.Key_1, PAGE_DESIGN), (Qt.Key_2, PAGE_LIST), (Qt.Key_3, PAGE_PRINT),
-    (Qt.Key_4, PAGE_HISTORY), (Qt.Key_5, PAGE_QUICK), (Qt.Key_Comma, PAGE_SETTINGS),
+    (Qt.Key_4, PAGE_HISTORY), (Qt.Key_Comma, PAGE_SETTINGS),
 ])
 def test_keyboard_shortcuts_navigate(shell, qapp, key, page_id):
     shell.navigate(PAGE_PRINTER)
@@ -192,7 +155,7 @@ def test_clicking_a_step_navigates(shell):
 
 
 def test_guide_is_shown_only_on_step_pages(shell):
-    for page_id, visible in ((PAGE_LIST, True), (PAGE_HISTORY, False), (PAGE_QUICK, False),
+    for page_id, visible in ((PAGE_LIST, True), (PAGE_HISTORY, False),
                              (PAGE_SETTINGS, False), (PAGE_PRINT, True)):
         shell.navigate(page_id)
         assert shell.guide.isVisible() is visible, page_id
@@ -215,7 +178,7 @@ def test_step_states_are_painted_differently(shell, theme_manager):
     assert count_pixels(upcoming, theme.hex("surface")) > 300
 
 
-def test_hiding_the_guide_persists_and_can_be_undone(shell, settings, factory, show, spy):
+def test_hiding_the_guide_persists_and_can_be_undone(shell, settings, show, spy):
     changed = spy(shell.guideVisibilityChanged)
     QTest.mouseClick(shell.guide._hide, Qt.LeftButton)
     assert not shell.guide.isVisible() and shell.guide_visible() is False
@@ -226,7 +189,7 @@ def test_hiding_the_guide_persists_and_can_be_undone(shell, settings, factory, s
     toast = shell.centralWidget()._hana_toast
     assert toast is not None and "설정" in toast.text()
 
-    reopened = show(AppShell(settings=settings, legacy_factory=factory))
+    reopened = show(AppShell(settings=settings))
     assert reopened.guide_visible() is False and not reopened.guide.isVisible()
     reopened.close()
 
@@ -437,8 +400,8 @@ def test_shell_toast_sits_above_footer(shell, qapp):
 # ------------------------------------------------------------------ 창 크기
 
 
-def test_window_geometry_is_persisted(settings, factory, show, tmp_path, qapp):
-    first = show(AppShell(settings=settings, legacy_factory=factory))
+def test_window_geometry_is_persisted(settings, show, tmp_path, qapp):
+    first = show(AppShell(settings=settings))
     assert (first.width(), first.height()) == (1280, 800)
     assert first.minimumWidth() == 1100 and first.minimumHeight() == 700
     first.setGeometry(40, 30, 1360, 840)
@@ -449,7 +412,7 @@ def test_window_geometry_is_persisted(settings, factory, show, tmp_path, qapp):
     assert reopened.value(KEY_GEOMETRY) == "40,30,1360,840"
     assert str(reopened.value(KEY_MAXIMIZED)).lower() == "false"
 
-    second = show(AppShell(settings=reopened, legacy_factory=factory))
+    second = show(AppShell(settings=reopened))
     screens = [s.availableGeometry() for s in qapp.screens()]
     expected = fit_geometry(QRect(40, 30, 1360, 840), screens, QSize(1100, 700))
     # 테스트용 가상 화면은 창 최소 크기보다 작아 위치는 플랫폼이 정한다. 크기만 비교한다.
@@ -477,174 +440,10 @@ def test_fit_geometry_shrinks_to_screen_but_not_below_minimum():
     assert fit_geometry(QRect(5, 5, 1360, 840), [], QSize(1100, 700)) == QRect(5, 5, 1360, 840)
 
 
-def test_bad_stored_geometry_is_ignored(settings, factory, show):
+def test_bad_stored_geometry_is_ignored(settings, show):
     settings.setValue(KEY_GEOMETRY, "not,a,rect")
-    shell = show(AppShell(settings=settings, legacy_factory=factory))
+    shell = show(AppShell(settings=settings))
     assert (shell.width(), shell.height()) == (1280, 800)
-
-
-# ------------------------------------------------------------------ 빠른 인쇄(기존 화면)
-
-
-def test_legacy_screen_is_created_lazily_and_embedded(shell, factory, qapp):
-    host = shell.page(PAGE_QUICK)
-    assert isinstance(host, LegacyHostPage) and host.title == "빠른 인쇄"
-    assert factory.calls == 0 and not host.is_loaded()
-
-    shell.navigate(PAGE_QUICK)
-    QTest.qWait(30)
-    assert factory.calls == 1 and host.is_loaded()
-    window = host.legacy_window()
-    assert window is factory.window
-    assert not window.isWindow(), "기존 창은 따로 뜨지 않고 틀 안에 들어온다"
-    assert window.isVisible() and host.isAncestorOf(window)
-
-    shell.navigate(PAGE_DESIGN)
-    shell.navigate(PAGE_QUICK)
-    QTest.qWait(30)
-    assert factory.calls == 1, "한 번 만든 화면은 다시 만들지 않는다"
-
-
-def test_legacy_failure_is_contained_and_retryable(shell, factory):
-    factory.fail = True
-    host = shell.page(PAGE_QUICK)
-    shell.navigate(PAGE_QUICK)
-    QTest.qWait(30)
-    assert not host.is_loaded()
-    assert "프린터 DLL을 찾지 못했습니다" in host.error()
-    assert host._failed.isVisible() and "프린터 DLL을 찾지 못했습니다" in host._failed.guidance()
-
-    assert shell.navigate(PAGE_LIST) is True, "기존 화면이 실패해도 새 화면은 계속 쓸 수 있다"
-    shell.navigate(PAGE_QUICK)
-    factory.fail = False
-    QTest.mouseClick(host._failed.action_button(), Qt.LeftButton)
-    assert host.is_loaded() and host.error() is None
-    assert factory.calls >= 2
-
-
-def test_legacy_screen_is_not_created_twice_when_it_pumps_events(settings, show, qapp):
-    """기존 화면은 만드는 도중 processEvents를 부른다. 그 틈에 한 번 더 만들어지면 안 된다."""
-    made = []
-
-    def slow_factory():
-        qapp.processEvents()
-        window = FakeLegacy()
-        made.append(window)
-        qapp.processEvents()
-        return window
-
-    shell = show(AppShell(settings=settings, legacy_factory=slow_factory))
-    shell.navigate(PAGE_QUICK)
-    host = shell.page(PAGE_QUICK)
-    assert host.load_now() is True
-    QTest.qWait(30)
-    assert len(made) == 1
-    assert host.legacy_window() is made[0]
-
-
-def test_legacy_factory_returning_nothing_counts_as_failure(settings, show):
-    shell = show(AppShell(settings=settings, legacy_factory=lambda: None))
-    host = shell.page(PAGE_QUICK)
-    assert host.load_now() is False
-    assert host.error()
-
-
-def test_close_asks_legacy_screen_first(shell, factory, qapp):
-    host = shell.page(PAGE_QUICK)
-    assert host.load_now() is True
-    factory.window.allow_close = False
-    assert shell.close() is False
-    assert shell.isVisible(), "기존 화면이 닫기를 거부하면(인쇄 중) 앱도 닫히지 않는다"
-    assert factory.window.close_requests == 1
-
-    factory.window.allow_close = True
-    assert shell.close() is True
-    assert not shell.isVisible()
-
-
-def test_close_without_legacy_loaded_does_not_create_it(shell, factory):
-    assert shell.close() is True
-    assert factory.calls == 0
-    assert shell.page(PAGE_DESIGN).leave_count == 1
-
-
-def test_default_legacy_factory_targets_existing_class():
-    import inspect
-
-    from ui.shell import default_legacy_factory
-
-    source = inspect.getsource(default_legacy_factory)
-    assert "from hana_studio import HanaStudio" in source
-    assert "initialize_panels_deferred" in source and "initialize_viewers_deferred" in source
-
-
-# ------------------------------------------------------------------ 기존 화면은 새 테마를 입지 않는다
-
-
-class StyledLegacy(FakeLegacy):
-    """기존 화면처럼 작은 버튼과 숫자 칸을 스스로 꾸민다."""
-
-    def __init__(self):
-        super().__init__()
-        from PySide6.QtWidgets import QHBoxLayout, QPushButton, QSpinBox
-
-        body = QWidget()
-        row = QHBoxLayout(body)
-        self.minus = QPushButton("-")
-        self.minus.setFixedSize(24, 24)
-        self.minus.setStyleSheet("background: #DC3545; color: white; border: none; border-radius: 4px;")
-        self.spin = QSpinBox()
-        self.plain = QPushButton("카드 인쇄")
-        for widget in (self.minus, self.spin, self.plain):
-            row.addWidget(widget)
-        self.setCentralWidget(body)
-
-
-def test_new_theme_does_not_leak_into_legacy_screen(settings, show, theme_manager, qapp):
-    from PySide6.QtGui import QPalette
-    from PySide6.QtWidgets import QPushButton, QSpinBox
-
-    from ui.theme import DARK, LIGHT, mark_themed
-
-    theme_manager.set_mode("dark")
-    made = []
-
-    def factory():
-        made.append(StyledLegacy())
-        return made[-1]
-
-    shell = show(AppShell(settings=settings, legacy_factory=factory))
-    shell.navigate(PAGE_QUICK)
-    host = shell.page(PAGE_QUICK)
-    assert host.load_now() is True
-    qapp.processEvents()
-    legacy = made[0]
-
-    reference = show(mark_themed(QWidget()))
-    themed_button = QPushButton("카드 인쇄", reference)
-    themed_spin = QSpinBox(reference)
-    themed_button.show()
-    themed_spin.show()
-    qapp.processEvents()
-
-    assert (legacy.minus.width(), legacy.minus.height()) == (24, 24), "기존 화면의 작은 버튼이 그대로여야 한다"
-    assert themed_button.sizeHint().height() >= 40
-    assert legacy.plain.sizeHint().height() < themed_button.sizeHint().height()
-    assert legacy.spin.sizeHint().height() < themed_spin.sizeHint().height()
-
-    assert legacy.palette().color(QPalette.Window).name().upper() == LIGHT.hex("ground")
-    assert legacy.plain.palette().color(QPalette.ButtonText).name().upper() == LIGHT.hex("text")
-    from PySide6.QtGui import QFontDatabase
-
-    system_font = QFontDatabase.systemFont(QFontDatabase.GeneralFont)
-    assert legacy.plain.font().family() == system_font.family(), "기존 화면은 원래 쓰던 시스템 글꼴 그대로"
-    assert themed_button.font().family() == theme_manager.font_spec.family
-    assert shell.palette().color(QPalette.Window).name().upper() == DARK.hex("ground")
-
-    from tests.ui.test_ui_widgets import count_pixels
-
-    assert count_pixels(legacy.plain.grab().toImage(), DARK.hex("surface_raised")) == 0
-    assert count_pixels(themed_button.grab().toImage(), DARK.hex("surface_raised")) > 200
 
 
 def test_shell_parts_and_pages_are_themed_but_shell_itself_is_not(shell):
@@ -653,32 +452,3 @@ def test_shell_parts_and_pages_are_themed_but_shell_itself_is_not(shell):
         assert part.property("themed") == "true"
     for page_id in (PAGE_DESIGN, PAGE_LIST, PAGE_PRINT, PAGE_HISTORY, PAGE_PRINTER, PAGE_SETTINGS):
         assert shell.page(page_id).property("themed") == "true"
-    quick = shell.page(PAGE_QUICK)
-    assert quick.property("themed") is None
-    assert quick._waiting.property("themed") == "true" and quick._failed.property("themed") == "true"
-
-
-def test_windows_opened_by_legacy_screen_stay_light(settings, show, theme_manager, qapp):
-    from PySide6.QtGui import QPalette
-    from PySide6.QtWidgets import QDialog, QPushButton, QVBoxLayout
-
-    from ui.theme import DARK, LIGHT
-    from ui.widgets import Dialog
-
-    theme_manager.set_mode("dark")
-    made = []
-    shell = show(AppShell(settings=settings, legacy_factory=lambda: made.append(FakeLegacy()) or made[-1]))
-    assert shell.page(PAGE_QUICK).load_now() is True
-
-    old_dialog = QDialog(made[0])
-    QVBoxLayout(old_dialog).addWidget(QPushButton("프린터 선택"))
-    old_dialog.show()
-    qapp.processEvents()
-    assert old_dialog.palette().color(QPalette.Window).name().upper() == LIGHT.hex("ground")
-    assert old_dialog.findChild(QPushButton).palette().color(QPalette.ButtonText).name().upper() == LIGHT.hex("text")
-
-    new_dialog = Dialog("새 대화 상자", parent=shell)
-    new_dialog.show()
-    qapp.processEvents()
-    assert new_dialog.palette().color(QPalette.Window).name().upper() == DARK.hex("surface")
-    assert new_dialog.palette().color(QPalette.WindowText).name().upper() == DARK.hex("text")

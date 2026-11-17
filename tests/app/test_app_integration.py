@@ -44,7 +44,7 @@ def test_all_pages_registered_and_navigable(shell):
         assert isinstance(shell.page(page_id), cls)
         assert shell.navigate(page_id)
         assert shell.current_page_id() == page_id
-    assert "quick" in shell.page_ids()
+    assert "quick" not in shell.page_ids()                     # 빠른 인쇄는 2.0.9에서 뺐다
 
 
 def test_pages_share_one_workspace(shell):

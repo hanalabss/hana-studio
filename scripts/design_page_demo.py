@@ -112,7 +112,7 @@ def build(sample: bool = False, workdir: str | None = None, real_engine: bool = 
     from ui.shell import PAGE_DESIGN, AppShell
 
     workdir = workdir or tempfile.mkdtemp(prefix="hsdesign_")
-    shell = AppShell(legacy_factory=lambda: __import__("PySide6.QtWidgets").QtWidgets.QWidget())
+    shell = AppShell()
     shell.set_printer_status("ready", "RTAI R600 준비됨")
     workspace = Workspace(shell)
     page = DesignPage(workspace, background_engine=None if real_engine else DemoEngine())

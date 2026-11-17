@@ -60,7 +60,7 @@ def build(capabilities: set[str]):
     from ui.pages.workspace import Workspace
     from ui.shell import PAGE_DESIGN, AppShell
 
-    shell = AppShell(legacy_factory=lambda: QWidget())
+    shell = AppShell()
     shell.set_printer_status("ready", "프린터 준비됨")
     workspace = Workspace(shell)
     page = DesignPage(workspace, capabilities=lambda: set(capabilities))     # 진짜 엔진(rembg)을 쓴다

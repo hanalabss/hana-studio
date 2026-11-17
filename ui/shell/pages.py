@@ -9,14 +9,12 @@ from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QVBoxLayout, QWidget
 from ui.theme import SPACE, ThemeManager
 from ui.widgets import EmptyState, FormRow, Panel, SegmentedControl, label
 
-from .legacy import LegacyHostPage
 from .page import BasePage, FooterAction
 
 PAGE_DESIGN = "design"
 PAGE_LIST = "list"
 PAGE_PRINT = "print"
 PAGE_HISTORY = "history"
-PAGE_QUICK = "quick"
 PAGE_PRINTER = "printer"
 PAGE_SETTINGS = "settings"
 
@@ -94,8 +92,8 @@ class SettingsPage(BasePage):
             self.guide_check.blockSignals(False)
 
 
-def install_default_pages(shell, legacy_factory=None, is_admin: bool = False) -> None:
-    """틀에 기본 화면 일곱 개를 올린다. 나중에 같은 id로 register_page를 부르면 실제 화면으로 바뀐다."""
+def install_default_pages(shell) -> None:
+    """틀에 기본 화면 여섯 개를 올린다. 나중에 같은 id로 register_page를 부르면 실제 화면으로 바뀐다."""
 
     def go(page_id: str) -> Callable[[], None]:
         return lambda: shell.navigate(page_id)
@@ -103,9 +101,8 @@ def install_default_pages(shell, legacy_factory=None, is_admin: bool = False) ->
     design = PlaceholderPage(
         "디자인",
         "여기서 카드를 꾸밉니다",
-        "글자, 사진, 바코드를 놓아 카드를 만드는 화면을 준비하고 있습니다. "
-        "완성된 그림 파일이 있으면 빠른 인쇄에서 바로 뽑을 수 있습니다.",
-        "design", "빠른 인쇄 열기", go(PAGE_QUICK),
+        "글자, 사진, 바코드를 놓아 카드를 만드는 화면을 준비하고 있습니다.",
+        "design",
     )
     design.set_footer_hint("카드를 다 꾸미면 명단을 넣습니다.")
     design.set_footer_actions([FooterAction("다음: 명단 넣기", go(PAGE_LIST))])
@@ -126,9 +123,8 @@ def install_default_pages(shell, legacy_factory=None, is_admin: bool = False) ->
     printing = PlaceholderPage(
         "인쇄",
         "여기서 인쇄를 시작합니다",
-        "뽑을 사람을 고르고 한 장씩 미리 본 뒤 인쇄하는 화면을 준비하고 있습니다. "
-        "지금 한 장을 뽑으려면 빠른 인쇄를 쓰세요.",
-        "print", "빠른 인쇄 열기", go(PAGE_QUICK),
+        "뽑을 사람을 고르고 한 장씩 미리 본 뒤 인쇄하는 화면을 준비하고 있습니다.",
+        "print",
     )
     printing.set_footer_actions([FooterAction("이전: 명단 넣기", go(PAGE_LIST), "secondary")])
 
@@ -142,17 +138,14 @@ def install_default_pages(shell, legacy_factory=None, is_admin: bool = False) ->
     printer = PlaceholderPage(
         "프린터",
         "연결된 프린터를 여기서 확인합니다",
-        "프린터 찾기와 리본 남은 양 확인은 준비하고 있습니다. "
-        "지금은 빠른 인쇄 화면에서 프린터를 고를 수 있습니다.",
-        "printer", "빠른 인쇄 열기", go(PAGE_QUICK),
+        "프린터 찾기와 리본 남은 양 확인은 준비하고 있습니다.",
+        "printer",
     )
 
     shell.register_page(PAGE_DESIGN, design, "디자인", "design", step_label="카드 꾸미기")
     shell.register_page(PAGE_LIST, people, "명단", "people", step_label="명단 넣기")
     shell.register_page(PAGE_PRINT, printing, "인쇄", "print", step_label="인쇄하기")
     shell.register_page(PAGE_HISTORY, history, "기록", "history")
-    shell.register_page(PAGE_QUICK, LegacyHostPage(legacy_factory, is_admin), "빠른 인쇄", "bolt",
-                        section="extra")
     shell.register_page(PAGE_PRINTER, printer, "프린터", "printer", section="bottom", shortcut="")
     shell.register_page(PAGE_SETTINGS, SettingsPage(shell), "설정", "settings", section="bottom",
                         shortcut="Ctrl+,")
