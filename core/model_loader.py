@@ -156,6 +156,8 @@ class ModelLoadingManager(QObject):
 
             try:
                 safe_print(f"[AI] rembg 모듈 import 시작...")
+                from core.rembg_setup import prepare_rembg
+                prepare_rembg()                      # 쓰지 않는 pymatting 컴파일(배포판 65초)을 건너뛴다
                 from rembg import new_session
                 safe_print(f"[AI] rembg 모듈 import 완료!")
             except Exception as import_err:

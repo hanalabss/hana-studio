@@ -47,9 +47,8 @@ face_datas = [(os.path.join(_cv2.data.haarcascades, 'haarcascade_frontalface_def
 # 아래 ('dll', 'dll')이 폴더째 넣지만, 빠지면 SMART 인쇄가 통째로 안 되므로 따로 적어 둔다.
 smart_datas = [('dll/smart', 'dll/smart')] if os.path.isdir(os.path.join(PROJECT_ROOT, 'dll', 'smart')) else []
 
-### ====== NUMBA 필수 리소스 ======
-numba_datas = collect_data_files('numba')
-numba_hidden = collect_submodules('numba')
+### numba·pymatting은 넣지 않는다: rembg의 alpha matting에서만 쓰이는데 하나스튜디오는 쓰지 않고,
+### 배포판에서는 켤 때마다 다시 컴파일해 배경 지우기 준비가 60초 넘게 걸렸다(core/rembg_setup.py).
 
 ### ====== SCIPY C-EXTENSION + DATA 포함 ======
 scipy_datas = collect_data_files('scipy')
@@ -83,7 +82,7 @@ a = Analysis(
         # === 프로젝트 내부 모듈 ===
         ('dll', 'dll'),
         ('models', '_internal/models'),
-    ] + smart_datas + openpyxl_datas + barcode_datas + face_datas + numba_datas + scipy_datas,  # <<< numba + scipy 데이터 포함
+    ] + smart_datas + openpyxl_datas + barcode_datas + face_datas + scipy_datas,  # <<< scipy 데이터 포함
 
     hiddenimports=[
         # === Qt ===
@@ -105,8 +104,6 @@ a = Analysis(
         'onnxruntime.capi._pybind_state',
         'onnxruntime.capi.onnxruntime_pybind11_state',
 
-        # === pymatting ===
-        'pymatting', 'pymatting.util.util',
 
         # === printer code ===
         'printer.r600_printer',
@@ -131,10 +128,6 @@ a = Analysis(
         'scipy.linalg.cython_lapack',
         'scipy.spatial.transform.rotation',
 
-        # === Numba 꼭 포함해야 하는 모듈 ===
-        'numba.core', 'numba.core.types', 'numba.core.types.old_scalars',
-        'numba.np.ufunc',
-
         # === 라이선스 모듈 ===
         'licensing', 'licensing.manager', 'licensing.dialog',
         'licensing.device', 'licensing.config',
@@ -143,7 +136,7 @@ a = Analysis(
         'supabase', 'supabase._sync.client', 'supabase._async.client',
         'gotrue', 'postgrest', 'realtime', 'storage3', 'supafunc',
         'httpx', 'httpcore', 'h11', 'sniffio', 'anyio',
-    ] + project_hidden + openpyxl_hidden + qrcode_hidden + barcode_hidden + numba_hidden + scipy_hidden + supabase_hidden + gotrue_hidden + postgrest_hidden + realtime_hidden + storage3_hidden + supafunc_hidden + httpx_hidden + httpcore_hidden,  # <<< 자동 포함된 모듈 추가
+    ] + project_hidden + openpyxl_hidden + qrcode_hidden + barcode_hidden + scipy_hidden + supabase_hidden + gotrue_hidden + postgrest_hidden + realtime_hidden + storage3_hidden + supafunc_hidden + httpx_hidden + httpcore_hidden,  # <<< 자동 포함된 모듈 추가
 
     hookspath=[],
     hooksconfig={},
@@ -154,7 +147,8 @@ a = Analysis(
         'pip', 'torch', 'tensorflow', 'transformers', 'flask', 'fastapi',
         'uvicorn', 'starlette', 'selenium', 'webdriver_manager', 'datasets',
         'accelerate', 'huggingface_hub', 'scikit-image', 'scikit-learn',
-        'black', 'coverage', 'pygments'
+        'black', 'coverage', 'pygments',
+        'numba', 'llvmlite', 'pymatting',        # alpha matting용(쓰지 않음). core/rembg_setup.py
     ],
     noarchive=False,
     optimize=0,
