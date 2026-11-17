@@ -744,3 +744,11 @@ def test_code_notice_shows_only_when_it_applies(editor):
     assert not section.validation.isVisible()
     type_in("Hana39")
     assert section.validation.text() == FULL_ASCII_NOTICE
+
+
+def test_fit_note_appears_only_after_changing_the_method(editor, tmp_path):
+    editor.add_image_file(make_image(tmp_path / "same.png", size=(60, 80)))
+    section = editor.inspector.image
+    assert section.fit_hint.isHidden()                         # 넣자마자는 설명이 없다
+    section.fit_control.set_current("contain")
+    assert not section.fit_hint.isHidden() and "똑같이 보입니다" in section.fit_hint.text()

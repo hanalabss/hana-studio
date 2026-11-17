@@ -294,7 +294,8 @@ class ImageSection(Section):
             self.file_label.setText("" if has_file else "아직 그림이 없습니다. 로고나 사진 파일을 골라 주세요.")
             self.file_label.setVisible(not has_file)
         self.fit_control.set_current(item.fit if item.fit in FIT_HINTS else "fill", emit=False)
-        self._set_fit_hint(self._fit_hint_text(item.fit))
+        if self.fit_hint.property("item_id") != item.id:       # 다른 칸을 고르면 접는다
+            self._set_fit_hint("")
         self._load_cutout(item, bound, has_file)
 
     def _work(self, item) -> CutoutWork | None:
@@ -457,6 +458,8 @@ class ImageSection(Section):
         return self.controller.ensure_workdir()
 
     def _set_fit_hint(self, text: str) -> None:
+        """방법을 바꿨는데 달라 보이지 않을 때처럼, 사용자가 손댄 뒤에만 한 줄."""
+        self.fit_hint.setProperty("item_id", self.item.id if (text and self.item is not None) else "")
         self.fit_hint.setText(text)
         self.fit_hint.setVisible(bool(text))
 
