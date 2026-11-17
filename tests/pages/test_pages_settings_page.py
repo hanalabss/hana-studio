@@ -285,3 +285,39 @@ def test_operator_panel(env, services, monkeypatch):
     monkeypatch.setattr(page_module, "inform", lambda parent, title, message: shown.append(message))
     assert not page.remove_operator("김하나", ask=False) and "관리자가 한 명은" in shown[0]
     assert page.remove_operator("이둘", ask=False) and book.names() == ["김하나"]
+
+
+def test_operator_admin_switch_pin_change_and_settings_lock(env, services):
+    from ui.operators import ChangePinDialog
+
+    book = services.operators
+    book.add("김하나", "1234")
+    book.add("이둘", "5678")
+    page = SettingsPage(services=services)
+    assert not page.lock_note.isVisibleTo(page) and page.print_panel.isEnabled()
+
+    assert page.set_admin("이둘", True) and book.find("이둘").admin
+    assert page.operator_admin_buttons["이둘"].text() == "관리자 해제"
+
+    dialog = ChangePinDialog(book, "이둘", page)                # 관리자가 남의 비밀번호를 바꿀 때는 지금 비밀번호가 없다
+    assert not dialog.needs_old
+    dialog.new_edit.setText("0000")
+    dialog.again_edit.setText("0000")
+    assert dialog.try_change() and book.verify("이둘", "0000")
+
+    assert page.set_admin("김하나", False)                    # 스스로 관리자를 내려놓으면 설정이 잠긴다
+    assert page.settings_locked() and page.lock_note.isVisibleTo(page)
+    assert not page.print_panel.isEnabled() and not page.card_panel.isEnabled()
+    assert not page.operator_admin_buttons["이둘"].isEnabled()
+    assert page.operator_pin_buttons["김하나"].isEnabled() and not page.operator_pin_buttons["이둘"].isEnabled()
+
+    own = ChangePinDialog(book, "김하나", page)               # 본인은 지금 비밀번호를 넣어야 한다
+    assert own.needs_old
+    own.new_edit.setText("4321")
+    own.again_edit.setText("4321")
+    assert not own.try_change() and "맞지 않습니다" in own.error.text()
+    own.old_edit.setText("1234")
+    assert own.try_change() and book.verify("김하나", "4321")
+
+    book.sign_in("이둘", "0000")
+    assert not page.settings_locked() and page.print_panel.isEnabled()
