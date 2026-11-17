@@ -90,7 +90,7 @@ class InitializationThread(QThread):
             
             # rembg 모듈 로드
             from rembg import new_session
-            session = new_session(model_name=self.model_name)
+            session = new_session(model_name=self.model_name, providers=["CPUExecutionProvider"])   # GPU 파일은 묶지 않는다
             
             if self.cancelled:
                 return

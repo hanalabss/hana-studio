@@ -163,7 +163,7 @@ class ModelLoadingManager(QObject):
                 raise
 
             safe_print(f"[AI] rembg.new_session 호출 중...")
-            self.session = new_session(model_name=self.model_name)
+            self.session = new_session(model_name=self.model_name, providers=["CPUExecutionProvider"])   # GPU 파일은 묶지 않는다
             safe_print(f"[AI] 세션 생성 완료!")
             load_time = time.time() - start_time
 
