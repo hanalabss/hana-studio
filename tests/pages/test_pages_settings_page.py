@@ -273,6 +273,8 @@ def test_operator_panel(env, services, monkeypatch):
     sign_in.name_combo.setCurrentIndex(book.names().index("이둘"))
     sign_in.pin_edit.setText("0000")
     assert not sign_in.try_sign_in() and "맞지 않습니다" in sign_in.error.text()
+    assert "operators.json" not in sign_in.error.text()               # 한 번 틀리면 짧게
+    assert not sign_in.try_sign_in() and "operators.json" in sign_in.error.text()   # 두 번째부터 잊었을 때 방법
     sign_in.pin_edit.setText("5678")
     assert sign_in.try_sign_in()
     assert page.operator_current.text() == "지금 작업자: 이둘"

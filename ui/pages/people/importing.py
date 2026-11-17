@@ -945,9 +945,6 @@ class ImportWizard(Dialog):
         self.rest_check.setChecked(True)
         self.rest_check.toggled.connect(lambda *_: self._sync_match_summary())
         self.match_box.addWidget(self.rest_check)
-        self.rest_hint = label("", "hint", wrap=True)
-        self.rest_hint.setContentsMargins(28, 0, 0, 0)
-        self.match_box.addWidget(self.rest_hint)
 
         self.match_box.addStretch(1)
         outer.addWidget(scroll, 1)
@@ -1240,13 +1237,10 @@ class ImportWizard(Dialog):
         used = {combo.currentData() for combo in self.field_combos.values() if combo.currentData()}
         rest = [c.name for c in preview.columns if c.name not in used]
         self.rest_check.setVisible(bool(self.field_combos) and bool(rest))
-        self.rest_hint.setVisible(self.rest_check.isVisible())
         if rest:
-            shown = ", ".join(rest[:6]) + (f" 외 {len(rest) - 6}개" if len(rest) > 6 else "")
-            if self.rest_check.isChecked():
-                self.rest_hint.setText(f"{shown}도 명단에 넣습니다. 지금 카드에 쓰지 않아도 나중에 쓸 수 있습니다.")
-            else:
-                self.rest_hint.setText(f"{shown}{'은' if _final(rest[min(len(rest), 6) - 1]) else '는'} 가져오지 않습니다.")
+            shown = ", ".join(rest[:3]) + (f" 외 {len(rest) - 3}개" if len(rest) > 3 else "")
+            self.rest_check.setText(f"나머지 열도 함께 가져오기 ({shown})")
+            self.rest_check.setToolTip("지금 카드에 쓰지 않아도 나중에 쓸 수 있습니다.")
 
         if self._has_people():
             current = self.store.count()
@@ -1313,7 +1307,8 @@ class ImportWizard(Dialog):
         if not design_fields(document):
             self.sample_hint.setText("카드에 이름이나 사진 칸을 놓으면 여기에 사람마다 다르게 나옵니다.")
         else:
-            self.sample_hint.setText("파일의 처음 몇 명으로 미리 본 모습입니다.")
+            self.sample_hint.setText("")
+        self.sample_hint.setVisible(bool(self.sample_hint.text()))
 
     # ================================================================ 3. 가져오는 중 / 4. 결과
     def _build_work_page(self) -> QWidget:
@@ -1518,11 +1513,8 @@ class ImportWizard(Dialog):
         self.warning_list.setPlainText("\n".join(value_warnings))
         self._toggle_warnings(False)
         self._fill_done_cards(result.inserted)
-        if value_warnings:
-            self.fix_hint.setText("값은 파일에 적힌 그대로 넣었습니다. 명단에서 그 칸을 골라 Enter를 누르면 바로 고칠 수 있습니다. "
-                                  "원래 파일은 바뀌지 않았습니다.")
-        else:
-            self.fix_hint.setText("원래 파일은 바뀌지 않았습니다. 명단에서 고친 내용은 이 프로그램 안에만 저장됩니다.")
+        self.fix_hint.setText("명단에서 그 칸을 골라 Enter를 누르면 바로 고칠 수 있습니다." if value_warnings else "")
+        self.fix_hint.setVisible(bool(value_warnings))
         self._show_page(PAGE_DONE)
 
     # ================================================================ 공통

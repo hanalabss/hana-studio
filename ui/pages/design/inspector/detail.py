@@ -67,8 +67,8 @@ class DetailSection(Section):
 
         self.layer_control = SegmentedControl(LAYER_OPTIONS, stretch=True)
         self.layer_control.currentChanged.connect(self._on_layer)
-        self.layer_hint = label("", "hint", wrap=True)
-        self.box.body.addWidget(group("인쇄 층", self.layer_control, self.layer_hint))
+        self.layer_control.set_tips(LAYER_HINTS)
+        self.box.body.addWidget(group("인쇄 층", self.layer_control))
 
         self.lock_check = QCheckBox("움직이지 않게 잠그기")
         self.lock_check.toggled.connect(lambda on: self._loading or self.controller.set_locked(self.ids, on))
@@ -95,7 +95,6 @@ class DetailSection(Section):
     def _on_layer(self, layer: str) -> None:
         if not self._loading:
             self.controller.set_layer(self.ids, layer)
-        self.layer_hint.setText(LAYER_HINTS[layer])
 
     def load(self) -> None:
         item = self.item
@@ -110,6 +109,5 @@ class DetailSection(Section):
             self.rotation_field.set_value(rotation, emit=False)
             self.h_field.setEnabled(not (item.kind == "line" and item.h == 0))
         self.layer_control.set_current(item.layer, emit=False)
-        self.layer_hint.setText(LAYER_HINTS.get(item.layer, ""))
         self.lock_check.setChecked(all(it.locked for it in self.items))
         self.printable_check.setChecked(all(not it.printable for it in self.items))

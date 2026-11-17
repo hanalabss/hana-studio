@@ -167,7 +167,8 @@ def test_white_underlay_follows_the_printer(qapp, workspace, tmp_path):
         assert photo.cutout_asset, capabilities
         assert bool(photo.mask_asset) is expected, capabilities
         assert section.white_box.isVisible() and section.white_check.isChecked() is expected
-        assert "흰색 깔기" in section.white_check.text() and phrase in section.white_hint.text()
+        assert "흰색 깔기" in section.white_check.text() and phrase in section.white_check.toolTip()
+        assert section.white_hint.isVisible() is (capabilities is not None and "white" not in capabilities)
         rendered = renderer.render_side(page.controller.document, "front", None, dpi=100)
         assert (rendered.white_mask is not None) is expected
         page.close()
@@ -226,7 +227,7 @@ def logo_editor(page, tmp_path):
 def test_method_choice_explains_both_methods(logo_editor):
     section = logo_editor.inspector.image
     assert section.method_box.isVisible() and section.method() == "ai"
-    texts = " ".join(widget.text() for widget in section.method_box.findChildren(type(section.cutout_hint)))
+    texts = " ".join(button.toolTip() for button in section.method_buttons.values())
     assert "사람·물건 사진" in texts and "로고·도장·서명" in texts
     assert [button.text() for button in section.method_buttons.values()] == ["사람·물건만 남기기", "바탕색만 지우기"]
 
@@ -381,7 +382,7 @@ def test_bound_photo_explains_why_it_cannot_be_cut_out(editor, workspace, people
     assert item.source is not None
     assert not section.remove_button.isEnabled() and not section.method_box.isVisible()
     hint = section.cutout_hint.text()
-    assert "사람마다 사진이 달라" in hint and "그림 파일" in hint and "PNG" in hint
+    assert "명단 사진은" in hint and "PNG" in hint
 
 
 def test_replacing_the_image_drops_the_cutout_and_its_settings(logo_editor, qapp, tmp_path):

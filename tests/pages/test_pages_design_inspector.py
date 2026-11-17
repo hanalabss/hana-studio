@@ -258,7 +258,7 @@ def test_image_fit_and_replace_are_undoable(editor, tmp_path):
     before = _steps(editor)
     section.fit_control.set_current("contain")
     assert item.fit == "contain" and _steps(editor) == before + 1
-    assert "전체가 보이도록" in section.fit_hint.text()
+    assert "전체가 보이도록" in section.fit_control.button("contain").toolTip()
 
     editor.dialogs.image_path = make_image(tmp_path / "b.png", color=(250, 10, 10))
     section.replace_button.click()
@@ -288,7 +288,7 @@ def test_image_binding_to_list_photo_column(editor, workspace, people_store):
     assert section.column_box.isVisible() and not section.file_box.isVisible()
     assert [section.column_combo.itemData(i) for i in range(section.column_combo.count())] == ["사진"]
     assert not section.remove_button.isEnabled()
-    assert "사람마다 사진이 달라" in section.cutout_hint.text()
+    assert "명단 사진은" in section.cutout_hint.text()
 
     section.source_control.set_current("file")
     assert item.source is None
@@ -495,7 +495,7 @@ def test_detail_position_size_rotation_layer(editor):
     detail.rotation_field.set_value(-90)
     assert (item.w, item.h, item.rotation) == (40.0, 12.5, 270.0)
     detail.layer_control.set_current("white")
-    assert item.layer == "white" and "흰색 잉크" in detail.layer_hint.text()
+    assert item.layer == "white" and "흰색 잉크" in detail.layer_control.button("white").toolTip()
     detail.printable_check.setChecked(True)
     assert item.printable is False
 

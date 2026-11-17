@@ -168,6 +168,7 @@ def test_test_print_failure_says_what_happened(env, services, rtai_lib):
 def test_practice_mode_switch(env, services):
     page = make_printer_page(env, services)
     assert page.fake_check.isChecked() and page.fake_check.text() == "연습 모드 (가짜 프린터)"
+    assert not page.fake_hint.isHidden() and "카드와 리본" in page.fake_check.toolTip()   # 켜져 있을 때만 한 줄
     calls = []
 
     def switch(enabled):

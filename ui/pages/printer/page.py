@@ -267,12 +267,14 @@ class PrinterPage(BasePage):
 
         advanced = Panel("고급")
         self.fake_check = QCheckBox("연습 모드 (가짜 프린터)")
+        self.fake_check.setToolTip("프린터 없이 프로그램을 익힐 때 켭니다. 가짜 프린터 두 대가 나타나고, "
+                                   "인쇄를 눌러도 카드와 리본을 쓰지 않습니다.")
         self.fake_check.toggled.connect(self._on_fake_toggled)
         advanced.body.addWidget(self.fake_check)
-        self.fake_hint = label(
-            "프린터 없이 프로그램을 익힐 때 켭니다. 가짜 프린터 두 대가 나타나고, 인쇄를 눌러도 "
-            "카드와 리본을 쓰지 않습니다. 진짜 프린터로 뽑으려면 꺼 주세요.", "hint", wrap=True)
+        self.fake_hint = label("연습 모드입니다. 진짜 프린터로 뽑으려면 꺼 주세요.", "hint", wrap=True)
         self.fake_hint.setContentsMargins(28, 0, 0, 0)
+        set_prop(self.fake_hint, "tone", "warn")
+        self.fake_hint.setVisible(False)
         advanced.body.addWidget(self.fake_hint)
         column.addWidget(advanced)
         column.addStretch(1)
@@ -420,6 +422,7 @@ class PrinterPage(BasePage):
             self.fake_check.setChecked(fakes)
             self.fake_check.blockSignals(False)
         self.fake_check.setEnabled(not is_printing and not printers.printing)
+        self.fake_hint.setVisible(fakes)                 # 켜져 있을 때만
 
     # ------------------------------------------------------------------ 할 수 있는 일
     def refresh_devices(self) -> bool:

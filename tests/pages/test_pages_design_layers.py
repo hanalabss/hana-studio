@@ -19,7 +19,7 @@ def test_list_shows_top_item_first(editor):
     panel = editor.layers_panel
     assert _names(panel) == ["qr", "text", "rect"]
     assert panel.list.count() == 3
-    assert "끌어서" in panel.hint.text()
+    assert "끌어서" in panel.list.toolTip() and panel.hint.text() == ""     # 평소에는 설명 줄이 없다
 
 
 def test_empty_list_invites_to_add(page):

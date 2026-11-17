@@ -91,21 +91,22 @@ class TextSection(Section):
         self.date_combo.setAccessibleName("날짜 모양")
         self.date_combo.activated.connect(self._on_date)
         self.date_offset = StepperField(0, -3650, 3650, 1, 0, "일 뒤")
+        self.date_offset.setToolTip("0이면 인쇄하는 날의 날짜입니다. 유효기간처럼 1년 뒤를 찍으려면 365로 맞추세요.")
         self.date_offset.valueChanged.connect(self._on_date)
         self.date_box = self._page(
-            self.date_combo, field_row("날짜 옮기기", self.date_offset),
-            label("0이면 인쇄하는 날의 날짜입니다. 유효기간처럼 1년 뒤를 찍으려면 365로 맞추세요.", "hint", wrap=True))
+            self.date_combo, field_row("날짜 옮기기", self.date_offset))
         self.counter_start = StepperField(1, 0, 99999999, 1, 0)
+        self.counter_start.setToolTip("한 장 찍을 때마다 1씩 커집니다.")
         self.counter_start.valueChanged.connect(self._on_counter)
         self.counter_pad = StepperField(0, 0, 12, 1, 0, "자리")
+        self.counter_pad.setToolTip("4로 하면 0001처럼 앞을 0으로 채웁니다.")
         self.counter_pad.valueChanged.connect(self._on_counter)
         self.counter_prefix = QLineEdit()
         self.counter_prefix.setPlaceholderText("예: No. ")
         self.counter_prefix.textEdited.connect(self._on_counter)
         self.counter_box = self._page(
             field_row("시작 번호", self.counter_start), field_row("자릿수", self.counter_pad),
-            field_row("앞 글자", self.counter_prefix),
-            label("한 장 찍을 때마다 1씩 커집니다. 자릿수를 4로 하면 0001처럼 앞을 0으로 채웁니다.", "hint", wrap=True))
+            field_row("앞 글자", self.counter_prefix))
         self.mode_pages.append(self._page(self.auto_control, self.date_box, self.counter_box))
         self.column.addWidget(group("내용", self.mode_control, *self.mode_pages))
 
@@ -247,7 +248,7 @@ class TextSection(Section):
             self.column_combo.set_columns(self._text_columns(), source.column, has_list)
             missing = [source.column] if has_list and source.column not in self._text_columns() else []
         if not has_list:
-            self.column_hint.setText("명단을 넣으면 사람마다 실제 내용으로 바뀝니다. 지금은 «칸 이름»으로 보입니다.")
+            self.column_hint.setText("명단을 넣으면 사람마다 실제 내용으로 바뀝니다.")
         elif missing:
             self.column_hint.setText(f"열린 명단에 '{', '.join(missing)}' 항목이 없습니다. 다른 항목을 고르세요.")
         else:

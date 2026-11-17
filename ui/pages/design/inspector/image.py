@@ -43,16 +43,11 @@ WHITE_HINTS = {
     None: "투명 카드에 찍을 때만 켭니다. 흰색을 찍는 프린터가 있어야 합니다.",
 }
 REVIEW_TEXTS = {
-    "partial": "그림의 일부까지 함께 지워졌습니다. 로고·도장·서명처럼 바탕이 한 가지 색인 그림은 "
-               "'바탕색만 지우기'가 더 잘 맞습니다.",
-    "wipeout": "그림에서 주인공을 찾지 못했습니다. 이대로 쓰면 그림이 거의 다 지워집니다. "
-               "로고·도장·서명 같은 그림이면 '바탕색만 지우기'로 해 보세요.",
-    "untouched": "지울 배경을 찾지 못했습니다. 이대로 쓰면 그림이 거의 그대로 남습니다. "
-                 "바탕이 한 가지 색이면 '바탕색만 지우기'로 해 보세요.",
+    "partial": "그림의 일부까지 함께 지워졌습니다. 로고·도장이면 '바탕색만 지우기'가 더 잘 맞습니다.",
+    "wipeout": "주인공을 찾지 못했습니다. 로고·도장이면 '바탕색만 지우기'로 해 보세요.",
+    "untouched": "지울 배경을 찾지 못했습니다. 바탕이 한 가지 색이면 '바탕색만 지우기'로 해 보세요.",
 }
-BOUND_HINT = ("사람마다 사진이 달라 명단의 사진은 여기서 배경을 지울 수 없습니다. "
-              "배경 지우기는 '그림 파일'로 넣은 그림 한 장에만 쓸 수 있습니다. "
-              "사람 사진은 배경을 미리 지운 파일(PNG)을 명단 사진으로 써 주세요.")
+BOUND_HINT = "명단 사진은 여기서 배경을 지울 수 없습니다. 배경을 지운 PNG를 명단 사진으로 쓰세요."
 
 
 class PreviewLabel(QLabel):
@@ -122,7 +117,9 @@ class ImageSection(Section):
 
         self.fit_control = SegmentedControl(FIT_OPTIONS, stretch=True)
         self.fit_control.currentChanged.connect(self._on_fit)
+        self.fit_control.set_tips(FIT_HINTS)
         self.fit_hint = label("", "hint", wrap=True)
+        self.fit_hint.setVisible(False)
         self.fill_card_button = SecondaryButton("카드 전체로 맞추기", size="sm")
         self.fill_card_button.setToolTip(
             "사진 칸을 카드 크기에 딱 맞게 키워 그림이 카드를 가득 채우게 하고, 글자와 바코드 뒤로 보냅니다.")
@@ -150,14 +147,11 @@ class ImageSection(Section):
         for key, title, hint in METHODS:
             button = QRadioButton(title)
             button.setAccessibleDescription(hint)
+            button.setToolTip(hint)
             button.toggled.connect(lambda checked, key=key: checked and self._on_method(key))
             self.method_group.addButton(button)
             self.method_buttons[key] = button
-            note = label(hint, "hint", wrap=True)
-            note.setContentsMargins(30, 0, 0, 0)
-            row = self._box(button, note)
-            row.layout().setSpacing(0)
-            rows.append(row)
+            rows.append(button)
         self.method_buttons[self._method].setChecked(True)
         self.method_box = self._box(*rows)
 
@@ -293,19 +287,14 @@ class ImageSection(Section):
         if bound:
             column = next(iter(sorted(item.source.columns())), "")
             self.column_combo.set_columns(self._photo_columns(), column, self.context.has_list())
-            if not self.context.has_list():
-                self.column_hint.setText("명단을 넣으면 사람마다 그 사람의 사진으로 바뀝니다.")
-            elif self.controller.preview_record is None:
-                self.column_hint.setText("아래 '명단으로 미리 보기'에서 사람을 넘기면 실제 사진이 보입니다.")
-            else:
-                self.column_hint.setText("")
+            self.column_hint.setText("" if self.context.has_list() else "명단을 넣으면 사람마다 그 사람의 사진으로 바뀝니다.")
             self.column_hint.setVisible(bool(self.column_hint.text()))
         else:
             self.replace_button.setText("그림 바꾸기" if has_file else "그림 고르기")
             self.file_label.setText("" if has_file else "아직 그림이 없습니다. 로고나 사진 파일을 골라 주세요.")
             self.file_label.setVisible(not has_file)
         self.fit_control.set_current(item.fit if item.fit in FIT_HINTS else "fill", emit=False)
-        self.fit_hint.setText(self._fit_hint_text(item.fit))
+        self._set_fit_hint(self._fit_hint_text(item.fit))
         self._load_cutout(item, bound, has_file)
 
     def _work(self, item) -> CutoutWork | None:
@@ -332,13 +321,10 @@ class ImageSection(Section):
         adjustable = has_cut and work is not None and work.method == settings.method and not busy
         idle = not applied and not busy and pending is None
 
-        if bound:
-            self.cutout_hint.setText(BOUND_HINT)
-        elif not has_file:
-            self.cutout_hint.setText("그림을 먼저 넣으면 배경을 지울 수 있습니다.")
-        else:
-            self.cutout_hint.setText("그림의 배경을 투명하게 만들어 뒤에 있는 카드 색이나 무늬가 보이게 합니다.")
-        self.cutout_hint.setVisible(idle or bound)
+        self.cutout_hint.setText(BOUND_HINT if bound else "")
+        self.cutout_hint.setVisible(bound)
+        self.remove_button.setToolTip(
+            "" if bound or has_file else "그림을 먼저 넣으면 배경을 지울 수 있습니다.")
         self.manual_mask_box.setVisible(has_file and not bound and not busy)
         self.manual_mask_clear.setVisible(bool(has_mask and item.extra.get(self.MANUAL_MASK_KEY)))
         self.method_box.setVisible(idle and has_file and not bound)
@@ -381,10 +367,14 @@ class ImageSection(Section):
             self.white_check.blockSignals(True)
             self.white_check.setChecked(has_mask)
             self.white_check.blockSignals(False)
+            self.white_check.setToolTip(WHITE_HINTS[supported])
             if has_mask and supported is False:
                 self.white_hint.setText("지금 프린터는 흰색을 찍지 못합니다. 흰색을 찍는 프린터에서만 깔립니다.")
+            elif supported is False:
+                self.white_hint.setText(WHITE_HINTS[False])
             else:
-                self.white_hint.setText(WHITE_HINTS[supported])
+                self.white_hint.setText("")
+            self.white_hint.setVisible(bool(self.white_hint.text()))
 
         self.redo_button.setVisible(applied and not adjustable and not busy and has_file)
         self.restore_button.setVisible(applied and not busy)
@@ -466,8 +456,12 @@ class ImageSection(Section):
     def _workdir(self) -> str:
         return self.controller.ensure_workdir()
 
+    def _set_fit_hint(self, text: str) -> None:
+        self.fit_hint.setText(text)
+        self.fit_hint.setVisible(bool(text))
+
     def _fit_hint_text(self, fit: str) -> str:
-        """맞추는 방법 설명. 칸과 그림의 모양이 같으면 세 방법이 똑같이 보인다는 점을 먼저 알린다."""
+        """해당될 때만 한 줄: 칸과 그림의 모양이 같아 세 방법이 똑같이 보일 때. 방법 설명은 칸 툴팁에 있다."""
         item = self.item
         path = self.image_path()
         if item is not None and path and item.w > 0 and item.h > 0:
@@ -475,9 +469,8 @@ class ImageSection(Section):
             if image is not None and image.height() > 0:
                 same_shape = abs(image.width() / image.height() - item.w / item.h) < 0.01 * (item.w / item.h)
                 if same_shape:
-                    return (FIT_HINTS.get(fit, "") + " 지금은 칸과 그림의 모양이 같아 세 방법이 똑같이 보입니다. "
-                            "사진의 옆이나 위아래 가운데 점을 끌어 칸 모양을 바꾸면 차이가 납니다.")
-        return FIT_HINTS.get(fit, "")
+                    return "칸과 그림의 모양이 같아 세 방법이 똑같이 보입니다."
+        return ""
 
     def fill_card(self) -> bool:
         """사진 칸을 카드 전체로 키우고 '꽉 채우기'로 바꾼다. 실행취소 한 번으로 되돌아간다."""
@@ -499,9 +492,7 @@ class ImageSection(Section):
         finally:
             stack.endMacro()
         self.fit_control.set_current("fill", emit=False)
-        self.fit_hint.setText(
-            "그림에 재단 여백이 들어 있어, 가장자리 2mm는 카드 밖으로 내보냈습니다(인쇄되지 않습니다)."
-            if extra else self._fit_hint_text("fill"))
+        self._set_fit_hint("그림의 재단 여백 2mm는 카드 밖으로 내보냈습니다." if extra else self._fit_hint_text("fill"))
         return True
 
     def _bleed_in_picture(self, item, card_w: float, card_h: float) -> float:
@@ -519,7 +510,7 @@ class ImageSection(Section):
 
     def _on_fit(self, fit: str) -> None:
         self.edit({"fit": fit})
-        self.fit_hint.setText(self._fit_hint_text(fit))
+        self._set_fit_hint(self._fit_hint_text(fit))
 
     # ---- 배경 지우기: 설정 ----
     def _default_threshold(self) -> int:

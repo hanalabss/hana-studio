@@ -364,7 +364,6 @@ class PreviewPanel(Rethemed, QFrame):
         self.zoom_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         zoom_row.addWidget(self.zoom_value)
         adjust.addLayout(zoom_row)
-        adjust.addWidget(label("카드에서 점선 안의 사진을 끌면 위치가 바뀝니다.", "hint", wrap=True))
         buttons = QHBoxLayout()
         buttons.setSpacing(SPACE["sm"])
         self.reset_button = QuietButton("처음대로", "sm")
@@ -495,8 +494,10 @@ class PreviewPanel(Rethemed, QFrame):
             width_mm, height_mm = document.side_size_mm(self._side)
             w, h = max(1.0, width_mm - 2 * bleed), max(1.0, height_mm - 2 * bleed)
             self.card.set_photo_frame(((item.x - bleed) / w, (item.y - bleed) / h, item.w / w, item.h / h))
+            self.card.setToolTip("점선 안의 사진을 끌면 위치가 바뀝니다.")
         else:
             self.card.set_photo_frame(None)
+            self.card.setToolTip("")
         current = self.current_adjustment()
         self.zoom_slider.blockSignals(True)
         self.zoom_slider.setValue(round(current.zoom * 100))

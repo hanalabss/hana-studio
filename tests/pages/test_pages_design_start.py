@@ -50,10 +50,11 @@ def test_start_blank_card_opens_empty_editor(page):
 
 def test_size_hint_follows_choice(page):
     panel = page.start_panel
-    before = panel.size_hint.text()
+    before = panel.size_control.toolTip()
     panel.size_control.set_current("cut_54x86_bleed")
-    assert panel.size_hint.text() != before
-    assert "58 × 90" in panel.size_hint.text()
+    assert panel.size_control.toolTip() != before
+    assert "58 × 90" in panel.size_control.toolTip()
+    assert "58 × 90" in panel.size_control.button("cut_54x86_bleed").toolTip()
 
 
 def test_open_existing_design_file(page, tmp_path):

@@ -24,6 +24,7 @@ class SignInDialog(Dialog):
     def __init__(self, book: OperatorBook, parent: QWidget | None = None, closing_text: str = "닫기"):
         super().__init__("누가 작업하나요?", "인쇄 기록에 작업한 사람이 남습니다.", parent, width=400)
         self.book = book
+        self._failures = 0
         self.name_combo = ComboBox(book.names())
         self.name_combo.setAccessibleName("작업자")
         if book.current in book.names():
@@ -46,7 +47,11 @@ class SignInDialog(Dialog):
         try:
             self.book.sign_in(self.name_combo.currentText(), self.pin_edit.text())
         except OperatorError as exc:
-            self.error.setText(str(exc))
+            self._failures += 1
+            message = str(exc)
+            if self._failures >= 2:               # 두 번 틀렸을 때만 잊었을 때 방법을 알려 준다
+                message += f" 모두 잊었으면 {self.book.path} 파일을 지우세요."
+            self.error.setText(message)
             self.error.setVisible(True)
             self.pin_edit.selectAll()
             self.pin_edit.setFocus()
