@@ -1,4 +1,4 @@
-"""바코드·QR·DataMatrix 생성. 모듈을 정수 픽셀 폭으로 직접 그려 가장자리가 번지지 않는다."""
+"""바코드·QR·DataMatrix·PDF417 생성. 모듈을 정수 픽셀 폭으로 직접 그려 가장자리가 번지지 않는다."""
 
 from __future__ import annotations
 
@@ -7,18 +7,24 @@ from functools import lru_cache
 from PySide6.QtCore import QRect
 from PySide6.QtGui import QColor, QImage, QPainter
 
-SYMBOLOGIES = ("code128", "code128a", "code128b", "code128c", "code39", "code39ext", "code93", "ean13")
+SYMBOLOGIES = ("code128", "code128a", "code128b", "code128c", "code39", "code39ext", "code93", "ean13",
+               "ean8", "upca", "itf", "codabar")
 SYMBOLOGY_LABELS = {
     "code128": "Code 128", "code128a": "Code 128-A", "code128b": "Code 128-B", "code128c": "Code 128-C",
     "code39": "Code 39", "code39ext": "Code 39 Extended", "code93": "Code 93", "ean13": "EAN-13",
+    "ean8": "EAN-8", "upca": "UPC-A", "itf": "ITF", "codabar": "Codabar",
 }
 QR_LEVELS = ("L", "M", "Q", "H")
-CODES_2D = ("qr", "datamatrix")
-CODE_2D_LABELS = {"qr": "QR 코드", "datamatrix": "DataMatrix"}
+CODES_2D = ("qr", "datamatrix", "pdf417")
+CODE_2D_LABELS = {"qr": "QR 코드", "datamatrix": "DataMatrix", "pdf417": "PDF417"}
+_CODABAR_CHARS = set("0123456789-$:/.+")
+_CODABAR_ENDS = set("ABCD")
 
 _CODE39_CHARS = set("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-. $/+%")
 _QUIET_ZONE = {key: (10, 10) for key in SYMBOLOGIES}
 _QUIET_ZONE["ean13"] = (11, 7)
+_QUIET_ZONE["ean8"] = (7, 7)
+_QUIET_ZONE["upca"] = (9, 9)
 
 # Full ASCII(Code 39 Extended, Code 93)에서 기본 문자 밖의 글자를 두 글자로 바꾸는 표.
 # 앞 글자가 $ % / + 인 짝이다. Code 93은 이 앞 글자를 전용 시프트 문자로 쓴다.
@@ -73,6 +79,26 @@ def ean13_check_digit(first12: str) -> int:
     return (10 - total % 10) % 10
 
 
+def gtin_check_digit(body: str) -> int:
+    """EAN-8·UPC-A·EAN-13 공통 체크 숫자: 오른쪽 끝 자리부터 3, 1, 3, 1 … 을 곱한다."""
+    total = sum(int(ch) * (3 if i % 2 == 0 else 1) for i, ch in enumerate(reversed(body)))
+    return (10 - total % 10) % 10
+
+
+def _gtin(label: str, text: str, length: int) -> str:
+    """숫자 length-1자리(체크 숫자를 붙인다) 또는 length자리(체크 숫자를 확인한다)."""
+    if not (text.isascii() and text.isdigit()):
+        raise BarcodeError(f"{label}은 숫자만 사용할 수 있습니다.")
+    if len(text) == length - 1:
+        return text + str(gtin_check_digit(text))
+    if len(text) != length:
+        raise BarcodeError(f"{label}은 {length - 1}자리 또는 {length}자리 숫자여야 합니다. (현재 {len(text)}자리)")
+    expected = gtin_check_digit(text[:-1])
+    if int(text[-1]) != expected:
+        raise BarcodeError(f"{label} 체크 숫자가 맞지 않습니다. 마지막 자리는 {expected}이어야 합니다.")
+    return text
+
+
 def normalize(symbology: str, data: str) -> str:
     """데이터를 검사하고 실제로 인코딩될 문자열을 돌려준다(EAN-13은 체크 숫자 포함 13자리)."""
     if symbology not in SYMBOLOGIES:
@@ -95,6 +121,28 @@ def normalize(symbology: str, data: str) -> str:
                 f"EAN-13 체크 숫자가 맞지 않습니다. 마지막 자리는 {expected}이어야 합니다."
             )
         return text
+
+    if symbology == "ean8":
+        return _gtin(label, text, 8)
+    if symbology == "upca":
+        return _gtin(label, text, 12)
+    if symbology == "itf":
+        if not (text.isascii() and text.isdigit()):
+            raise BarcodeError("ITF는 숫자만 사용할 수 있습니다.")
+        if len(text) % 2:
+            raise BarcodeError(f"ITF는 숫자가 짝수 개여야 합니다. 앞에 0을 붙여 보세요. (현재 {len(text)}자리)")
+        return text
+    if symbology == "codabar":
+        upper = text.upper()
+        if len(upper) >= 2 and upper[0] in _CODABAR_ENDS and upper[-1] in _CODABAR_ENDS:
+            body, start, stop = upper[1:-1], upper[0], upper[-1]
+        else:
+            body, start, stop = text, "A", "A"          # 시작·끝 문자를 적지 않으면 A로 감싼다
+        bad = sorted({ch for ch in body if ch not in _CODABAR_CHARS})
+        if bad or not body:
+            raise BarcodeError(f"{label}에 쓸 수 없는 문자가 있습니다: {' '.join(bad) or '(비어 있음)'} "
+                               "(숫자와 - $ : / . + 만 가능)")
+        return start + body + stop
 
     if symbology == "code39":
         bad = sorted({ch for ch in text if ch not in _CODE39_CHARS})
@@ -183,6 +231,8 @@ def _linear_modules(symbology: str, text: str) -> tuple[bool, ...]:
     try:
         if symbology == "code39":
             code = barcode.get_barcode_class("code39")(text, add_checksum=False)
+        elif symbology in ("ean8", "upca"):
+            code = barcode.get_barcode_class(symbology)(text[:-1])      # 체크 숫자는 라이브러리가 다시 붙인다
         else:
             code = barcode.get_barcode_class(symbology)(text)
         rows = code.build()
@@ -242,7 +292,55 @@ def matrix_2d(data: str, symbology: str = "qr", error_correction: str = "M") -> 
             return datamatrix_matrix(data)
         except DataMatrixError as exc:
             raise BarcodeError(str(exc)) from exc
+    if symbology == "pdf417":
+        text = "" if data is None else str(data)
+        if text == "":
+            raise BarcodeError("PDF417 데이터가 비어 있습니다.")
+        return [list(row) for row in _pdf417_matrix(text)]
     raise BarcodeError(f"지원하지 않는 2차원 코드입니다: {symbology}")
+
+
+PDF417_ROW_HEIGHT = 3          # 한 줄의 높이(모듈 수). 표준 권장 최소값.
+
+
+def _pdf417_security(data_codewords: int) -> int:
+    """ISO 15438 권장 오류 정정 수준."""
+    for limit, level in ((40, 2), (160, 3), (320, 4)):
+        if data_codewords <= limit:
+            return level
+    return 5
+
+
+@lru_cache(maxsize=128)
+def _pdf417_matrix(text: str) -> tuple[tuple[bool, ...], ...]:
+    """가로가 세로의 약 3배가 되도록 열 수를 고른 PDF417 모듈 행렬."""
+    import pdf417gen
+    from pdf417gen import rendering
+
+    best = None
+    try:
+        probe = pdf417gen.encode(text, columns=2, security_level=2)     # 열이 적으면 줄 수 하한(3)에 걸리지 않는다
+        data_codewords = sum(len(row) - 4 for row in probe) - 8          # 수준 2의 오류 정정 8개를 뺀다
+        level = _pdf417_security(data_codewords)
+        for columns in range(2, 31):
+            try:
+                codes = pdf417gen.encode(text, columns=columns, security_level=level)
+            except ValueError:
+                continue
+            width = 17 * (columns + 4) + 1
+            height = len(codes) * PDF417_ROW_HEIGHT
+            score = abs(width / height - 3.0)
+            if best is None or score < best[0]:
+                best = (score, codes, width)
+    except ValueError as exc:
+        raise BarcodeError("PDF417에 담기에는 데이터가 너무 깁니다.") from exc
+    if best is None:
+        raise BarcodeError("PDF417에 담기에는 데이터가 너무 깁니다.")
+    _score, codes, width = best
+    grid = [[False] * width for _ in codes]
+    for x, y in rendering.modules(codes):
+        grid[y][x] = True
+    return tuple(tuple(row) for row in grid for _ in range(PDF417_ROW_HEIGHT))
 
 
 def _canvas(width_px: int, height_px: int, background) -> QImage:
