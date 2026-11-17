@@ -1,13 +1,1 @@
-"""
-[EMOJI] [EMOJI] [EMOJI] [EMOJI]
-"""
-
-from .image_processor import ImageProcessor
-from .processing_thread import ProcessingThread
-from .file_manager import FileManager
-
-__all__ = [
-    'ImageProcessor',
-    'ProcessingThread', 
-    'FileManager'
-]
+"""배경 지우기 모델(rembg) 준비와 그림 처리."""
