@@ -51,6 +51,8 @@ class ImageProcessor:
                 input_data = f.read()
             
             # 배경 제거 수행 (지연 import)
+            from core.rembg_setup import prepare_rembg
+            prepare_rembg()
             from rembg import remove
             result = remove(input_data, session=session)
             
@@ -114,6 +116,8 @@ class ImageProcessor:
                 input_data = f.read()
 
             # 배경 제거 수행 (지연 import)
+            from core.rembg_setup import prepare_rembg
+            prepare_rembg()
             from rembg import remove
             result = remove(input_data, session=session)
 
@@ -156,6 +160,8 @@ class ImageProcessor:
         
         try:
             # 원본 이미지 한 번만 처리
+            from core.rembg_setup import prepare_rembg
+            prepare_rembg()
             from rembg import remove
             with open(image_path, 'rb') as f:
                 input_data = f.read()

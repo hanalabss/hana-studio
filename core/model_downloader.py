@@ -53,6 +53,9 @@ def get_model_cache_path(model_name: str) -> Path:
     return Path(u2net_home) / model_info["filename"]
 
 
+_VALIDATED: set[tuple[str, int, int]] = set()
+
+
 def validate_model_file(model_path: Path) -> bool:
     """
     ONNX 모델 파일이 실제 ONNX Runtime으로 로딩 가능한지 검증
@@ -64,6 +67,10 @@ def validate_model_file(model_path: Path) -> bool:
         bool: 로딩 가능하면 True, 실패하면 False
     """
     try:
+        stat = model_path.stat()
+        key = (str(model_path), stat.st_size, stat.st_mtime_ns)
+        if key in _VALIDATED:                    # 같은 파일은 다시 열어 보지 않는다
+            return True
         # 지연 import (시작 속도 최적화)
         import onnxruntime as ort
 
@@ -77,6 +84,8 @@ def validate_model_file(model_path: Path) -> bool:
         )
 
         # 세션 생성 성공 → 로딩 가능한 파일
+        del session
+        _VALIDATED.add(key)
         safe_print(f"[AI] 모델 검증 성공: {model_path.name}")
         return True
 
