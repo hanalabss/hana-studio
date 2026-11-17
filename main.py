@@ -161,6 +161,11 @@ def main():
 
         print("[OK] QApplication 생성 완료")
 
+        # 테마를 라이선스 창보다 먼저 입힌다. 늦게 입히면 Windows 어두운 모드에서 라이선스 창 글자가
+        # 흰 바탕에 흰 글자로 나왔다(Qt 기본 팔레트는 어두운데 창 스타일은 밝은 색으로 박혀 있었다).
+        from ui.theme import ThemeManager
+        ThemeManager.instance().apply(app)
+
         # 라이선스 인증
         from licensing.dialog import check_license
         license_success, is_admin = check_license()
@@ -170,9 +175,6 @@ def main():
 
         print(f"[OK] 라이선스 인증 완료 (Admin: {is_admin})")
 
-        # 새 화면 테마 적용 (라이선스 창은 기존 모습 유지)
-        from ui.theme import ThemeManager
-        ThemeManager.instance().apply(app)
         # 화면 언어(설정 > 화면 > 언어). 한국어면 아무것도 바꾸지 않는다.
         from ui import i18n
         i18n.install(app)
@@ -184,7 +186,8 @@ def main():
         loading.setFixedSize(420, 240)
         loading.setObjectName("Loading")
         loading.setAttribute(Qt.WA_StyledBackground, True)
-        loading.setStyleSheet("#Loading { background-color: #FFFFFF; border: 1px solid #DDE1E7; }")
+        from utils.legacy_qss import themed_qss
+        loading.setStyleSheet(themed_qss("#Loading { background-color: #FFFFFF; border: 1px solid #DDE1E7; }"))
 
         outer = QVBoxLayout(loading)
         outer.setContentsMargins(1, 1, 1, 1)
@@ -203,13 +206,13 @@ def main():
         title = QLabel("hanaStudio")
         title.setAlignment(Qt.AlignCenter)
         title.setFont(QFont("Malgun Gothic", 17, QFont.Bold))
-        title.setStyleSheet("color: #1B2430;")
+        title.setStyleSheet(themed_qss("color: #1B2430;"))
         layout.addWidget(title)
 
         status = QLabel("시작하는 중...")
         status.setAlignment(Qt.AlignCenter)
         status.setFont(QFont("Malgun Gothic", 9))
-        status.setStyleSheet("color: #5B6676;")
+        status.setStyleSheet(themed_qss("color: #5B6676;"))
         layout.addWidget(status)
         outer.addWidget(body, 1)
 

@@ -3,6 +3,7 @@ AI 모델 다운로드 다이얼로그
 프로그레스바와 함께 모델 다운로드 상태를 표시
 """
 
+from utils.legacy_qss import themed_qss
 import os
 import sys
 import requests
@@ -231,13 +232,13 @@ class ModelDownloadDialog(QDialog):
 
         # 타이틀
         title_label = QLabel("배경제거 AI 모델 다운로드 중...")
-        title_label.setStyleSheet("font-size: 14px; font-weight: bold;")
+        title_label.setStyleSheet(themed_qss("font-size: 14px; font-weight: bold;"))
         layout.addWidget(title_label)
 
         # 모델 정보
         model_info = MODEL_INFO.get(self.model_name, MODEL_INFO["isnet-general-use"])
         info_label = QLabel(f"모델: {self.model_name} (약 {model_info['size_mb']} MB)")
-        info_label.setStyleSheet("color: #666;")
+        info_label.setStyleSheet(themed_qss("color: #666;"))
         layout.addWidget(info_label)
 
         # 프로그레스바
@@ -246,7 +247,7 @@ class ModelDownloadDialog(QDialog):
         self.progress_bar.setMaximum(100)
         self.progress_bar.setValue(0)
         self.progress_bar.setTextVisible(True)
-        self.progress_bar.setStyleSheet("""
+        self.progress_bar.setStyleSheet(themed_qss("""
             QProgressBar {
                 border: 1px solid #ccc;
                 border-radius: 5px;
@@ -257,7 +258,7 @@ class ModelDownloadDialog(QDialog):
                 background-color: #4A90E2;
                 border-radius: 4px;
             }
-        """)
+        """))
         layout.addWidget(self.progress_bar)
 
         # 상태 메시지
