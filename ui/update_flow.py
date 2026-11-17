@@ -50,8 +50,17 @@ class DownloadDialog(Dialog):
         self.bar.setValue(value)
         self.percent.setText(f"{value}%")
 
+    def show_installing(self) -> None:
+        """다 받은 뒤: 프로그램을 닫고 설치 창으로 넘어간다는 것을 보여 준다."""
+        self.bar.setRange(0, 0)                     # 끝을 모르는 움직이는 막대
+        self.percent.setText("다 받았습니다. 프로그램을 닫고 새 버전을 설치합니다.")
+
     def reject(self) -> None:      # Esc나 닫기 단추로 닫히지 않게
         pass
+
+    def finish(self) -> None:
+        """업데이트하려고 프로그램을 끝낼 때만 닫는다(reject는 막혀 있다)."""
+        self.done(0)
 
 
 class UpdateFlow(QObject):
@@ -151,7 +160,7 @@ class UpdateFlow(QObject):
 
     def _on_downloaded(self, update: object) -> None:
         if self._dialog is not None:
-            self._dialog.set_progress(100)
+            self._dialog.show_installing()
         try:
             self.updater.apply_and_restart(update)
         except UpdateError as exc:
@@ -161,12 +170,20 @@ class UpdateFlow(QObject):
         self.finished.emit("restarting")
         QTimer.singleShot(200, self._quit)
 
-    @staticmethod
-    def _quit() -> None:
+    def _quit(self) -> None:
+        """설치 프로그램(Update.exe)은 이 프로세스가 끝나기를 기다린다(최대 60초 뒤 강제 종료).
+
+        닫기를 거절하는 창(받는 중 창, 저장 안 한 디자인)이 있으면 quit()/closeAllWindows가 멈추므로,
+        받는 중 창을 직접 닫고 창에 묻지 않는 exit(0)으로 끝낸다. 서비스 정리는 aboutToQuit에서 한다.
+        """
+        if self._dialog is not None:
+            self._dialog.finish()
+            self._dialog = None
         app = QApplication.instance()
         if app is not None:
-            app.closeAllWindows()
-            app.quit()
+            for window in app.topLevelWidgets():
+                window.hide()
+            app.exit(0)
 
 
 def schedule_startup_check(window: QWidget, is_busy: Callable[[], bool] = lambda: False,
