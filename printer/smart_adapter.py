@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Mapping, Optional, Set, Union
 
 from . import smart_printer as sp
 from .base import (
-    CAP_BLACK_RESIN, CAP_CARD_MOVE, CAP_COLOR_ADJUST, CAP_DENSITY_ADJUST, CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_POSITION_OFFSET, CAP_RIBBON_LEVEL,
+    CAP_BLACK_RESIN, CAP_RIBBON_CHECKED, CAP_CARD_MOVE, CAP_COLOR_ADJUST, CAP_DENSITY_ADJUST, CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_POSITION_OFFSET, CAP_RIBBON_LEVEL,
     CAP_STATUS, CAP_UV, FAMILY_SMART, ORIENTATION_PORTRAIT, STAGE_DONE, STAGE_EJECT, STAGE_FEED,
     STAGE_MAGNETIC, STAGE_PREPARE, STAGE_PRINT, STAGE_PRINT_BACK, STAGE_PRINT_FRONT, STAGE_SETUP,
     STAGE_UNKNOWN, UNIT_CARDS, UNIT_UNKNOWN, CardJob, CardPrinter,
@@ -107,7 +107,7 @@ class SmartAdapter(CardPrinter):
         if self._ribbon_type in sp.FLUORESCENT_RIBBONS:
             caps.add(CAP_UV)
         if self._ribbon_type in sp.COLOR_WITH_BLACK_RIBBONS:
-            caps.add(CAP_BLACK_RESIN)
+            caps |= {CAP_BLACK_RESIN, CAP_RIBBON_CHECKED}      # 리본 종류를 읽어 검정 패널을 확인했다
         return caps
 
     def _can_adjust_density(self) -> bool:

@@ -102,6 +102,45 @@ class AddOperatorDialog(Dialog):
         return False
 
 
+class ChangePinDialog(Dialog):
+    """비밀번호 바꾸기. 본인은 지금 비밀번호를 넣고, 관리자가 다른 사람 것을 바꿀 때는 넣지 않는다."""
+
+    def __init__(self, book: OperatorBook, name: str, parent: QWidget | None = None):
+        super().__init__("비밀번호 바꾸기", f"{name} · 숫자 4~8자리", parent, width=400)
+        self.book = book
+        self.name = name
+        self.needs_old = not (book.can_manage() and book.current != name)
+        self.old_edit = _pin_field("지금 비밀번호")
+        self.new_edit = _pin_field("새 비밀번호")
+        self.again_edit = _pin_field("한 번 더")
+        self.error = label("", "hint", wrap=True)
+        set_prop(self.error, "tone", "error")
+        self.error.setVisible(False)
+        if self.needs_old:
+            self.body.addWidget(FormRow("지금 비밀번호", self.old_edit))
+        self.body.addWidget(FormRow("새 비밀번호", self.new_edit))
+        self.body.addWidget(FormRow("새 비밀번호 확인", self.again_edit))
+        self.body.addWidget(self.error)
+        self.add_button("그만두기", "secondary", "reject")
+        self.ok_button = self.add_button("바꾸기", "primary", None, default=True)
+        self.ok_button.clicked.connect(self.try_change)
+
+    def try_change(self) -> bool:
+        if self.new_edit.text() != self.again_edit.text():
+            return self._fail("두 새 비밀번호가 다릅니다.")
+        try:
+            self.book.change_pin(self.name, self.old_edit.text(), self.new_edit.text())
+        except OperatorError as exc:
+            return self._fail(str(exc))
+        self.accept()
+        return True
+
+    def _fail(self, message: str) -> bool:
+        self.error.setText(message)
+        self.error.setVisible(True)
+        return False
+
+
 def ask_operator(book: OperatorBook, parent: QWidget | None = None) -> bool:
     """작업자를 쓰면 누가 쓰는지 확인한다. 작업자가 없으면 묻지 않고 True. 그만두면 False."""
     if book is None or not book.enabled:

@@ -17,7 +17,7 @@ from ui.shell import BasePage
 from ui.theme import SPACE, ThemeManager
 from ui.widgets import (
     ComboBox, FormRow, MmField, Panel, PrimaryButton, QuietButton, SecondaryButton, SegmentedControl, StepperField,
-    inform, label,
+    inform, label, set_prop,
 )
 
 from .prefs import COPIES_MAX, OFFSET_LIMIT_MM, RETENTION_CHOICES, Prefs
@@ -92,9 +92,17 @@ class SettingsPage(BasePage):
         root.addWidget(scroll)
 
         column.addWidget(label("설정", "heading"))
+        # 작업자를 쓰는데 지금 작업자가 관리자가 아니면 설정을 바꿀 수 없다(해당될 때만 한 줄).
+        self.lock_note = label("설정은 관리자만 바꿀 수 있습니다.", "hint", wrap=True)
+        set_prop(self.lock_note, "tone", "warn")
+        self.lock_note.setVisible(False)
+        column.addWidget(self.lock_note)
+        self._locked_panels: list[QWidget] = []
         column.addWidget(self._build_screen())
-        column.addWidget(self._build_card())
-        column.addWidget(self._build_print())
+        self.card_panel = self._build_card()
+        column.addWidget(self.card_panel)
+        self.print_panel = self._build_print()
+        column.addWidget(self.print_panel)
         auto_print = getattr(services, "auto_print", None)
         self.auto_panel = self._build_auto_print(auto_print) if auto_print is not None else None
         if self.auto_panel is not None:
@@ -103,7 +111,11 @@ class SettingsPage(BasePage):
         self.operator_panel = self._build_operators(operators) if operators is not None else None
         if self.operator_panel is not None:
             column.addWidget(self.operator_panel)
-        column.addWidget(self._build_history())
+        self.history_panel = self._build_history()
+        column.addWidget(self.history_panel)
+        self._locked_panels = [p for p in (self.card_panel, self.print_panel, self.auto_panel, self.history_panel)
+                               if p is not None]
+        self._sync_lock()
         column.addWidget(self._build_files())
         if self.is_admin:
             column.addWidget(self._build_admin())
@@ -249,6 +261,8 @@ class SettingsPage(BasePage):
         self.operator_rows = QVBoxLayout()
         self.operator_rows.setSpacing(2)
         panel.body.addLayout(self.operator_rows)
+        self.operator_admin_buttons: dict[str, QuietButton] = {}
+        self.operator_pin_buttons: dict[str, QuietButton] = {}
         book.changed.connect(self._sync_operators)
         book.currentChanged.connect(lambda _name: self._sync_operators())
         self._sync_operators()
@@ -274,22 +288,65 @@ class SettingsPage(BasePage):
                 while item.layout().count():
                     child = item.layout().takeAt(0)
                     if child.widget() is not None:
+                        child.widget().hide()            # 지워지기 전까지 엉뚱한 자리에 그려지지 않게
                         child.widget().deleteLater()
             elif item.widget() is not None:
+                item.widget().hide()
                 item.widget().deleteLater()
         self.operator_remove_buttons = {}
+        self.operator_admin_buttons = {}
+        self.operator_pin_buttons = {}
         for operator in book.operators():
             row = QHBoxLayout()
             row.setSpacing(SPACE["sm"])
             name = label(operator.name + ("  · 관리자" if operator.admin else ""), "strong")
             name.setProperty("i18n_skip", True)
             row.addWidget(name, 1)
+            admin = QuietButton("관리자 해제" if operator.admin else "관리자로", "sm")
+            admin.setEnabled(manage)
+            admin.clicked.connect(lambda _checked=False, n=operator.name, a=not operator.admin: self.set_admin(n, a))
+            row.addWidget(admin)
+            self.operator_admin_buttons[operator.name] = admin
+            pin = QuietButton("비밀번호 바꾸기", "sm")
+            pin.setEnabled(manage or operator.name == book.current)
+            pin.clicked.connect(lambda _checked=False, n=operator.name: self.change_pin(n))
+            row.addWidget(pin)
+            self.operator_pin_buttons[operator.name] = pin
             remove = QuietButton("지우기", "sm", icon="trash")
             remove.setEnabled(manage)
             remove.clicked.connect(lambda _checked=False, n=operator.name: self.remove_operator(n))
             row.addWidget(remove)
             self.operator_rows.addLayout(row)
             self.operator_remove_buttons[operator.name] = remove
+        self._sync_lock()
+
+    def settings_locked(self) -> bool:
+        """작업자를 쓰는데 지금 작업자가 관리자가 아니면 True."""
+        book = getattr(self, "operators", None)
+        return bool(book is not None and book.enabled and not book.can_manage())
+
+    def _sync_lock(self) -> None:
+        if not hasattr(self, "lock_note"):
+            return
+        locked = self.settings_locked()
+        self.lock_note.setVisible(locked)
+        for panel in getattr(self, "_locked_panels", []):
+            panel.setEnabled(not locked)
+
+    def set_admin(self, name: str, admin: bool) -> bool:
+        from services.operators import OperatorError
+
+        try:
+            self.operators.set_admin(name, admin)
+        except OperatorError as exc:
+            inform(self, "관리자를 바꿀 수 없습니다", str(exc))
+            return False
+        return True
+
+    def change_pin(self, name: str) -> bool:
+        from ui.operators import ChangePinDialog
+
+        return ChangePinDialog(self.operators, name, self).exec() == ChangePinDialog.Accepted
 
     def switch_operator(self) -> bool:
         from ui.operators import SignInDialog

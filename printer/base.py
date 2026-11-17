@@ -31,6 +31,7 @@ CAP_CARD_MOVE = "card_move"
 CAP_POSITION_OFFSET = "position_offset"
 CAP_COLOR_ADJUST = "color_adjust"      # 밝기·명암·채도를 프린터 쪽에서 조정
 CAP_BLACK_RESIN = "black_resin"        # 검정 글자·바코드를 색 패널 대신 검정(K 레진) 패널로 찍기
+CAP_RIBBON_CHECKED = "ribbon_checked"  # 장착된 리본에 검정(K) 패널이 있는 것을 프린터에서 읽어 확인했다
 
 # 색 조정 값의 범위. RTAI SDK(R600SetImgVisualParam)가 받는 범위를 실제로 넣어 보고 확인한 값이다.
 COLOR_ADJUST_MIN, COLOR_ADJUST_MAX = -100, 100

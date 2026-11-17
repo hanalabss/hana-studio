@@ -70,8 +70,10 @@ def display_name(item: Item) -> str:
     if item.name:
         return item.name
     label = KIND_LABELS.get(item.kind, item.kind or "항목")
-    if item.kind == "qr" and getattr(item, "symbology", "qr") == "datamatrix":
-        label = "DataMatrix"
+    if item.kind == "qr" and getattr(item, "symbology", "qr") != "qr":
+        from design.barcodes import code2d_label
+
+        label = code2d_label(item.symbology)
     if item.kind == "text" and item.source is None:
         snippet = " ".join(str(getattr(item, "text", "")).split())
         if snippet:

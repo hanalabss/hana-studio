@@ -103,3 +103,17 @@ def test_old_history_file_gets_the_operator_column(tmp_path):
         connection.execute("INSERT INTO jobs (name, created_at) VALUES ('예전', '2026-01-01T00:00:00')")
     history = JobHistory(str(path))
     assert history.list_jobs()[0].operator is None
+
+
+def test_set_admin_keeps_at_least_one_admin(book):
+    book.add("김하나", "1234")
+    book.add("이둘", "5678")
+    with pytest.raises(OperatorError, match="한 명은"):
+        book.set_admin("김하나", False)                     # 하나뿐인 관리자는 뺄 수 없다
+    book.set_admin("이둘", True)
+    book.set_admin("김하나", False)                         # 다른 관리자가 생기면 뺄 수 있다
+    assert book.find("이둘").admin and not book.find("김하나").admin
+    assert not book.can_manage()                            # 지금 작업자(김하나)는 이제 관리자가 아니다
+    with pytest.raises(OperatorError, match="관리자만"):
+        book.set_admin("김하나", True)
+    assert OperatorBook(book.path).find("이둘").admin       # 파일에 남는다

@@ -26,10 +26,16 @@ SYMBOLOGY_OPTIONS = (
     ("code128b", "Code 128-B", "영문 대소문자, 숫자, 기호를 담습니다. 다른 프로그램과 똑같이 찍어야 할 때 고릅니다."),
     ("code128c", "Code 128-C", "숫자만, 짝수 자리로 담습니다. 긴 숫자를 가장 짧게 찍습니다."),
     ("ean13", "EAN-13 (상품 바코드)", "숫자 12~13자리만 담습니다. 가게에서 쓰는 상품 바코드입니다."),
+    ("ean8", "EAN-8 (작은 상품 바코드)", "숫자 7~8자리만 담습니다. 작은 상품에 쓰는 짧은 상품 바코드입니다."),
+    ("upca", "UPC-A (미국 상품 바코드)", "숫자 11~12자리만 담습니다. 미국·캐나다 상품 바코드입니다."),
+    ("itf", "ITF (물류 바코드)", "숫자만, 짝수 자리로 담습니다. 상자·물류에 많이 씁니다."),
+    ("codabar", "Codabar (NW-7)", "숫자와 - $ : / . + 를 담습니다. 도서관·병원·택배에서 씁니다. "
+     "앞뒤에 A~D를 적지 않으면 A로 감쌉니다."),
 )
 CODE_2D_OPTIONS = (
     ("qr", "QR 코드", "휴대폰 카메라로 바로 읽힙니다. 주소나 긴 글을 담을 때 알맞습니다."),
     ("datamatrix", "DataMatrix", "작은 칸에 사번 같은 짧은 내용을 담습니다. 출입·근태 리더기에서 많이 씁니다."),
+    ("pdf417", "PDF417", "가로로 긴 코드입니다. 운전면허증·탑승권처럼 카드 아래쪽 띠에 많은 내용을 담을 때 씁니다."),
 )
 KOREAN_NOTICE = "한글은 스캐너에 따라 읽히지 않을 수 있습니다."
 FULL_ASCII_NOTICE = "소문자·기호는 스캐너에서 Full ASCII를 켜야 그대로 읽힙니다."
@@ -213,7 +219,15 @@ class CodeSection(Section):
         key = self.code2d_combo.itemData(index)
         self._tip(self.code2d_combo, CODE_2D_OPTIONS, key)
         self.level_box.setVisible(key == "qr")
-        self.edit({"symbology": key})
+        changes = {"symbology": key}
+        item = self.item
+        if item is not None and item.w > 0 and item.h > 0:
+            wide = key == "pdf417"
+            if wide and item.w / item.h < 2:
+                changes["h"] = round(item.w / 3, 2)              # PDF417은 가로로 긴 모양
+            elif not wide and item.w / item.h > 1.5:
+                changes["h"] = item.w                            # QR·DataMatrix는 정사각
+        self.edit(changes)
 
     def _on_level(self, index: int) -> None:
         key = self.level_combo.itemData(index)

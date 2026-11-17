@@ -182,6 +182,20 @@ class OperatorBook(QObject):
         if name == self._current:
             self._set_current("")
 
+    def set_admin(self, name: str, admin: bool) -> None:
+        """관리자로 만들거나 관리자에서 뺀다. 관리자가 한 명도 남지 않게는 할 수 없다."""
+        self._require_manager()
+        operator = self.find(name)
+        if operator is None:
+            raise OperatorError("그 작업자가 없습니다.")
+        admin = bool(admin)
+        if operator.admin == admin:
+            return
+        if not admin and sum(1 for o in self._operators if o.admin) == 1:
+            raise OperatorError("관리자가 한 명은 있어야 합니다. 다른 사람을 먼저 관리자로 만드세요.")
+        operator.admin = admin
+        self._save()
+
     def change_pin(self, name: str, old_pin: str, new_pin: str) -> None:
         operator = self.find(name)
         if operator is None:
