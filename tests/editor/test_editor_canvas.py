@@ -443,13 +443,27 @@ def test_arrow_keys_nudge(editor):
     item = _rect(controller, 20.0, 15.0)
     controller.select([item.id])
     QTest.keyClick(editor.view, Qt.Key.Key_Right)
-    QTest.keyClick(editor.view, Qt.Key.Key_Down, SHIFT)
+    QTest.keyClick(editor.view, Qt.Key.Key_Down, CTRL)
     assert (item.x, item.y) == pytest.approx((20.1, 16.0))
-    QTest.keyClick(editor.view, Qt.Key.Key_Left, SHIFT)
+    QTest.keyClick(editor.view, Qt.Key.Key_Left, CTRL)
     QTest.keyClick(editor.view, Qt.Key.Key_Up)
     assert (item.x, item.y) == pytest.approx((19.1, 15.9))
     controller.undo_stack.undo()
     assert (item.x, item.y) == pytest.approx((19.1, 16.0))
+
+
+def test_shift_arrows_resize_like_danul(editor):
+    controller = editor.controller
+    item = _rect(controller, 20.0, 15.0)
+    controller.select([item.id])
+    w, h = item.w, item.h
+    QTest.keyClick(editor.view, Qt.Key.Key_Right, SHIFT)
+    QTest.keyClick(editor.view, Qt.Key.Key_Down, SHIFT)
+    assert (item.x, item.y, item.w, item.h) == pytest.approx((20.0, 15.0, w + 0.5, h + 0.5))
+    QTest.keyClick(editor.view, Qt.Key.Key_Left, SHIFT)
+    assert item.w == pytest.approx(w)
+    controller.undo_stack.undo()
+    assert item.w == pytest.approx(w + 0.5)
 
 
 def test_delete_duplicate_and_select_all_keys(editor):

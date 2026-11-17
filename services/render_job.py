@@ -23,7 +23,10 @@ from design import renderer
 from design.binding import BindingContext, ColumnSource, CounterSource, columns_used, to_text
 from design.model import Crop, Document
 from printer.base import (
-    CAP_BLACK_RESIN, CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_UV, CAP_WHITE, CardJob, PrintCancelled, PrinterError, SideImages,
+    CAP_BLACK_RESIN, CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_MIFARE, CAP_UV, CAP_WHITE, CardJob, PrintCancelled, PrinterError, SideImages,
+)
+from printer.mifare import (
+    DEFAULT_BLOCK, DEFAULT_KEY, MifareError, MifareWrite, block_data, check_block, check_key,
 )
 
 log = logging.getLogger(__name__)
@@ -46,6 +49,8 @@ class PrintOptions:
 
     copies: 레코드마다(명단 없는 디자인은 전체) 인쇄할 장수.
     magnetic: {"track1": 열 이름, "track2": ..., "track3": ...}. 없으면 문서의 extra["magnetic"]을 쓴다.
+    mifare: {"column": 열 이름, "block": 4, "key": "FFFFFFFFFFFF", "key_type": "A", "format": "text"}.
+            비접촉 IC 카드 블록에 그 사람의 값을 쓴다(다눌의 RF 항목). 없으면 문서의 extra["mifare"].
     capabilities: 프린터가 지원하는 기능. None이면 장치 제품군의 기본값으로 판단한다.
     lookahead: 인쇄 중인 카드보다 미리 만들어 둘 카드 수.
     strict: 사진 누락·잘못된 바코드가 있는 카드를 인쇄하지 않고 실패로 처리한다.
@@ -66,6 +71,7 @@ class PrintOptions:
     density_cyan: int = 0
     black_resin: bool = False    # 검정 글자·선·바코드·QR을 검정(K 레진) 패널로 찍는다. 지원하는 프린터에서만 쓰인다.
     magnetic: dict[str, str] | None = None
+    mifare: dict[str, Any] | None = None
     name_column: str | None = None
     counter_offset: int = 0
     job_name: str = ""
@@ -77,7 +83,7 @@ class PrintOptions:
     _SAVED = (
         "copies", "dpi", "stop_on_error", "offset_x_mm", "offset_y_mm",
         "brightness", "contrast", "saturation", "gamma",
-        "density", "density_yellow", "density_magenta", "density_cyan", "black_resin", "magnetic",
+        "density", "density_yellow", "density_magenta", "density_cyan", "black_resin", "magnetic", "mifare",
         "name_column", "counter_offset", "job_name", "lookahead", "strict", "card_options",
     )
 
@@ -283,6 +289,14 @@ def magnetic_mapping(document: Document, options: PrintOptions | None) -> dict[s
     return {str(k): str(v) for k, v in mapping.items() if v}
 
 
+def mifare_setting(document: Document, options: PrintOptions | None) -> dict[str, Any]:
+    """IC 카드에 쓸 설정. 열이 정해져 있지 않으면 빈 dict."""
+    setting = (options.mifare if options and options.mifare else None) or document.extra.get("mifare")
+    if not isinstance(setting, Mapping) or not setting.get("column"):
+        return {}
+    return dict(setting)
+
+
 def _printable_items(document: Document):
     for side_key in document.active_side_keys():
         for item in document.side(side_key).items:
@@ -475,6 +489,27 @@ class RenderJob:
                 tracks[track] = text
         return tracks
 
+    def _mifare(self, record: Mapping[str, Any], spec: "CardSpec") -> dict[str, Any] | None:
+        if not self.supports(CAP_MIFARE):
+            return None
+        setting = mifare_setting(self.document, self.options)
+        if not setting:
+            return None
+        text = to_text(record.get(setting["column"])).strip()
+        if not text:
+            return None
+        try:
+            write = MifareWrite(
+                block=check_block(setting.get("block", DEFAULT_BLOCK)),
+                data=block_data(text, setting.get("format", "text")),
+                key=check_key(setting.get("key", DEFAULT_KEY)),
+                key_type=str(setting.get("key_type", "A")).upper(),
+                position=setting.get("position"),
+            )
+        except MifareError as exc:
+            raise RenderJobError(f"{spec.display_name}: IC 카드 - {exc}") from exc
+        return write.to_dict()
+
     def _render(self, spec: CardSpec) -> RenderedCard:
         renderer.ensure_gui()
         document, options = self.document, self.options
@@ -531,6 +566,9 @@ class RenderJob:
         magnetic = self._magnetic(record)
         if magnetic:
             card.options["magnetic"] = magnetic
+        mifare = self._mifare(record, spec)
+        if mifare:
+            card.options["mifare"] = mifare
         return card
 
     # -- 정리 --------------------------------------------------------------

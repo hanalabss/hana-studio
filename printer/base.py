@@ -26,6 +26,7 @@ CAP_STATUS = "status"
 CAP_RIBBON_LEVEL = "ribbon_level"
 CAP_K_SPLIT = "k_split"
 CAP_MIFARE = "mifare"
+CAP_CONTACT_IC = "contact_ic"      # 접촉식 칩(CPU 카드) 읽기
 CAP_CARD_MOVE = "card_move"
 CAP_POSITION_OFFSET = "position_offset"
 CAP_COLOR_ADJUST = "color_adjust"      # 밝기·명암·채도를 프린터 쪽에서 조정
@@ -93,6 +94,7 @@ STAGE_UNKNOWN = ""                 # 단계 정보를 주지 않는 드라이버
 STAGE_PREPARE = "prepare"          # 인쇄할 이미지 준비(PC 쪽 작업)
 STAGE_FEED = "feed"                # 카드 삽입
 STAGE_MAGNETIC = "magnetic"        # 마그네틱 기록
+STAGE_MIFARE = "mifare"            # Mifare(비접촉 IC) 기록
 STAGE_SETUP = "setup"              # 리본 등 인쇄 설정
 STAGE_FRONT_IMAGE = "front_image"  # 앞면 이미지를 SDK에 올림
 STAGE_BACK_IMAGE = "back_image"    # 뒷면 이미지를 SDK에 올림
@@ -104,7 +106,7 @@ STAGE_EJECT = "eject"              # 카드 배출
 STAGE_DONE = "done"                # 이 카드 끝
 
 STAGE_LABELS = {
-    STAGE_PREPARE: "이미지 준비", STAGE_FEED: "카드 삽입", STAGE_MAGNETIC: "마그네틱 기록",
+    STAGE_PREPARE: "이미지 준비", STAGE_FEED: "카드 삽입", STAGE_MAGNETIC: "마그네틱 기록", STAGE_MIFARE: "IC 카드 기록",
     STAGE_SETUP: "인쇄 설정", STAGE_FRONT_IMAGE: "앞면 준비", STAGE_BACK_IMAGE: "뒷면 준비",
     STAGE_PRINT: "인쇄", STAGE_PRINT_FRONT: "앞면 인쇄", STAGE_PRINT_BACK: "뒷면 인쇄",
     STAGE_WAIT: "인쇄 완료 대기", STAGE_EJECT: "카드 배출", STAGE_DONE: "완료",

@@ -42,14 +42,24 @@ def _ui_font(pixel_size: int, bold: bool = False) -> QFont:
     return font
 
 
+def _length_unit():
+    from ui.units import LengthUnits
+    return LengthUnits.instance().unit
+
+
+RESIZE_STEP_MM = 0.5     # Shift+화살표 한 번에 바뀌는 크기
+
+
 class Ruler(QWidget):
-    """mm 눈금자. 보기의 확대·이동을 따라간다."""
+    """눈금자. 보기의 확대·이동을 따라가고, 고른 길이 단위(기본 mm)로 숫자를 적는다."""
 
     def __init__(self, view: "EditorView", orientation: Qt.Orientation) -> None:
         super().__init__(view)
         self._view = view
         self._orientation = orientation
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        from ui.units import LengthUnits
+        LengthUnits.instance().changed.connect(self.update)
 
     @staticmethod
     def steps(px_per_mm: float) -> tuple[float, float]:
@@ -70,6 +80,7 @@ class Ruler(QWidget):
         length = self.width() if horizontal else self.height()
         thickness = self.height() if horizontal else self.width()
         ppm = view.px_per_mm
+        unit_mm = _length_unit().mm
         origin_point = view.viewportTransform().map(QPointF(0.0, 0.0))
         origin = origin_point.x() if horizontal else origin_point.y()
 
@@ -79,14 +90,16 @@ class Ruler(QWidget):
             band = QRectF(start, 0, end - start, thickness) if horizontal else QRectF(0, start, thickness, end - start)
             painter.fillRect(band, QColor(palette.ruler_span))
 
-        label_step, minor_step = self.steps(ppm)
+        # 눈금 간격은 고른 단위로 정하고(1, 2, 5, 10… 단위), 그리는 자리는 mm로 바꿔 계산한다.
+        label_step, minor_step = self.steps(ppm * unit_mm)
+        unit_ppm = ppm * unit_mm
         tick_pen = QPen(QColor(palette.ruler_tick), 1)
         painter.setFont(_ui_font(10))
-        first = math.floor((0 - origin) / ppm / minor_step) - 1
-        last = math.ceil((length - origin) / ppm / minor_step) + 1
+        first = math.floor((0 - origin) / unit_ppm / minor_step) - 1
+        last = math.ceil((length - origin) / unit_ppm / minor_step) + 1
         per_label = max(1, round(label_step / minor_step))
         for index in range(first, last + 1):
-            pos = math.floor(origin + index * minor_step * ppm) + 0.5
+            pos = math.floor(origin + index * minor_step * unit_ppm) + 0.5
             if pos < -1 or pos > length + 1:
                 continue
             is_label = index % per_label == 0
@@ -129,6 +142,8 @@ class _RulerCorner(QWidget):
     def __init__(self, view: "EditorView") -> None:
         super().__init__(view)
         self._view = view
+        from ui.units import LengthUnits
+        LengthUnits.instance().changed.connect(self.update)
 
     def paintEvent(self, event) -> None:
         palette = self._view.palette_colors
@@ -136,7 +151,7 @@ class _RulerCorner(QWidget):
         painter.fillRect(self.rect(), QColor(palette.ruler_bg))
         painter.setFont(_ui_font(9))
         painter.setPen(QColor(palette.ruler_text))
-        painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "mm")
+        painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, _length_unit().suffix)
         painter.setPen(QPen(QColor(palette.ruler_border), 1))
         painter.drawLine(QPointF(0, self.height() - 0.5), QPointF(self.width(), self.height() - 0.5))
         painter.drawLine(QPointF(self.width() - 0.5, 0), QPointF(self.width() - 0.5, self.height()))
@@ -185,6 +200,7 @@ class EditorView(QGraphicsView):
 
     zoom_changed = Signal(float)
     cursor_moved = Signal(float, float)
+    contextMenuAt = Signal(object)          # 오른쪽 클릭한 화면 위치(QPoint, 전역). 고른 항목은 controller에 있다
 
     def __init__(
         self, controller: EditorController, palette: EditorPalette | None = None,
@@ -505,6 +521,19 @@ class EditorView(QGraphicsView):
 
     def _grid_step(self) -> float | None:
         return self.controller.grid_step_mm if self.controller.grid_visible else None
+
+    def contextMenuEvent(self, event) -> None:
+        """오른쪽 클릭: 누른 항목을 (이미 고른 것이 아니면) 골라 두고 메뉴를 띄우게 알린다."""
+        self.setFocus(Qt.FocusReason.MouseFocusReason)
+        self.commit_text_edit()
+        x, y = self._to_scene(QPointF(event.pos()))
+        hit = self.controller.scene.item_at(x, y, self._tolerance_mm(), include_locked=True)
+        if hit is not None and hit.id not in set(self.controller.selection):
+            self.controller.select([hit.id])
+        elif hit is None:
+            self.controller.clear_selection()
+        self.contextMenuAt.emit(event.globalPos())
+        event.accept()
 
     def mousePressEvent(self, event) -> None:
         self.setFocus(Qt.FocusReason.MouseFocusReason)
@@ -935,12 +964,17 @@ class EditorView(QGraphicsView):
         arrows = {
             Qt.Key.Key_Left: (-1, 0), Qt.Key.Key_Right: (1, 0), Qt.Key.Key_Up: (0, -1), Qt.Key.Key_Down: (0, 1),
         }
-        if key in arrows and not ctrl:
-            step = 1.0 if shift else 0.1
+        if key in arrows and not (ctrl and shift):
+            # 화살표: 0.1mm 옮기기, Ctrl+화살표: 1mm 옮기기,
+            # Shift+화살표: 크기 바꾸기(→↓ 키우기, ←↑ 줄이기. 다눌·파워포인트와 같다)
             if not event.isAutoRepeat() or self._nudge_token is None:
                 self._nudge_token = controller.new_merge_token()
             dx, dy = arrows[key]
-            controller.nudge(dx * step, dy * step, merge_token=self._nudge_token)
+            if shift:
+                controller.resize_by(dx * RESIZE_STEP_MM, dy * RESIZE_STEP_MM, merge_token=self._nudge_token)
+            else:
+                step = 1.0 if ctrl else 0.1
+                controller.nudge(dx * step, dy * step, merge_token=self._nudge_token)
             event.accept()
             return
         if key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):

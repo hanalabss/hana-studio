@@ -12,11 +12,11 @@ from design import barcodes, renderer
 from design.binding import BindingContext, resolve, to_text
 from design.model import Document, Item
 from printer.base import (
-    CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_UV, CAP_WHITE, PrinterDevice, PrinterStatus,
+    CAP_DUAL_SIDE, CAP_MAGNETIC, CAP_MIFARE, CAP_UV, CAP_WHITE, PrinterDevice, PrinterStatus,
 )
 from services.printers import default_capabilities
 from services.render_job import (
-    DEFAULT_DPI, PrintOptions, guess_name_column, magnetic_mapping,
+    DEFAULT_DPI, PrintOptions, guess_name_column, magnetic_mapping, mifare_setting,
     prints_back, records_by_id, uses_uv, uses_white,
 )
 
@@ -150,7 +150,7 @@ def check(
                 report.add("record_missing", ERROR,
                            f"명단에서 지워진 사람이 {len(gone)}명 있습니다. 뽑을 사람을 다시 고르세요.",
                            record_ids=gone)
-    uses_data = bool(bound) or bool(magnetic_mapping(document, options))
+    uses_data = bool(bound) or bool(magnetic_mapping(document, options)) or bool(mifare_setting(document, options))
     report.cards = len(records) * copies if (store is not None and (uses_data or record_ids is not None)) else copies
 
     if store is None and bound:
@@ -164,6 +164,7 @@ def check(
     if store is not None:
         _check_columns(report, bound, columns)
         _check_magnetic_columns(report, document, options, columns)
+        _check_mifare_column(report, document, options, columns)
         if records:
             _check_photos(report, store, bound, records, name_column)
             _check_empty_values(report, store, bound, records, name_column, columns)
@@ -197,6 +198,13 @@ def _check_magnetic_columns(report, document, options, columns: set[str]) -> Non
         if column not in columns:
             report.add("missing_column", ERROR,
                        f"마그네틱 {track}에 넣을 '{column}' 항목이 명단에 없습니다. 인쇄 설정에서 항목을 다시 고르세요.")
+
+
+def _check_mifare_column(report, document, options, columns: set[str]) -> None:
+    column = mifare_setting(document, options).get("column")
+    if column and column not in columns:
+        report.add("missing_column", ERROR,
+                   f"IC 카드에 넣을 '{column}' 항목이 명단에 없습니다. 인쇄 설정에서 항목을 다시 고르세요.")
 
 
 def _check_photos(report, store: DataStore, bound, records, name_column) -> None:
@@ -378,6 +386,9 @@ def _check_capabilities(report, document, device, capabilities, options) -> None
     if magnetic_mapping(document, options) and CAP_MAGNETIC not in caps:
         report.add("no_magnetic", WARNING,
                    "이 프린터에는 마그네틱 기록 장치가 없습니다. 마그네틱 정보는 기록하지 않고 인쇄만 합니다.")
+    if mifare_setting(document, options) and CAP_MIFARE not in caps:
+        report.add("no_mifare", WARNING,
+                   "이 프린터로는 IC 카드(Mifare)를 기록할 수 없습니다. IC 카드 정보는 기록하지 않고 인쇄만 합니다.")
 
 
 def _check_printer(report: PreflightReport, document: Document, status: PrinterStatus | None) -> None:

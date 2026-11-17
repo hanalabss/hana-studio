@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QMenu, QPushButton, QWidget
 
 from ui.editor import EditorController, EditorError, EditorView
 from ui.theme import SPACE, ThemeManager
+from ui.units import UNITS, LengthUnits
 from ui.widgets import Divider, IconButton, QuietButton, SecondaryButton, SegmentedControl
 
 from . import icons
@@ -103,6 +104,19 @@ class CanvasBar(QFrame):
         self.cut_toggle = self._check_action("재단선 보기", controller.set_cut_line_visible)
         self.ruler_toggle = self._check_action("눈금자 보기", view.set_rulers_visible)
         self.ruler_toggle.setChecked(True)
+        # 다눌처럼 눈금자와 위치·크기 칸의 단위를 고른다. 디자인 값은 그대로 mm로 저장된다.
+        self.unit_menu = self.view_menu.addMenu("길이 단위")
+        self.unit_group = QActionGroup(self)
+        self.unit_actions: dict[str, QAction] = {}
+        units = LengthUnits.instance()
+        for unit in UNITS:
+            action = QAction(unit.label, self, checkable=True)
+            action.setChecked(unit.key == units.key)
+            action.triggered.connect(lambda _=False, k=unit.key: LengthUnits.instance().set_key(k))
+            self.unit_group.addAction(action)
+            self.unit_menu.addAction(action)
+            self.unit_actions[unit.key] = action
+        units.changed.connect(self._sync_unit)
         self.view_button.setMenu(self.view_menu)
         layout.addWidget(self.view_button)
 
@@ -220,6 +234,11 @@ class CanvasBar(QFrame):
 
     def _sync_selection(self, *_args) -> None:
         self.selection_action.setEnabled(bool(self.controller.selection))
+
+    def _sync_unit(self, key: str) -> None:
+        action = self.unit_actions.get(key)
+        if action is not None:
+            action.setChecked(True)
 
     def _sync_zoom(self, zoom: float) -> None:
         self.zoom_button.setText(f"{round(zoom * 100)}%")

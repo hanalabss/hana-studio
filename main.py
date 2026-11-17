@@ -173,6 +173,9 @@ def main():
         # 새 화면 테마 적용 (라이선스 창은 기존 모습 유지)
         from ui.theme import ThemeManager
         ThemeManager.instance().apply(app)
+        # 화면 언어(설정 > 화면 > 언어). 한국어면 아무것도 바꾸지 않는다.
+        from ui import i18n
+        i18n.install(app)
 
         # 로딩 화면: 로고, 이름, 지금 하는 일, 아래에 리본 색 띠
         loading = QWidget()

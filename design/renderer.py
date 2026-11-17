@@ -14,7 +14,7 @@ from PIL import Image, ImageChops
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import (
     QColor, QFont, QFontDatabase, QFontMetricsF, QGuiApplication, QImage, QImageReader,
-    QPainter, QPen, QTransform,
+    QPainter, QPainterPath, QPen, QTransform,
 )
 
 from design import barcodes
@@ -82,7 +82,7 @@ def _spacing_units(size_pt: float, letter_spacing: float) -> float:
 
 
 def _make_font(family: str | None, size_pt: float, bold=False, italic=False, underline=False,
-               letter_spacing: float = 0.0) -> QFont:
+               letter_spacing: float = 0.0, strikeout: bool = False) -> QFont:
     font = QFont()
     names: list[str] = []
     for name in (family or DEFAULT_FONT_FAMILY, *FALLBACK_FONT_FAMILIES):
@@ -93,6 +93,7 @@ def _make_font(family: str | None, size_pt: float, bold=False, italic=False, und
     font.setBold(bool(bold))
     font.setItalic(bool(italic))
     font.setUnderline(bool(underline))
+    font.setStrikeOut(bool(strikeout))
     font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
     font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
     if letter_spacing:
@@ -308,11 +309,15 @@ def _draw_text(
 
 def _paint_text(painter, item, value, s, opts) -> None:
     text = "" if value is None else str(value)
+    background = getattr(item, "background", None)
+    if background:
+        painter.fillRect(QRectF(0, 0, item.w * s, item.h * s), _color(background, opts.mask_mode, "#ffffff"))
     if not text:
         return
     size = fitted_font_size_pt(item, text)
     font = _make_font(item.font_family, size, item.bold, item.italic, item.underline,
-                      letter_spacing=float(getattr(item, "letter_spacing", 0.0) or 0.0))
+                      letter_spacing=float(getattr(item, "letter_spacing", 0.0) or 0.0),
+                      strikeout=bool(getattr(item, "strikeout", False)))
     _draw_text(
         painter, text, font, _color(item.color, opts.mask_mode), 0.0, 0.0, item.w, item.h, s,
         item.h_align, item.v_align, item.wrap,
@@ -335,6 +340,7 @@ def _text_layout(item, value: Any):
         font = _make_font(
             item.font_family, fitted_font_size_pt(item, text), item.bold, item.italic, item.underline,
             letter_spacing=float(getattr(item, "letter_spacing", 0.0) or 0.0),
+            strikeout=bool(getattr(item, "strikeout", False)),
         )
         return text, font, (0.0, 0.0, item.w, item.h), _text_flags(item.h_align, item.v_align, item.wrap)
     if item.kind == "barcode" and item.show_text:
@@ -470,7 +476,14 @@ def _paint_image(painter, item, value, s, opts) -> None:
     scale = _device_scale(painter)
     image = _prescaled(image, draw_w * scale, draw_h * scale)
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
-    painter.setClipRect(QRectF(0, 0, w, h), Qt.ClipOperation.IntersectClip)
+    radius = min(max(0.0, float(getattr(item, "corner_radius_mm", 0.0) or 0.0)) * s, w / 2.0, h / 2.0)
+    if radius > 0:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(0, 0, w, h), radius, radius)
+        painter.setClipPath(path, Qt.ClipOperation.IntersectClip)
+    else:
+        painter.setClipRect(QRectF(0, 0, w, h), Qt.ClipOperation.IntersectClip)
     painter.drawImage(QRectF(x, y, draw_w, draw_h), image)
 
 
@@ -801,6 +814,13 @@ def goes_to_black_layer(item: Item) -> bool:
             and is_pure_black(getattr(item, "color", None)))
 
 
+def _ink_only(item: Item) -> Item:
+    """검정 패널에 그릴 항목. 바탕색은 색 패널 몫이라 빼고 글자·막대만 남긴다."""
+    if getattr(item, "background", None):
+        return dataclasses.replace(item, background=None)
+    return item
+
+
 def _without_ink(item: Item) -> Item | None:
     """검정 잉크를 뺀 색 패널용 항목. 바탕이 있는 바코드·QR은 바탕만 남기고, 나머지는 그릴 게 없다."""
     background = getattr(item, "background", None)
@@ -906,7 +926,7 @@ def render_side(
             crop = item.crop_for(context.record_key) if item.kind == "image" else None
             if black_layer and goes_to_black_layer(item):
                 # 검정 잉크는 검정 패널에만 찍는다. 색 그림에는 바탕(있으면)만 남긴다.
-                paint_item(black.begin(), item, value, s, crop=crop, design_mode=design_mode,
+                paint_item(black.begin(), _ink_only(item), value, s, crop=crop, design_mode=design_mode,
                            problems=problems)
                 rest = _without_ink(item)
                 if rest is not None:

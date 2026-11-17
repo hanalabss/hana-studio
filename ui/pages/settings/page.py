@@ -139,6 +139,15 @@ class SettingsPage(BasePage):
         panel.body.addWidget(FormRow("화면 색", self.theme_control,
                                      "'시스템 따라가기'는 Windows 설정의 밝게·어둡게를 따릅니다.",
                                      orientation="horizontal", label_width=_LABEL_WIDTH, control_align="left"))
+        from ui import i18n
+        self.language_combo = ComboBox([name for _code, name in i18n.LANGUAGES])
+        self.language_combo.setAccessibleName("언어 (Language)")
+        codes = [code for code, _name in i18n.LANGUAGES]
+        self.language_combo.setCurrentIndex(codes.index(i18n.stored_language(self.prefs.settings)))
+        self.language_combo.currentIndexChanged.connect(self._on_language)
+        panel.body.addWidget(FormRow("언어 (Language)", self.language_combo,
+                                     "메뉴·버튼 같은 화면 글자를 바꿉니다. 프로그램을 다시 시작하면 적용됩니다.",
+                                     orientation="horizontal", label_width=_LABEL_WIDTH, control_align="left"))
         self.guide_check = QCheckBox("카드 꾸미기, 명단 넣기, 인쇄하기 순서 안내 보기")
         self.guide_check.setEnabled(False)
         self.guide_check.toggled.connect(self._on_guide_toggled)
@@ -150,6 +159,20 @@ class SettingsPage(BasePage):
         guide.addWidget(hint)
         panel.body.addLayout(guide)
         return panel
+
+    def _on_language(self, index: int) -> None:
+        from ui import i18n
+        code = i18n.LANGUAGES[index][0]
+        if code == i18n.stored_language(self.prefs.settings):
+            return
+        i18n.save_language(code, self.prefs.settings)
+        self._toast_restart()
+
+    def _toast_restart(self) -> None:
+        text = "언어를 바꿨습니다. 프로그램을 다시 시작하면 적용됩니다. (Restart to apply)"
+        shell = self.window()
+        if hasattr(shell, "show_toast"):
+            shell.show_toast(text, "info")
 
     def _build_card(self) -> Panel:
         panel = Panel("새 카드")
@@ -188,8 +211,8 @@ class SettingsPage(BasePage):
         panel.body.addWidget(self.offset_note)
         position = QHBoxLayout()
         position.setSpacing(SPACE["lg"])
-        self.offset_x = MmField(0.0, -OFFSET_LIMIT_MM, OFFSET_LIMIT_MM, 0.1, 1)
-        self.offset_y = MmField(0.0, -OFFSET_LIMIT_MM, OFFSET_LIMIT_MM, 0.1, 1)
+        self.offset_x = MmField(0.0, -OFFSET_LIMIT_MM, OFFSET_LIMIT_MM, 0.1, 1, follow_units=False)
+        self.offset_y = MmField(0.0, -OFFSET_LIMIT_MM, OFFSET_LIMIT_MM, 0.1, 1, follow_units=False)
         self.offset_x.valueChanged.connect(lambda _v: self._save_offsets())
         self.offset_y.valueChanged.connect(lambda _v: self._save_offsets())
         position.addWidget(FormRow("가로 (오른쪽 +)", self.offset_x))

@@ -53,7 +53,7 @@ _SYNONYMS = (
 @dataclass
 class ImportPreview:
     path: str
-    kind: str  # "csv" | "excel"
+    kind: str  # "csv" | "excel" | "access"
     encoding: str | None
     delimiter: str | None
     has_header: bool
@@ -404,14 +404,28 @@ def preview_excel(path: str | Path, sheet: str | int | None = None, has_header: 
     )
 
 
+def preview_access(path: str | Path, sheet: str | None = None, has_header: bool | None = None) -> ImportPreview:
+    """다눌이 쓰던 Access 명단(.mdb/.accdb). 표 하나를 고르고, 첫 줄은 언제나 열 이름이다."""
+    from .access import read_table
+
+    table, tables, columns, rows = read_table(path, sheet)
+    numbered = [(index + 2, cells) for index, cells in enumerate(rows)]
+    if not numbered:
+        raise DataError(f"'{table}' 표에 사람이 없습니다.")
+    return _build_preview(numbered, True, columns, path=str(path), kind="access", encoding=None,
+                          delimiter=None, sheet=table, sheets=tables)
+
+
 def preview_file(path: str | Path, **options: Any) -> ImportPreview:
-    """확장자를 보고 CSV 또는 Excel 미리보기를 고른다."""
+    """확장자를 보고 CSV, Excel, Access(다눌) 미리보기를 고른다."""
     suffix = Path(path).suffix.lower()
+    if suffix in (".mdb", ".accdb"):
+        return preview_access(path, sheet=options.get("sheet"))
     if suffix in (".xlsx", ".xlsm", ".xltx", ".xltm", ".xls"):
         return preview_excel(path, **options)
     if suffix in (".csv", ".txt", ".tsv", ".tab", ""):
         return preview_csv(path, **options)
-    raise DataError(f"지원하지 않는 파일 형식입니다: {suffix} (CSV 또는 Excel(.xlsx) 파일을 선택하세요.)")
+    raise DataError(f"지원하지 않는 파일 형식입니다: {suffix} (CSV, Excel(.xlsx), Access(.mdb) 파일을 선택하세요.)")
 
 
 # ---- 열 연결 ----

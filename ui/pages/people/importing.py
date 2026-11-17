@@ -63,8 +63,9 @@ from .text import (
     people,
 )
 
-FILE_FILTER = "명단 파일 (*.xlsx *.xlsm *.csv *.txt *.tsv);;엑셀 (*.xlsx *.xlsm);;CSV (*.csv *.txt *.tsv)"
-IMPORT_SUFFIXES = (".xlsx", ".xlsm", ".csv", ".txt", ".tsv", ".tab", ".xls")
+FILE_FILTER = ("명단 파일 (*.xlsx *.xlsm *.csv *.txt *.tsv *.mdb *.accdb);;엑셀 (*.xlsx *.xlsm);;CSV (*.csv *.txt *.tsv);;"
+               "다눌 명단 (Access) (*.mdb *.accdb)")
+IMPORT_SUFFIXES = (".xlsx", ".xlsm", ".csv", ".txt", ".tsv", ".tab", ".xls", ".mdb", ".accdb")
 DEFAULT_PHOTO_FIELD = "사진"
 AUTO_PHOTO_SOURCE = "::auto::"        # 사진 짝 맞추기: 열 하나가 아니라 파일 이름에서 알아서 찾는다
 AUTO_PHOTO_LABEL = "알아서 찾기"
@@ -759,7 +760,7 @@ class ImportWizard(Dialog):
         if not self._path or self.preview is None:
             return
         options: dict[str, Any] = {"has_header": self.header_check.isChecked()}
-        if self.preview.kind == "excel":
+        if self.preview.kind in ("excel", "access"):
             if self.sheet_combo.currentText():
                 options["sheet"] = self.sheet_combo.currentText()
         else:
@@ -798,7 +799,7 @@ class ImportWizard(Dialog):
         name = Path(preview.path).name
         self._set_heading(f"{name}에서 {people(preview.total_rows)}을 찾았습니다",
                           "아래처럼 읽었습니다. 맞으면 다음으로 넘어가세요. 원래 파일은 고치지 않습니다.")
-        is_excel = preview.kind == "excel"
+        is_excel = preview.kind in ("excel", "access")
         self.sheet_row.setVisible(is_excel and len(preview.sheets) > 1)
         if is_excel:
             self.sheet_combo.blockSignals(True)

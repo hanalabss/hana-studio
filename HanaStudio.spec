@@ -74,6 +74,7 @@ a = Analysis(
         ('dll/Retransfer600_SDKCfg.xml', '_internal/dll'),
         ('hana.ico', '.'),
         ('assets/brand', 'assets/brand'),
+        ('ui/i18n/*.json', 'ui/i18n'),            # 화면 언어 번역표
 
         # === 프로젝트 내부 모듈 ===
         ('dll', 'dll'),
@@ -83,6 +84,7 @@ a = Analysis(
     hiddenimports=[
         # === Qt ===
         'PySide6.QtCore', 'PySide6.QtWidgets', 'PySide6.QtGui',
+        'PySide6.QtMultimedia', 'PySide6.QtMultimediaWidgets',   # 카메라로 사진 찍기
 
         # === 온라인 업데이트 ===
         'velopack',

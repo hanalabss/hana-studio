@@ -33,7 +33,8 @@ def source_mode(source) -> str:
 
 
 class _GlyphToggle(QPushButton):
-    def __init__(self, tooltip: str, bold=False, italic=False, underline=False, parent=None) -> None:
+    def __init__(self, tooltip: str, bold=False, italic=False, underline=False, strikeout=False,
+                 parent=None) -> None:
         super().__init__("가", parent)
         self.setProperty("glyph", "true")
         self.setCheckable(True)
@@ -45,6 +46,7 @@ class _GlyphToggle(QPushButton):
         font.setBold(bold)
         font.setItalic(italic)
         font.setUnderline(underline)
+        font.setStrikeOut(strikeout)
         self.setFont(font)
 
 
@@ -126,15 +128,28 @@ class TextSection(Section):
         self.bold_toggle = _GlyphToggle("굵게", bold=True)
         self.italic_toggle = _GlyphToggle("기울이기", italic=True)
         self.underline_toggle = _GlyphToggle("밑줄", underline=True)
+        self.strikeout_toggle = _GlyphToggle("취소선", strikeout=True)
         self.bold_toggle.toggled.connect(lambda on: self.edit({"bold": on}))
         self.italic_toggle.toggled.connect(lambda on: self.edit({"italic": on}))
         self.underline_toggle.toggled.connect(lambda on: self.edit({"underline": on}))
+        self.strikeout_toggle.toggled.connect(lambda on: self.edit({"strikeout": on}))
         self.column.addWidget(field_row(
-            "모양", hbox(self.bold_toggle, self.italic_toggle, self.underline_toggle, None, spacing=6)))
+            "모양", hbox(self.bold_toggle, self.italic_toggle, self.underline_toggle, self.strikeout_toggle,
+                       None, spacing=6)))
 
         self.color_picker = SwatchPicker(SWATCHES)
         self.color_picker.colorChanged.connect(lambda color: self.edit({"color": color}, merge="color"))
         self.column.addWidget(group("글자색", self.color_picker))
+
+        # 글자 칸 바탕색(다눌의 '채우기'). 꺼 두면 투명.
+        self._last_background: str | None = None
+        self.background_check = QCheckBox("글자 칸 바탕 채우기")
+        self.background_check.setToolTip("글자 뒤의 칸 전체를 고른 색으로 칠합니다")
+        self.background_check.toggled.connect(self._on_background_toggled)
+        self.background_picker = SwatchPicker(SWATCHES)
+        self.background_picker.colorChanged.connect(
+            lambda color: self.edit({"background": color}, merge="background"))
+        self.column.addWidget(group(None, self.background_check, self.background_picker))
 
         self.align_control = SegmentedControl(
             [("left", "왼쪽"), ("center", "가운데"), ("right", "오른쪽")], stretch=True)
@@ -186,13 +201,29 @@ class TextSection(Section):
         self.size_field.set_value(item.font_size_pt, emit=False)
         self.spacing_field.set_value(float(getattr(item, "letter_spacing", 0.0) or 0.0), emit=False)
         for toggle, value in ((self.bold_toggle, item.bold), (self.italic_toggle, item.italic),
-                              (self.underline_toggle, item.underline)):
+                              (self.underline_toggle, item.underline),
+                              (self.strikeout_toggle, getattr(item, "strikeout", False))):
+            toggle.blockSignals(True)
             toggle.setChecked(bool(value))
+            toggle.blockSignals(False)
         show_color(self.color_picker, item.color)
+        background = getattr(item, "background", None)
+        self.background_check.blockSignals(True)
+        self.background_check.setChecked(bool(background))
+        self.background_check.blockSignals(False)
+        self.background_picker.setVisible(bool(background))
+        if background:
+            self._last_background = background
+            show_color(self.background_picker, background)
         self.align_control.set_current(item.h_align, emit=False)
         self.shrink_check.setChecked(bool(item.auto_shrink))
         self.v_align_control.set_current(item.v_align, emit=False)
         self.wrap_check.setChecked(bool(item.wrap))
+
+    def _on_background_toggled(self, on: bool) -> None:
+        self.background_picker.setVisible(on)
+        fallback = self.background_picker.current() or "#ffffff"
+        self.edit({"background": (self._last_background or fallback) if on else None})
 
     def _show_mode(self, mode: str) -> None:
         index = {"fixed": 0, "column": 1, "auto": 2}[mode]

@@ -7,12 +7,51 @@ from functools import lru_cache
 from PySide6.QtCore import QRect
 from PySide6.QtGui import QColor, QImage, QPainter
 
-SYMBOLOGIES = ("code128", "code39", "ean13")
-SYMBOLOGY_LABELS = {"code128": "Code 128", "code39": "Code 39", "ean13": "EAN-13"}
+SYMBOLOGIES = ("code128", "code128a", "code128b", "code128c", "code39", "code39ext", "code93", "ean13")
+SYMBOLOGY_LABELS = {
+    "code128": "Code 128", "code128a": "Code 128-A", "code128b": "Code 128-B", "code128c": "Code 128-C",
+    "code39": "Code 39", "code39ext": "Code 39 Extended", "code93": "Code 93", "ean13": "EAN-13",
+}
 QR_LEVELS = ("L", "M", "Q", "H")
 
 _CODE39_CHARS = set("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-. $/+%")
-_QUIET_ZONE = {"code128": (10, 10), "code39": (10, 10), "ean13": (11, 7)}
+_QUIET_ZONE = {key: (10, 10) for key in SYMBOLOGIES}
+_QUIET_ZONE["ean13"] = (11, 7)
+
+# Full ASCII(Code 39 Extended, Code 93)에서 기본 문자 밖의 글자를 두 글자로 바꾸는 표.
+# 앞 글자가 $ % / + 인 짝이다. Code 93은 이 앞 글자를 전용 시프트 문자로 쓴다.
+_FULL_ASCII: dict[str, str] = {chr(0): "%U", chr(127): "%T", " ": " ", "-": "-", ".": ".", "@": "%V", "`": "%W"}
+for _i in range(1, 27):
+    _FULL_ASCII[chr(_i)] = "$" + chr(64 + _i)
+for _code, _pair in zip(range(27, 32), ("%A", "%B", "%C", "%D", "%E")):
+    _FULL_ASCII[chr(_code)] = _pair
+for _ch, _letter in zip("!\"#$%&'()*+,", "ABCDEFGHIJKL"):
+    _FULL_ASCII[_ch] = "/" + _letter
+_FULL_ASCII["/"] = "/O"
+_FULL_ASCII[":"] = "/Z"
+for _ch, _letter in zip(";<=>?", "FGHIJ"):
+    _FULL_ASCII[_ch] = "%" + _letter
+for _ch, _letter in zip("[\\]^_", "KLMNO"):
+    _FULL_ASCII[_ch] = "%" + _letter
+for _ch, _letter in zip("{|}~", "PQRS"):
+    _FULL_ASCII[_ch] = "%" + _letter
+for _ch in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+    _FULL_ASCII[_ch] = _ch
+for _i in range(26):
+    _FULL_ASCII[chr(97 + _i)] = "+" + chr(65 + _i)
+
+# Code 93: 값 순서대로 문자와 9모듈 무늬. 43~46은 시프트 문자 ($) (%) (/) (+).
+_CODE93_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-. $/+%"
+_CODE93_PATTERNS = (
+    "100010100", "101001000", "101000100", "101000010", "100101000", "100100100", "100100010", "101010000",
+    "100010010", "100001010", "110101000", "110100100", "110100010", "110010100", "110010010", "110001010",
+    "101101000", "101100100", "101100010", "100110100", "100011010", "101011000", "101001100", "101000110",
+    "100101100", "100010110", "110110100", "110110010", "110101100", "110100110", "110010110", "110011010",
+    "101101100", "101100110", "100110110", "100111010", "100101110", "111010100", "111010010", "111001010",
+    "101101110", "101110110", "110101110", "100100110", "111011010", "111010110", "100110010",
+)
+_CODE93_START_STOP = "101011110"
+_CODE93_SHIFT = {"$": 43, "%": 44, "/": 45, "+": 46}
 
 
 class BarcodeError(ValueError):
@@ -64,6 +103,27 @@ def normalize(symbology: str, data: str) -> str:
             )
         return text
 
+    if symbology in ("code39ext", "code93"):
+        bad = sorted({ch for ch in text if ch not in _FULL_ASCII})
+        if bad:
+            shown = " ".join(ch if ch.isprintable() else f"U+{ord(ch):04X}" for ch in bad)
+            raise BarcodeError(f"{label}에 쓸 수 없는 문자가 있습니다: {shown} (영문·숫자·기호만 가능)")
+        return text
+
+    if symbology == "code128c":
+        if not (text.isascii() and text.isdigit()):
+            raise BarcodeError("Code 128-C는 숫자만 사용할 수 있습니다.")
+        if len(text) % 2:
+            raise BarcodeError(f"Code 128-C는 숫자가 짝수 개여야 합니다. (현재 {len(text)}자리)")
+        return text
+
+    if symbology == "code128a":
+        bad = sorted({ch for ch in text if not (ord(ch) < 96)})
+        if bad:
+            shown = " ".join(ch if ch.isprintable() else f"U+{ord(ch):04X}" for ch in bad)
+            raise BarcodeError(f"{label}에 쓸 수 없는 문자가 있습니다: {shown} (숫자, 영문 대문자, 기호만 가능)")
+        return text
+
     bad = sorted({ch for ch in text if not (32 <= ord(ch) < 127)})
     if bad:
         shown = " ".join(ch if ch.isprintable() else f"U+{ord(ch):04X}" for ch in bad)
@@ -71,8 +131,50 @@ def normalize(symbology: str, data: str) -> str:
     return text
 
 
+def _code128_forced(code_set: str, text: str) -> str:
+    """한 가지 문자 집합(A·B·C)만 써서 만든 Code 128 모듈 문자열. 집합을 바꾸지 않는다."""
+    from barcode.charsets import code128 as table
+
+    if code_set == "C":
+        values = [int(text[i:i + 2]) for i in range(0, len(text), 2)]
+    elif code_set == "A":
+        # A 집합: 공백~_ 는 0~63, 제어 문자(0~31)는 64~95.
+        values = [ord(ch) - 32 if ord(ch) >= 32 else ord(ch) + 64 for ch in text]
+    else:
+        values = [ord(ch) - 32 for ch in text]
+    start = table.START_CODES[code_set]
+    checksum = (start + sum(weight * value for weight, value in enumerate(values, start=1))) % 103
+    # 표의 STOP은 11모듈이라 끝맺음 막대(2모듈)를 붙여야 13모듈 정지 문자가 된다.
+    return "".join(table.CODES[v] for v in (start, *values, checksum)) + table.STOP + "11"
+
+
+def _code93(text: str) -> str:
+    """Code 93 Full ASCII 모듈 문자열(체크 문자 C·K 포함)."""
+    values: list[int] = []
+    for ch in text:
+        pair = _FULL_ASCII[ch]
+        if len(pair) == 2:
+            values.append(_CODE93_SHIFT[pair[0]])
+            values.append(_CODE93_CHARS.index(pair[1]))
+        else:
+            values.append(_CODE93_CHARS.index(pair))
+    for limit in (20, 15):                                    # C(가중치 1~20), K(1~15)
+        total = sum(((len(values) - i - 1) % limit + 1) * v for i, v in enumerate(values))
+        values.append(total % 47)
+    body = "".join(_CODE93_PATTERNS[v] for v in values)
+    return _CODE93_START_STOP + body + _CODE93_START_STOP + "1"
+
+
 @lru_cache(maxsize=256)
 def _linear_modules(symbology: str, text: str) -> tuple[bool, ...]:
+    if symbology in ("code128a", "code128b", "code128c"):
+        return tuple(ch == "1" for ch in _code128_forced(symbology[-1].upper(), text))
+    if symbology == "code93":
+        return tuple(ch == "1" for ch in _code93(text))
+    if symbology == "code39ext":
+        text = "".join(_FULL_ASCII[ch] for ch in text)
+        symbology = "code39"
+
     import barcode
     from barcode.errors import BarcodeError as _LibError
 
