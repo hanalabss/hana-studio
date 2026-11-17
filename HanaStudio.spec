@@ -160,6 +160,11 @@ a = Analysis(
     optimize=0,
 )
 
+# 배경 지우기는 CPU로만 한다. GPU(CUDA·TensorRT) 연결 파일은 CUDA 12·cuDNN을 따로 깐 PC에서만
+# 쓰일 수 있어 사실상 쓰이지 않고, CUDA 파일 하나만 300MB가 넘는다.
+_GPU_ONLY = ("onnxruntime_providers_cuda", "onnxruntime_providers_tensorrt")
+a.binaries = [b for b in a.binaries if not any(name in b[0].lower() for name in _GPU_ONLY)]
+
 pyz = PYZ(a.pure)
 
 exe = EXE(
