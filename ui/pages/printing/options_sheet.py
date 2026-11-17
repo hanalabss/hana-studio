@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLineEdit, QVBoxLayout, QW
 
 from design.model import Document
 from printer.base import (CAP_COLOR_ADJUST, CAP_DENSITY_ADJUST, CAP_DUAL_SIDE, CAP_GAMMA_ADJUST,
-                          CAP_BLACK_RESIN, CAP_MAGNETIC, CAP_MIFARE, CAP_UV, CAP_WHITE, COLOR_ADJUST_MAX, COLOR_ADJUST_MIN, DENSITY_KEYS)
+                          CAP_BLACK_RESIN, CAP_RIBBON_CHECKED, CAP_MAGNETIC, CAP_MIFARE, CAP_UV, CAP_WHITE, COLOR_ADJUST_MAX, COLOR_ADJUST_MIN, DENSITY_KEYS)
 
 DENSITY_TITLES = {"density": "전체", "density_yellow": "노랑", "density_magenta": "빨강",
                   "density_cyan": "파랑"}
@@ -18,7 +18,7 @@ from services.render_job import PrintOptions, magnetic_mapping, mifare_setting, 
 from ui.pages.settings.prefs import COPIES_MAX, OFFSET_LIMIT_MM
 from ui.theme import SPACE
 from ui.widgets import (
-    ComboBox, Dialog, Divider, FormRow, MmField, QuietButton, SegmentedControl, StepperField, label,
+    ComboBox, Dialog, Divider, FormRow, MmField, QuietButton, SegmentedControl, StepperField, label, set_prop,
 )
 
 from .style import apply_page_style
@@ -199,6 +199,15 @@ class OptionsSheet(Dialog):
                 "색이 완전한 검정인 글자·선·바코드·QR만 해당합니다. 색 리본 세 가지를 겹쳐 만든 검정보다 "
                 "가장자리가 선명합니다. 사진과 색 글자는 그대로 색 리본으로 찍습니다.")
             extras.addWidget(self.black_resin)
+            # 리본에 검정 패널이 있는지 프린터에서 확인하지 못했으면, 켰을 때만 한 줄 알린다(RTAI 등).
+            self.black_resin_note = label("리본에 검정(K) 패널이 있을 때만 켜세요. 없으면 검정 글자가 제대로 찍히지 "
+                                          "않을 수 있습니다.", "hint", wrap=True)
+            set_prop(self.black_resin_note, "tone", "warn")
+            self.black_resin_note.setContentsMargins(28, 0, 0, 0)
+            unchecked = CAP_RIBBON_CHECKED not in capabilities
+            self.black_resin_note.setVisible(unchecked and self.black_resin.isChecked())
+            self.black_resin.toggled.connect(lambda on: self.black_resin_note.setVisible(unchecked and on))
+            extras.addWidget(self.black_resin_note)
         if CAP_WHITE in capabilities and uses_white(document):
             self.white = QCheckBox("화이트로 꾸민 부분도 찍기")
             self.white.setChecked(self._choices.use_white)

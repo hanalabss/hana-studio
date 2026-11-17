@@ -118,3 +118,20 @@ def test_black_resin_choice_shows_only_with_black_text_and_a_capable_printer(env
     assert chosen.options.black_resin is True
     assert "검정 글자는 검정 리본으로" in summary_text(chosen, document, {CAP_BLACK_RESIN}, False)
     assert "검정 리본" not in summary_text(chosen, document, set(), False)
+
+
+def test_black_resin_caution_only_when_ribbon_is_unchecked_and_option_is_on(env):
+    from design.model import Document, TextItem
+    from printer.base import CAP_BLACK_RESIN, CAP_RIBBON_CHECKED
+    from ui.pages.printing.options_sheet import OptionsSheet, PrintChoices
+
+    document = Document()
+    document.side("front").add_item(TextItem(x=5, y=5, w=60, h=10, text="HONG"))
+    unchecked = OptionsSheet(PrintChoices(), document, {CAP_BLACK_RESIN}, [], people=False)     # RTAI처럼 리본 미확인
+    assert unchecked.black_resin_note.isHidden()                       # 꺼져 있으면 안내 없음
+    unchecked.black_resin.setChecked(True)
+    assert not unchecked.black_resin_note.isHidden() and "검정(K) 패널" in unchecked.black_resin_note.text()
+
+    checked = OptionsSheet(PrintChoices(), document, {CAP_BLACK_RESIN, CAP_RIBBON_CHECKED}, [], people=False)
+    checked.black_resin.setChecked(True)
+    assert checked.black_resin_note.isHidden()                         # SMART처럼 리본을 읽어 확인했으면 안내 없음
