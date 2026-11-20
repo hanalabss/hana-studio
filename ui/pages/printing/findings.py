@@ -68,7 +68,7 @@ def problem_for(finding: Finding) -> Problem:
     elif code in _DESIGN_CODES and finding.item_ids:
         actions.append(Action("디자인에서 고치기", ACT_FIX_DESIGN, (list(finding.item_ids), finding.side)))
     elif code in _PRINTER_CODES:
-        if finding.blocking:
+        if finding.blocking or code in ("feeder_empty", "ribbon_out"):   # 채운 뒤 바로 다시 확인할 수 있게
             actions.append(Action("다시 확인", ACT_RECHECK))
         actions.append(Action("프린터 화면 열기", ACT_OPEN_PRINTER))
     return Problem(code, tone, plain(finding.message), actions, list(finding.record_ids))

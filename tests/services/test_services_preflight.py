@@ -242,8 +242,10 @@ def test_feeder_empty_and_ribbon_out(store, simple_document):
     status = PrinterStatus(ready=False, message="카드 공급함이 비어 있습니다.", feeder_empty=True,
                            ribbon_remaining=0)
     report = preflight.check(simple_document, store, None, None, status)
-    assert only(report, "feeder_empty").severity == ERROR and "카드를 넣" in only(report, "feeder_empty").message
-    assert only(report, "ribbon_out").severity == ERROR and "교체" in only(report, "ribbon_out").message
+    # 막지 않고 경고만: 프린터가 직접 카드를 넣으려다 자기 화면·소리로 알리게 한다.
+    assert only(report, "feeder_empty").severity == WARNING and "카드를 넣" in only(report, "feeder_empty").message
+    assert only(report, "ribbon_out").severity == WARNING and "교체" in only(report, "ribbon_out").message
+    assert not any(f.blocking for f in report.findings)
     assert "printer_not_ready" not in report.codes()
 
 
@@ -277,7 +279,7 @@ def test_ribbon_level_in_an_unknown_unit_is_never_compared_with_the_card_count(s
     assert PrinterStatus(ready=True, message="ok", ribbon_remaining=3).ribbon_unit == "unknown"
 
     empty = PrinterStatus(ready=True, message="ok", ribbon_remaining=0, ribbon_unit=unit)
-    assert only(preflight.check(simple_document, store, None, None, empty), "ribbon_out").severity == ERROR
+    assert only(preflight.check(simple_document, store, None, None, empty), "ribbon_out").severity == WARNING
 
 
 def test_real_adapters_only_trigger_ribbon_low_when_the_unit_is_cards(store, simple_document, rtai_device,
