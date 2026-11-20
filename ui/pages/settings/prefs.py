@@ -18,6 +18,7 @@ log = logging.getLogger(__name__)
 KEY_COPIES = "print/copies"
 KEY_STOP_ON_ERROR = "print/stop_on_error"
 KEY_START_WITHOUT_SUPPLIES = "print/start_without_supplies"
+KEY_ALERT_SOUND = "print/alert_sound"
 KEY_OFFSET_X = "print/offset_x_mm"
 KEY_OFFSET_Y = "print/offset_y_mm"
 KEY_GAMMA = "print/gamma"
@@ -152,6 +153,12 @@ class Prefs(QObject):
 
     def set_start_without_supplies(self, allow: bool) -> None:
         self._set(KEY_START_WITHOUT_SUPPLIES, bool(allow))
+    def alert_sound(self) -> bool:
+        """인쇄가 오류로 멈추면 소리와 작업 표시줄 깜빡임으로 알릴지."""
+        return read_bool(self._settings, KEY_ALERT_SOUND, True)
+
+    def set_alert_sound(self, on: bool) -> None:
+        self._set(KEY_ALERT_SOUND, bool(on))
 
     def offsets(self) -> tuple[float, float]:
         def clamp(key: str) -> float:

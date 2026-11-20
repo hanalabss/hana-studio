@@ -118,10 +118,12 @@ def test_failure_on_third_card_then_retry_only_that_one(app_env, app_window, peo
     assert not store.get(failed_id)["_printed"]
     assert sum(1 for r in store.rows() if r["_printed"]) == 5
     assert page.run.retry_button.text() == "실패한 1장 다시 인쇄"
+    assert window.attention.active and window.attention_rings     # 자리를 비워도 알 수 있게 소리로 알린다
 
     printed_before = library.printed_cards
     click(page.run.retry_button)
     assert page.state() == STATE_RUNNING
+    assert not window.attention.active                            # 다시 뽑기 시작하면 그친다
     assert page.run.title.text() == "다시 뽑는 1장"
     assert page.run.model.rowCount() == 1 and page.run.model.row(0)["name"] == PRINTABLE[2]
     wait_done(app, page)

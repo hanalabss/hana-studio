@@ -9,6 +9,25 @@ from PySide6.QtWidgets import QApplication
 log = logging.getLogger(__name__)
 
 
+def _watch_print_stops(shell, services, prefs):
+    """인쇄가 오류로 멈추거나 실패한 카드가 있으면 소리와 작업 표시줄 깜빡임으로 알린다.
+
+    사람이 직접 멈춘 작업(취소)과 모두 성공한 작업은 알리지 않는다. 폴더 자동 인쇄도 같은 신호로 온다.
+    """
+    from services.print_service import STATE_FAILED, STATE_PARTIAL
+    from ui.attention import AttentionAlert
+
+    alert = AttentionAlert(shell)
+
+    def on_finished(summary) -> None:
+        if summary.state in (STATE_FAILED, STATE_PARTIAL) and prefs.alert_sound():
+            alert.start(shell)
+
+    services.printing.finished.connect(on_finished)
+    services.printing.job_started.connect(lambda _handle: alert.stop())
+    return alert
+
+
 def build_main_window(is_admin: bool = False, *, services=None, start_services: bool = True):
     """메인 창(AppShell)을 만들어 돌려준다. QApplication과 테마 적용은 호출하는 쪽에서 먼저 한다."""
     from ui.pages.design import DesignPage
@@ -61,6 +80,7 @@ def build_main_window(is_admin: bool = False, *, services=None, start_services: 
 
     shell.workspace = workspace
     shell.services = services
+    shell.attention = _watch_print_stops(shell, services, Prefs.instance())
 
     done = {"shutdown": False}
 

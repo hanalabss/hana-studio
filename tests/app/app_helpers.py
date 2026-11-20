@@ -121,6 +121,8 @@ def build_window(tmp_path, name: str = "history.sqlite"):
         printers=PrinterService(queue=queue, settings_path=str(tmp_path / "printer.json"), poll_interval_ms=200),
         printing=PrintService(queue=queue, history=history), history=history, queue=queue)
     window = build_main_window(services=services, start_services=False)
+    window.attention_rings = []                      # 시험 중에는 실제 경고음 대신 횟수만 센다
+    window.attention._sound = lambda: window.attention_rings.append(1)
     # 창을 닫을 때 "저장하지 않았습니다" 창이 떠서 기다리지 않게 한다(아무도 눌러 줄 수 없다).
     window.page("design").dialogs.ask_unsaved = lambda parent, name: "discard"
     window.page("print").confirm = lambda *args, **kwargs: True

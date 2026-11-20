@@ -222,6 +222,11 @@ class SettingsPage(BasePage):
         self.supplies_check.setToolTip('켜 두면 카드나 리본이 없을 때 시작을 막지 않고 경고만 보여 줍니다. '
                                        '첫 카드에서 멈추므로, 채운 뒤 이어서 인쇄하면 됩니다.')
         stop.addWidget(self.supplies_check)
+        self.alert_check = QCheckBox("인쇄가 오류로 멈추면 소리로 알리기")
+        self.alert_check.toggled.connect(self.prefs.set_alert_sound)
+        self.alert_check.setToolTip('카드가 떨어지거나 인쇄에 실패해 멈추면 경고음을 내고 작업 표시줄 아이콘을 깜빡입니다. '
+                                    '앱을 누르거나 3분이 지나면 그칩니다.')
+        stop.addWidget(self.alert_check)
         panel.body.addLayout(stop)
 
         panel.body.addWidget(label("찍히는 위치 맞추기", "strong"))
@@ -572,8 +577,8 @@ class SettingsPage(BasePage):
     # ------------------------------------------------------------------ 값
     def _load(self) -> None:
         prefs = self.prefs
-        widgets = (self.card_combo, self.copies, self.stop_check, self.supplies_check, self.offset_x, self.offset_y,
-                   self.retention_combo)
+        widgets = (self.card_combo, self.copies, self.stop_check, self.supplies_check, self.alert_check,
+                   self.offset_x, self.offset_y, self.retention_combo)
         for widget in widgets:
             widget.blockSignals(True)
         keys = [preset.key for preset in presets.PRESETS]
@@ -581,6 +586,7 @@ class SettingsPage(BasePage):
         self.copies.set_value(prefs.copies(), emit=False)
         self.stop_check.setChecked(prefs.stop_on_error())
         self.supplies_check.setChecked(prefs.start_without_supplies())
+        self.alert_check.setChecked(prefs.alert_sound())
         x, y = prefs.offsets()
         self.offset_x.set_value(x, emit=False)
         self.offset_y.set_value(y, emit=False)
