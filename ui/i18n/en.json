@@ -1100,6 +1100,8 @@
 "한 사람에 몇 장": "Copies per person",
 "한 장 찍을 때마다 1씩 커집니다.": "Goes up by 1 for each card printed.",
 "한 장이 실패하면 남은 카드는 찍지 않고 멈추기": "Stop printing remaining cards if one fails",
+"카드·리본이 없어도 인쇄 시작 허용": "Allow starting without cards or ribbon",
+"인쇄가 오류로 멈추면 소리로 알리기": "Play a sound when printing stops on an error",
 "한 칸 뒤로": "Back one step",
 "한 칸 앞으로": "Forward one step",
 "한 항목만 쓰기": "Use one field only",

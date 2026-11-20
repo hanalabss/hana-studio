@@ -181,7 +181,7 @@ class LicenseDialog(QDialog):
     def _create_header(self, parent_layout):
         """헤더"""
         header = QFrame()
-        header.setFixedHeight(70)
+        header.setFixedHeight(78)
         header.setStyleSheet(themed_qss("QFrame { background-color: #FFFFFF; }"))
 
         header_layout = QVBoxLayout(header)
@@ -196,7 +196,17 @@ class LicenseDialog(QDialog):
         subtitle.setFont(QFont("Segoe UI", 10))
         subtitle.setStyleSheet(themed_qss("color: #6B7280; background: transparent;"))
 
-        header_layout.addWidget(title)
+        from ui.theme.brand import logo_pixmap
+
+        logo = QLabel()                                   # 모든 알림 창에 하나스튜디오 로고를 둔다
+        logo.setPixmap(logo_pixmap(24, self.devicePixelRatioF()))
+        logo.setFixedSize(24, 24)
+        logo.setStyleSheet(themed_qss("background: transparent;"))
+        title_row = QHBoxLayout()
+        title_row.setSpacing(8)
+        title_row.addWidget(logo)
+        title_row.addWidget(title, 1)
+        header_layout.addLayout(title_row)
         header_layout.addWidget(subtitle)
         parent_layout.addWidget(header)
 

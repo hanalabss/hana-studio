@@ -35,3 +35,9 @@ def qapp():
     if clipboard is not None:
         clipboard.clear()
     app.processEvents()
+
+
+@pytest.fixture(autouse=True)
+def _silent_attention(monkeypatch):
+    """시험 중에는 인쇄 멈춤 경고음(ui.attention)을 실제로 내지 않는다."""
+    monkeypatch.setattr("ui.attention.play_alert_sound", lambda: None)

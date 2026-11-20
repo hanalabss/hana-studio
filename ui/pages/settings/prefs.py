@@ -17,6 +17,8 @@ log = logging.getLogger(__name__)
 
 KEY_COPIES = "print/copies"
 KEY_STOP_ON_ERROR = "print/stop_on_error"
+KEY_START_WITHOUT_SUPPLIES = "print/start_without_supplies"
+KEY_ALERT_SOUND = "print/alert_sound"
 KEY_OFFSET_X = "print/offset_x_mm"
 KEY_OFFSET_Y = "print/offset_y_mm"
 KEY_GAMMA = "print/gamma"
@@ -145,6 +147,19 @@ class Prefs(QObject):
     def set_stop_on_error(self, stop: bool) -> None:
         self._set(KEY_STOP_ON_ERROR, bool(stop))
 
+    def start_without_supplies(self) -> bool:
+        """카드·리본이 없어도 인쇄 시작을 막지 않을지(기본은 막는다)."""
+        return read_bool(self._settings, KEY_START_WITHOUT_SUPPLIES, False)
+
+    def set_start_without_supplies(self, allow: bool) -> None:
+        self._set(KEY_START_WITHOUT_SUPPLIES, bool(allow))
+    def alert_sound(self) -> bool:
+        """인쇄가 오류로 멈추면 소리와 작업 표시줄 깜빡임으로 알릴지."""
+        return read_bool(self._settings, KEY_ALERT_SOUND, True)
+
+    def set_alert_sound(self, on: bool) -> None:
+        self._set(KEY_ALERT_SOUND, bool(on))
+
     def offsets(self) -> tuple[float, float]:
         def clamp(key: str) -> float:
             value = _number(self._settings.value(key, 0.0), 0.0)
@@ -220,6 +235,7 @@ class Prefs(QObject):
         x, y = self.offsets()
         brightness, contrast, saturation = self.color_adjust()
         return PrintOptions(copies=self.copies(), stop_on_error=self.stop_on_error(),
+                            start_without_supplies=self.start_without_supplies(),
                             offset_x_mm=x, offset_y_mm=y,
                             brightness=brightness, contrast=contrast, saturation=saturation,
                             gamma=self.gamma_adjust(),

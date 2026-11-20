@@ -79,7 +79,8 @@ def test_failure_stops_by_default_and_remaining_can_continue(env, workspace, ser
     assert states == [ROW_SUCCESS, ROW_FAILED, ROW_SKIPPED, ROW_SKIPPED, ROW_SKIPPED]
     assert page.run.row_status(3) == "뽑지 않음"
     assert page.run.summary_counts["left"].text() == "3장"
-    assert page.run.continue_button.text() == "실패한 카드까지 4장 이어서 인쇄"
+    assert page.run.continue_button.text() == "남은 4장 이어서 인쇄 (실패 1장 포함)"
+    assert not page.run.retry_button.isVisibleTo(page.run)     # 실패만 다시 뽑는 버튼은 따로 두지 않는다
 
     again = page.continue_remaining()
     assert again is not None and again.total == 4

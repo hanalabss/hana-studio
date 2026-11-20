@@ -485,11 +485,12 @@ class RunView(QWidget):
 
         self.summary_note.setText(summary.note)
         self.summary_note.setVisible(bool(summary.note))
-        self.retry_button.setVisible(summary.retry_count > 0)
+        # 실패한 카드와 남은 카드가 함께 있으면 '이어서 인쇄' 하나로 둘 다 뽑는다(실패만 다시 뽑는 버튼은 숨긴다).
+        self.retry_button.setVisible(summary.retry_count > 0 and summary.continue_count == 0)
         self.retry_button.setText(f"실패한 {summary.retry_count:,}장 다시 인쇄")
         self.continue_button.setVisible(summary.continue_count > 0)
         self.continue_button.setText(summary.continue_text or f"남은 {summary.continue_count:,}장 이어서 인쇄")
-        self.continue_button.set_variant("primary" if summary.retry_count == 0 else "secondary")
+        self.continue_button.set_variant("primary")
         primary_back = summary.retry_count == 0 and summary.continue_count == 0
         self.back_button.set_variant("primary" if primary_back else "secondary")
         if summary.no_list and primary_back:

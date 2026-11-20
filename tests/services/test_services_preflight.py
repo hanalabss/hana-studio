@@ -247,6 +247,17 @@ def test_feeder_empty_and_ribbon_out(store, simple_document):
     assert "printer_not_ready" not in report.codes()
 
 
+def test_feeder_empty_and_ribbon_out_only_warn_when_the_setting_allows_it(store, simple_document):
+    status = PrinterStatus(ready=False, message="카드 공급함이 비어 있습니다.", feeder_empty=True,
+                           ribbon_remaining=0)
+    report = preflight.check(simple_document, store, None, None, status,
+                             options=PrintOptions(start_without_supplies=True))
+    assert only(report, "feeder_empty").severity == WARNING and "이어서 인쇄" in only(report, "feeder_empty").message
+    assert only(report, "ribbon_out").severity == WARNING and "교체" in only(report, "ribbon_out").message
+    assert not any(f.blocking for f in report.findings)
+    assert "printer_not_ready" not in report.codes()
+
+
 def test_printer_not_ready_for_another_reason(store, simple_document):
     status = PrinterStatus(ready=False, message="덮개가 열려 있습니다.", warnings=["청소가 필요합니다."])
     report = preflight.check(simple_document, store, None, None, status)
