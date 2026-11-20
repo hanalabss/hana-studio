@@ -145,6 +145,19 @@ class UpdateStatusThread(QThread):
             self.error.emit(str(e))
 
 
+def _branded_message(parent, title: str, text: str) -> None:
+    """하나스튜디오 로고가 박힌 알림 창(QMessageBox)."""
+    from ui.theme.brand import logo_pixmap
+
+    box = QMessageBox(parent)
+    box.setWindowTitle(title)
+    box.setText(text)
+    pixmap = logo_pixmap(40, box.devicePixelRatioF())
+    if not pixmap.isNull():
+        box.setIconPixmap(pixmap)
+    box.exec()
+
+
 class AdminPanel(QDialog):
     """Admin 라이선스 관리 패널"""
 
@@ -482,7 +495,7 @@ class AdminPanel(QDialog):
 
     def _on_update_error(self, error: str):
         """업데이트 에러"""
-        QMessageBox.warning(self, "오류", f"상태 변경 실패: {error}")
+        _branded_message(self, "오류", f"상태 변경 실패: {error}")
         self.status_label.setText("업데이트 실패")
 
     def _show_create_dialog(self):
@@ -513,7 +526,7 @@ class AdminPanel(QDialog):
         from PySide6.QtWidgets import QApplication
         QApplication.clipboard().setText(license_key)
 
-        QMessageBox.information(
+        _branded_message(
             self,
             "라이선스 생성 완료",
             f"새 라이선스가 생성되었습니다.\n\n{license_key}\n\n(클립보드에 복사됨)"
@@ -524,7 +537,7 @@ class AdminPanel(QDialog):
     def _on_create_error(self, error: str):
         """생성 에러"""
         self.create_btn.setEnabled(True)
-        QMessageBox.warning(self, "오류", f"라이선스 생성 실패: {error}")
+        _branded_message(self, "오류", f"라이선스 생성 실패: {error}")
 
 
 class CreateLicenseDialog(QDialog):

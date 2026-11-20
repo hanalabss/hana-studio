@@ -224,8 +224,8 @@ class SettingsPage(BasePage):
         stop.addWidget(self.supplies_check)
         self.alert_check = QCheckBox("인쇄가 오류로 멈추면 소리로 알리기")
         self.alert_check.toggled.connect(self.prefs.set_alert_sound)
-        self.alert_check.setToolTip('카드가 떨어지거나 인쇄에 실패해 멈추면 경고음을 내고 작업 표시줄 아이콘을 깜빡입니다. '
-                                    '앱을 누르거나 3분이 지나면 그칩니다.')
+        self.alert_check.setToolTip('카드가 떨어지거나 인쇄에 실패해 멈추면 알림 창을 띄우고 경고음을 냅니다. '
+                                    '알림 창에서 확인을 누를 때까지 소리가 계속 납니다.')
         stop.addWidget(self.alert_check)
         panel.body.addLayout(stop)
 

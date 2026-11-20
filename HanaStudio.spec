@@ -77,6 +77,7 @@ a = Analysis(
         ('dll/Retransfer600_SDKCfg.xml', '_internal/dll'),
         ('hana.ico', '.'),
         ('assets/brand', 'assets/brand'),
+        ('assets/sounds', 'assets/sounds'),      # 인쇄가 멈출 때 내는 경고음
         ('ui/i18n/*.json', 'ui/i18n'),            # 화면 언어 번역표
 
         # === 프로젝트 내부 모듈 ===

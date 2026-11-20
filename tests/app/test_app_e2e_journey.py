@@ -119,6 +119,7 @@ def test_failure_on_third_card_then_retry_only_that_one(app_env, app_window, peo
     assert sum(1 for r in store.rows() if r["_printed"]) == 5
     assert page.run.retry_button.text() == "실패한 1장 다시 인쇄"
     assert window.attention.active and window.attention_rings     # 자리를 비워도 알 수 있게 소리로 알린다
+    assert "리본" in window.attention.notice.description()        # 알림 창에 이유를 보여 준다
 
     printed_before = library.printed_cards
     click(page.run.retry_button)

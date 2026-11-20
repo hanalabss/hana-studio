@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QDialog, QFrame, QHBoxLayout, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QDialog, QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from ui.theme import SPACE, mark_themed
+from ui.theme.brand import logo_pixmap
 
 from ._util import label
 from .buttons import Button
+
+LOGO_SIZE = 28
 
 
 class Dialog(QDialog):
@@ -35,7 +38,18 @@ class Dialog(QDialog):
         self.body.setContentsMargins(SPACE["xl"], SPACE["xl"], SPACE["xl"], SPACE["xl"])
         self.body.setSpacing(SPACE["md"])
         self._title = label(title, "heading", wrap=True)
-        self.body.addWidget(self._title)
+        # 모든 알림 창 머리에 하나스튜디오 로고를 둔다.
+        header = QHBoxLayout()
+        header.setSpacing(SPACE["sm"])
+        self.logo = QLabel(content)
+        self.logo.setObjectName("DialogLogo")
+        pixmap = logo_pixmap(LOGO_SIZE, self.devicePixelRatioF())
+        self.logo.setPixmap(pixmap)
+        self.logo.setFixedSize(LOGO_SIZE, LOGO_SIZE)
+        self.logo.setVisible(not pixmap.isNull())
+        header.addWidget(self.logo, 0, Qt.AlignVCenter)
+        header.addWidget(self._title, 1)
+        self.body.addLayout(header)
         self._description = label(description or "", "secondary", wrap=True)
         self._description.setVisible(bool(description))
         self.body.addWidget(self._description)
