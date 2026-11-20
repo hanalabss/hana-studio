@@ -1045,7 +1045,7 @@ class PrintPage(BasePage):
         view = SummaryView("", failures=failures, retry_count=failed, continue_count=left,
                            no_list=self._job_store is None)
         if left:
-            view.continue_text = (f"실패한 카드까지 {failed + left:,}장 이어서 인쇄" if failed
+            view.continue_text = (f"남은 {failed + left:,}장 이어서 인쇄 (실패 {failed:,}장 포함)" if failed
                                   else f"남은 {left:,}장 이어서 인쇄")
         if summary.state == STATE_COMPLETED:
             view.headline = f"{total:,}장을 모두 뽑았습니다"
