@@ -140,17 +140,14 @@ def test_no_printer_blocks_with_a_way_out(env, workspace, services):
     assert shell.top_bar.printer_pill.text() == "RTAI R600 FAKE 준비됨"
 
 
-def test_empty_feeder_warns_but_lets_the_printer_report_it_and_recheck_clears_it(env, workspace, services, rtai_lib):
+def test_printer_problem_blocks_and_recheck_clears_it(env, workspace, services, rtai_lib):
     page = make_page(env, workspace, services)
     rtai_lib.feeder_empty = True
     services.printers.poll_now()
     wait_until(env, lambda: page.ready.finding("feeder_empty") is not None)
     row = page.ready.finding("feeder_empty")
-    assert "카드를 넣은 뒤" in row.text() and row.property("tone") == "warn"
-    assert not page.ready.start_button.isEnabled()             # 경고를 읽었다고 체크해야 시작한다
-    page.acknowledge_warnings()
-    assert page.ready.start_button.isEnabled()                 # 막지는 않는다: 프린터가 직접 오류로 알린다
-    page.acknowledge_warnings(False)
+    assert "카드를 넣은 뒤" in row.text() and row.property("tone") == "error"
+    assert not page.ready.start_button.isEnabled()
     assert page.ready.printer_pill.state() == "error"
     assert "카드가 없습니다" in page.ready.printer_detail.text()
 
@@ -235,3 +232,17 @@ def test_preflight_runs_again_when_the_design_changes(env, workspace, services):
     assert page.ready.reason.text() == "인쇄해도 되는지 확인하고 있습니다."
     wait_until(env, lambda: page.ready.finding("item_outside") is not None)
     assert page.ready.acknowledge.isVisibleTo(page.ready)
+
+
+def test_empty_feeder_only_warns_when_starting_without_supplies_is_allowed(env, workspace, services, rtai_lib):
+    page = make_page(env, workspace, services)
+    page.prefs.set_start_without_supplies(True)
+    rtai_lib.feeder_empty = True
+    services.printers.poll_now()
+    wait_until(env, lambda: page.ready.finding("feeder_empty") is not None
+               and page.ready.finding("feeder_empty").property("tone") == "warn")
+    row = page.ready.finding("feeder_empty")
+    assert "이어서 인쇄" in row.text() and row.button("recheck") is not None
+    assert not page.ready.start_button.isEnabled()             # 경고를 읽었다고 체크해야 시작한다
+    page.acknowledge_warnings()
+    assert page.ready.start_button.isEnabled()

@@ -330,7 +330,7 @@ class PrintPage(BasePage):
         self._defaults = defaults
         options = self._choices.options
         changed = False
-        for name in ("copies", "stop_on_error", "offset_x_mm", "offset_y_mm",
+        for name in ("copies", "stop_on_error", "start_without_supplies", "offset_x_mm", "offset_y_mm",
                      "brightness", "contrast", "saturation", "gamma",
                      "density", "density_yellow", "density_magenta", "density_cyan"):
             old, new = getattr(before, name), getattr(defaults, name)

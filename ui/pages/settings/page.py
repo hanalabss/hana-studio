@@ -217,6 +217,11 @@ class SettingsPage(BasePage):
         stop.setSpacing(4)
         self.stop_check.setToolTip('꺼 두면 실패한 카드를 건너뛰고 끝까지 찍습니다. 리본이 떨어지거나 카드가 걸렸을 때 카드를 여러 장 버리지 않도록 켜 두는 편이 안전합니다.')
         stop.addWidget(self.stop_check)
+        self.supplies_check = QCheckBox("카드·리본이 없어도 인쇄 시작 허용")
+        self.supplies_check.toggled.connect(self.prefs.set_start_without_supplies)
+        self.supplies_check.setToolTip('켜 두면 카드나 리본이 없을 때 시작을 막지 않고 경고만 보여 줍니다. '
+                                       '첫 카드에서 멈추므로, 채운 뒤 이어서 인쇄하면 됩니다.')
+        stop.addWidget(self.supplies_check)
         panel.body.addLayout(stop)
 
         panel.body.addWidget(label("찍히는 위치 맞추기", "strong"))
@@ -567,7 +572,7 @@ class SettingsPage(BasePage):
     # ------------------------------------------------------------------ 값
     def _load(self) -> None:
         prefs = self.prefs
-        widgets = (self.card_combo, self.copies, self.stop_check, self.offset_x, self.offset_y,
+        widgets = (self.card_combo, self.copies, self.stop_check, self.supplies_check, self.offset_x, self.offset_y,
                    self.retention_combo)
         for widget in widgets:
             widget.blockSignals(True)
@@ -575,6 +580,7 @@ class SettingsPage(BasePage):
         self.card_combo.setCurrentIndex(keys.index(prefs.card_preset_key()))
         self.copies.set_value(prefs.copies(), emit=False)
         self.stop_check.setChecked(prefs.stop_on_error())
+        self.supplies_check.setChecked(prefs.start_without_supplies())
         x, y = prefs.offsets()
         self.offset_x.set_value(x, emit=False)
         self.offset_y.set_value(y, emit=False)

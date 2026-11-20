@@ -171,7 +171,7 @@ def check(
     _check_codes(report, document, store, records, name_column, columns, options)
     _check_bounds(report, document)
     _check_capabilities(report, document, device, capabilities, options)
-    _check_printer(report, document, printer_status)
+    _check_printer(report, document, printer_status, options)
     return report
 
 
@@ -391,22 +391,30 @@ def _check_capabilities(report, document, device, capabilities, options) -> None
                    "이 프린터로는 IC 카드(Mifare)를 기록할 수 없습니다. IC 카드 정보는 기록하지 않고 인쇄만 합니다.")
 
 
-def _check_printer(report: PreflightReport, document: Document, status: PrinterStatus | None) -> None:
+def _check_printer(report: PreflightReport, document: Document, status: PrinterStatus | None,
+                   options: PrintOptions | None = None) -> None:
     if status is None:
         return
     specific = False
-    # 카드·리본이 없어도 인쇄는 막지 않는다. 프린터가 직접 카드를 넣으려다 자기 화면과 소리로 오류를 알려야
-    # 다른 자리에 있는 사람도 듣고 채워 줄 수 있다(예전 동작). 앱은 경고로 보여 주고, 멈추면 이어서 인쇄한다.
+    # 기본은 카드·리본이 없으면 시작을 막는다. 설정에서 허용하면 경고로만 보여 주고 시작할 수 있다
+    # (첫 카드에서 멈추고, 채운 뒤 '이어서 인쇄'로 계속한다).
+    allow = bool(options and options.start_without_supplies)
     if status.feeder_empty:
         specific = True
-        report.add("feeder_empty", WARNING,
-                   "카드 공급함이 비어 있습니다. 그대로 시작하면 프린터에서도 오류로 알리고 멈춥니다. "
-                   "카드를 넣은 뒤 이어서 인쇄하세요.")
+        if allow:
+            report.add("feeder_empty", WARNING,
+                       "카드 공급함이 비어 있습니다. 그대로 시작하면 첫 카드에서 멈춥니다. "
+                       "카드를 넣은 뒤 이어서 인쇄하세요.")
+        else:
+            report.add("feeder_empty", ERROR, "카드 공급함이 비어 있습니다. 카드를 넣은 뒤 다시 시도하세요.")
     if status.ribbon_remaining is not None and status.ribbon_remaining <= 0:
         specific = True
-        report.add("ribbon_out", WARNING,
-                   "리본을 다 썼습니다. 그대로 시작하면 프린터에서도 오류로 알리고 멈춥니다. "
-                   "새 리본으로 교체한 뒤 이어서 인쇄하세요.")
+        if allow:
+            report.add("ribbon_out", WARNING,
+                       "리본을 다 썼습니다. 그대로 시작하면 첫 카드에서 멈춥니다. "
+                       "새 리본으로 교체한 뒤 이어서 인쇄하세요.")
+        else:
+            report.add("ribbon_out", ERROR, "리본을 다 썼습니다. 새 리본으로 교체한 뒤 다시 시도하세요.")
     if not status.ready and not specific:
         report.add("printer_not_ready", ERROR,
                    f"프린터가 인쇄할 수 없는 상태입니다: {status.message or '상태를 확인하세요.'}")

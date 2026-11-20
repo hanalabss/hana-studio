@@ -59,6 +59,7 @@ class PrintOptions:
     copies: int = 1
     dpi: float = DEFAULT_DPI
     stop_on_error: bool = True
+    start_without_supplies: bool = False   # 카드·리본이 없어도 인쇄 시작을 막지 않는다(경고만)
     offset_x_mm: float = 0.0
     offset_y_mm: float = 0.0
     brightness: int = 0          # 색 조정(-100~100, 0이 원래대로). 지원하는 프린터에서만 쓰인다.
@@ -81,7 +82,7 @@ class PrintOptions:
     capabilities: set[str] | None = None
 
     _SAVED = (
-        "copies", "dpi", "stop_on_error", "offset_x_mm", "offset_y_mm",
+        "copies", "dpi", "stop_on_error", "start_without_supplies", "offset_x_mm", "offset_y_mm",
         "brightness", "contrast", "saturation", "gamma",
         "density", "density_yellow", "density_magenta", "density_cyan", "black_resin", "magnetic", "mifare",
         "name_column", "counter_offset", "job_name", "lookahead", "strict", "card_options",
